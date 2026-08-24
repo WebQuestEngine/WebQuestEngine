@@ -34,7 +34,7 @@ export class Scene {
       this.container.addChild(layer.container);
     }
 
-    // Add entity container (contains player and NPCs for Y-depth sorting)
+    // Add entity container (contains player, NPCs, and hotspot prop graphics for Y-depth sorting)
     this.container.addChild(this.entityContainer);
 
     // Initialize walk paths
@@ -42,9 +42,14 @@ export class Scene {
       this.walkPaths.push(new WalkPath(wpData));
     }
 
-    // Initialize hotspots
+    // Initialize hotspots and prop graphics
     for (const hsData of this.data.hotspots) {
-      this.hotspots.push(new Hotspot(hsData));
+      const hs = new Hotspot(hsData);
+      await hs.init();
+      this.hotspots.push(hs);
+      if (hsData.imageUrl) {
+        this.entityContainer.addChild(hs.container);
+      }
     }
 
     // Initialize characters
@@ -71,7 +76,7 @@ export class Scene {
 
   public findCharacterAt(point: Vector2D): Character | undefined {
     for (const char of this.characters.values()) {
-      if (char.data.id === 'player') continue; // Don't interact with self
+      if (char.data.id === 'player') continue;
       const cx = char.container.x;
       const cy = char.container.y;
       const hw = (char.data.frameWidth * char.data.scale) / 2;
@@ -89,6 +94,10 @@ export class Scene {
 
     for (const char of this.characters.values()) {
       char.update(delta, activeWalkPath);
+    }
+
+    for (const hs of this.hotspots) {
+      hs.update();
     }
 
     this.entityContainer.children.sort((a, b) => a.y - b.y);

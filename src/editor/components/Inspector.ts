@@ -217,6 +217,16 @@ export class Inspector {
               <button class="btn btn-del-hs" data-hidx="${hIdx}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
             </div>
             <div style="margin-top:6px;">
+              <label style="font-size:0.7rem; color:var(--text-muted);">Graphic Image / Local Upload</label>
+              <div style="display:flex; gap:6px;">
+                <input type="text" class="form-input hs-img-url" data-hidx="${hIdx}" value="${hs.imageUrl || ''}" placeholder="None (Invisible Polygon)" style="font-size:0.75rem; flex:1;" />
+                <label class="btn btn-primary" style="font-size:0.7rem; padding:4px 8px; cursor:pointer;" title="Upload custom graphic for hotspot">
+                  📁
+                  <input type="file" class="hs-file-input" data-hidx="${hIdx}" accept="image/*" style="display:none;" />
+                </label>
+              </div>
+            </div>
+            <div style="margin-top:6px;">
               <label style="font-size:0.7rem; color:var(--text-muted);">Cursor Context</label>
               <input type="text" class="form-input hs-cursor" data-hidx="${hIdx}" value="${hs.cursor}" style="font-size:0.75rem;" />
             </div>
@@ -479,6 +489,34 @@ export class Inspector {
       this.currentScene!.hotspots.push(newHs);
       this.renderContent();
       emitUpdate();
+    });
+
+    // Hotspot graphic URL
+    this.element.querySelectorAll('.hs-img-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        this.currentScene!.hotspots[hIdx].imageUrl = (e.target as HTMLInputElement).value || undefined;
+        emitUpdate();
+      });
+    });
+
+    // Hotspot graphic file upload
+    this.element.querySelectorAll('.hs-file-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files[0]) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            if (ev.target?.result) {
+              this.currentScene!.hotspots[hIdx].imageUrl = ev.target.result as string;
+              this.renderContent();
+              emitUpdate();
+            }
+          };
+          reader.readAsDataURL(files[0]);
+        }
+      });
     });
 
     // Delete Hotspot

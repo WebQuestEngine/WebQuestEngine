@@ -24,19 +24,22 @@ export class Toolbar {
           <span id="play-text">Play Test</span>
         </button>
         <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
-        <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open Project</button>
-        <button class="btn" id="btn-save-file" title="Save Project JSON to Local Disk (HTML5 File Access API)">💾 Save Project</button>
+        <button class="btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
+        <button class="btn" id="btn-redo" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>↪️ Redo</button>
+        <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+        <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open</button>
+        <button class="btn" id="btn-save-file" title="Save Project JSON to Local Disk (HTML5 File Access API)">💾 Save</button>
       </div>
 
       <div class="toolbar-group">
-        <select class="form-select" id="select-ui-preset" style="width: 150px;">
+        <select class="form-select" id="select-ui-preset" style="width: 140px;">
           <option value="lucasarts">LucasArts UI</option>
           <option value="sierra">Sierra UI</option>
           <option value="context_coin">Context Coin UI</option>
           <option value="direct_cursor">Direct Cursor UI</option>
         </select>
         <button class="btn" id="btn-story-graph">🕸️ Story Graph</button>
-        <button class="btn" id="btn-dialog-tree">💬 Dialog Editor</button>
+        <button class="btn" id="btn-dialog-tree">💬 Dialogs</button>
       </div>
     `;
 
@@ -63,6 +66,22 @@ export class Toolbar {
       }
 
       EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: this.isPlayMode });
+    });
+
+    const undoBtn = this.element.querySelector('#btn-undo') as HTMLButtonElement;
+    const redoBtn = this.element.querySelector('#btn-redo') as HTMLButtonElement;
+
+    undoBtn?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:undo');
+    });
+
+    redoBtn?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:redo');
+    });
+
+    EventBus.getInstance().on('history:changed', (state: { canUndo: boolean; canRedo: boolean }) => {
+      if (undoBtn) undoBtn.disabled = !state.canUndo;
+      if (redoBtn) redoBtn.disabled = !state.canRedo;
     });
 
     this.element.querySelector('#btn-open-file')?.addEventListener('click', () => {

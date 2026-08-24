@@ -11,6 +11,7 @@ import { UISystem } from '../engine/systems/UISystem';
 import { InventorySystem } from '../engine/systems/InventorySystem';
 import { StoryGraphSystem } from '../engine/systems/StoryGraphSystem';
 import { DialogSystem } from '../engine/systems/DialogSystem';
+import { HistoryManager } from './HistoryManager';
 
 export class EditorApp {
   private container: HTMLElement;
@@ -30,6 +31,8 @@ export class EditorApp {
     this.inspector = new Inspector();
     this.storyGraphView = new StoryGraphView();
     this.dialogEditor = new DialogEditor();
+
+    HistoryManager.getInstance().init(initialProject);
   }
 
   public async init(): Promise<void> {
@@ -64,6 +67,9 @@ export class EditorApp {
 
     // Attach EventBus handlers
     this.attachEvents();
+
+    // Attach Keyboard Shortcuts (Ctrl+Z / Cmd+Z, Ctrl+Y / Cmd+Shift+Z)
+    this.attachKeyboardShortcuts();
 
     // Start Engine
     await this.startEngine();
@@ -100,15 +106,41 @@ export class EditorApp {
   }
 
   private attachEvents(): void {
+    // Record history snapshot on project updates
+    EventBus.getInstance().on('editor:project_updated', () => {
+      HistoryManager.getInstance().pushState(this.project);
+    });
+
+    // Undo action
+    EventBus.getInstance().on('editor:undo', async () => {
+      const restored = HistoryManager.getInstance().undo();
+      if (restored) {
+        this.project = restored;
+        this.syncAllViews();
+        await this.startEngine();
+        this.showNotification('↩️ Undo executed');
+      }
+    });
+
+    // Redo action
+    EventBus.getInstance().on('editor:redo', async () => {
+      const restored = HistoryManager.getInstance().redo();
+      if (restored) {
+        this.project = restored;
+        this.syncAllViews();
+        await this.startEngine();
+        this.showNotification('↪️ Redo executed');
+      }
+    });
+
     EventBus.getInstance().on('editor:open_file', async () => {
       const res = await FileAccessAdapter.openLocalProjectFile();
       if (res) {
         try {
           const loadedProject = ProjectSerializer.deserialize(res.content);
           this.project = loadedProject;
-          this.storyGraphView.setProject(this.project);
-          this.dialogEditor.setProject(this.project);
-          this.inspector.setProject(this.project);
+          HistoryManager.getInstance().init(loadedProject);
+          this.syncAllViews();
           await this.startEngine();
           this.showNotification(`Loaded project: "${loadedProject.title}" from local file system`);
         } catch (err: any) {
@@ -129,6 +161,7 @@ export class EditorApp {
     EventBus.getInstance().on('editor:change_preset', (preset: UIPresetType) => {
       this.project.uiConfig.preset = preset;
       UISystem.getInstance().setPreset(preset);
+      HistoryManager.getInstance().pushState(this.project);
       this.showNotification(`Interface layout set to: ${preset.toUpperCase()}`);
     });
 
@@ -145,6 +178,40 @@ export class EditorApp {
       if (targetScene) {
         StoryGraphSystem.getInstance().changeScene(sceneId);
         this.inspector.setCurrentScene(targetScene);
+      }
+    });
+  }
+
+  private syncAllViews(): void {
+    this.storyGraphView.setProject(this.project);
+    this.dialogEditor.setProject(this.project);
+    const activeScene = StoryGraphSystem.getInstance().getCurrentScene() || this.project.scenes[0];
+    this.inspector.setProject(this.project, activeScene);
+  }
+
+  private attachKeyboardShortcuts(): void {
+    window.addEventListener('keydown', (e) => {
+      // Don't trigger undo/redo if typing inside text input or textarea
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+      if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          // Redo: Ctrl+Shift+Z / Cmd+Shift+Z
+          e.preventDefault();
+          EventBus.getInstance().emit('editor:redo');
+        } else {
+          // Undo: Ctrl+Z / Cmd+Z
+          e.preventDefault();
+          EventBus.getInstance().emit('editor:undo');
+        }
+      } else if (ctrlOrCmd && e.key.toLowerCase() === 'y') {
+        // Redo: Ctrl+Y
+        e.preventDefault();
+        EventBus.getInstance().emit('editor:redo');
       }
     });
   }

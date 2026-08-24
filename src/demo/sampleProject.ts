@@ -164,6 +164,10 @@ export const sampleProject: ProjectData = {
           name: 'Mysterious Shrub',
           cursor: 'interact',
           enabled: true,
+          imageUrl: 'procedural:shrub',
+          position: { x: 1375, y: 770 },
+          scaleX: 1,
+          scaleY: 1,
           points: [
             { x: 1300, y: 720 },
             { x: 1450, y: 720 },
@@ -274,6 +278,10 @@ export const sampleProject: ProjectData = {
           name: 'Bubbling Cauldron',
           cursor: 'interact',
           enabled: true,
+          imageUrl: 'procedural:cauldron',
+          position: { x: 1200, y: 725 },
+          scaleX: 1,
+          scaleY: 1,
           points: [
             { x: 1100, y: 650 },
             { x: 1300, y: 650 },

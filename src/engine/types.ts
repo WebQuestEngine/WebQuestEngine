@@ -49,6 +49,11 @@ export interface HotspotData {
   enabled: boolean;
   requiredFlag?: string;
   notFlag?: string;
+  imageUrl?: string;
+  position?: Vector2D;
+  scaleX?: number;
+  scaleY?: number;
+  visible?: boolean;
 }
 
 export interface CharacterAnimFrame {

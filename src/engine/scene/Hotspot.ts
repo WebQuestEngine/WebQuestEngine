@@ -1,11 +1,48 @@
+import * as PIXI from 'pixi.js';
 import { Vector2D, HotspotData, VerbType, HotspotAction } from '../types';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
+import { AssetManager } from '../core/AssetManager';
 
 export class Hotspot {
   public data: HotspotData;
+  public container: PIXI.Container;
+  public sprite: PIXI.Sprite;
 
   constructor(data: HotspotData) {
     this.data = data;
+    this.container = new PIXI.Container();
+    this.sprite = new PIXI.Sprite();
+    this.container.addChild(this.sprite);
+
+    const center = this.getCenter();
+    const pos = data.position || center;
+    this.container.x = pos.x;
+    this.container.y = pos.y;
+    this.container.scale.set(data.scaleX ?? 1, data.scaleY ?? 1);
+    this.sprite.anchor.set(0.5, 0.5);
+  }
+
+  public async init(): Promise<void> {
+    if (!this.data.imageUrl) return;
+
+    const assetManager = AssetManager.getInstance();
+    if (this.data.imageUrl.startsWith('procedural:')) {
+      const type = this.data.imageUrl.replace('procedural:', '');
+      this.sprite.texture = this.createProceduralHotspotTexture(type);
+    } else {
+      this.sprite.texture = await assetManager.loadTexture(this.data.imageUrl);
+    }
+  }
+
+  public update(): void {
+    const isVisible = this.isEnabled() && (this.data.visible ?? true);
+    this.container.visible = isVisible;
+
+    const center = this.getCenter();
+    const pos = this.data.position || center;
+    this.container.x = pos.x;
+    this.container.y = pos.y;
+    this.container.scale.set(this.data.scaleX ?? 1, this.data.scaleY ?? 1);
   }
 
   public isEnabled(): boolean {
@@ -70,12 +107,42 @@ export class Hotspot {
     const verbAction = this.getActionForVerb(activeVerb);
     if (verbAction) return verbAction;
 
-    // Smart fallback order among valid actions
     const validActions = this.data.actions.filter(a => this.isActionValid(a));
     return validActions.find(a => a.verb === 'interact') ||
            validActions.find(a => a.verb === 'pick_up') ||
            validActions.find(a => a.verb === 'talk') ||
            validActions.find(a => a.verb === 'use') ||
            validActions[0];
+  }
+
+  private createProceduralHotspotTexture(type: string): PIXI.Texture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+
+    if (type === 'shrub') {
+      ctx.fillStyle = '#059669';
+      ctx.beginPath(); ctx.arc(64, 64, 50, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath(); ctx.arc(45, 45, 30, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(80, 50, 25, 0, Math.PI * 2); ctx.fill();
+      // Gleaming Key Sparkle
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath(); ctx.arc(70, 70, 8, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 'cauldron') {
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath(); ctx.ellipse(64, 80, 50, 35, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath(); ctx.ellipse(64, 60, 42, 16, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#60a5fa';
+      ctx.beginPath(); ctx.arc(50, 55, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(75, 58, 8, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(20, 20, 88, 88);
+    }
+
+    return PIXI.Texture.from(canvas);
   }
 }

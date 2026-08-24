@@ -21,6 +21,15 @@ export class Engine {
   private debugOverlay: PIXI.Graphics;
   private coinTargetHotspot: any = null;
 
+  // WYSIWYG Drag & Scale State
+  private isDragging = false;
+  private isScaling = false;
+  private dragTarget: { type: 'layer' | 'hotspot_vertex' | 'walkpath_vertex' | 'character' | 'hotspot_poly'; id?: string; index?: number; hIdx?: number } | null = null;
+  private dragStartWorld: Vector2D = { x: 0, y: 0 };
+  private dragInitialPos: Vector2D = { x: 0, y: 0 };
+  private dragInitialScale: number = 1;
+  private dragInitialDist: number = 1;
+
   constructor(container: HTMLElement) {
     this.containerElement = container;
     this.app = new PIXI.Application();
@@ -72,7 +81,7 @@ export class Engine {
     EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
       this.isEditorMode = !data.isPlayMode;
       this.renderDebugOverlay();
-      this.showNotification(this.isEditorMode ? 'Editor Mode (Character frozen)' : 'Play Mode (Game active)');
+      this.showNotification(this.isEditorMode ? 'Editor Mode (Drag & Scale enabled)' : 'Play Mode (Game active)');
     });
 
     // Coin verb listener
@@ -109,7 +118,9 @@ export class Engine {
     });
 
     // Global canvas listeners
+    this.app.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.app.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+    this.app.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
     this.app.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
     this.app.canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -118,6 +129,7 @@ export class Engine {
 
     // Mouse wheel cycles verbs in Direct Cursor and Sierra modes
     this.app.canvas.addEventListener('wheel', (e) => {
+      if (this.isEditorMode) return;
       e.preventDefault();
       const verbs: ('walk' | 'look' | 'interact' | 'talk' | 'pick_up')[] = ['walk', 'look', 'interact', 'talk', 'pick_up'];
       const current = UISystem.getInstance().activeVerb;
@@ -174,20 +186,178 @@ export class Engine {
     }
   }
 
-  private handleMouseMove(e: MouseEvent): void {
-    if (!this.currentScene) return;
-
+  private getWorldPoint(e: MouseEvent): Vector2D {
     const rect = this.app.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-
-    const worldPoint: Vector2D = {
-      x: screenX + this.camera.position.x,
-      y: screenY + this.camera.position.y
+    return {
+      x: Math.round(screenX + this.camera.position.x),
+      y: Math.round(screenY + this.camera.position.y)
     };
+  }
 
-    const hotspot = this.currentScene.findHotspotAt(worldPoint);
-    const charNPC = this.currentScene.findCharacterAt(worldPoint);
+  private handleMouseDown(e: MouseEvent): void {
+    if (!this.isEditorMode || !this.currentScene) return;
+    const worldPt = this.getWorldPoint(e);
+
+    // 1. Check selected layer corner handles for Aspect-Ratio Scaling
+    if (this.selectedLayerId) {
+      const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
+      const layerObj = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
+      if (layerData && layerObj && layerObj.sprite) {
+        const lx = layerData.x || 0;
+        const ly = layerData.y || 0;
+        const lw = (layerObj.sprite.width || 1920) * (layerData.scaleX ?? 1);
+        const lh = (layerObj.sprite.height || 1080) * (layerData.scaleY ?? 1);
+
+        // Corner handles
+        const handles = [
+          { x: lx, y: ly },
+          { x: lx + lw, y: ly },
+          { x: lx + lw, y: ly + lh },
+          { x: lx, y: ly + lh }
+        ];
+
+        for (const h of handles) {
+          if (Math.hypot(worldPt.x - h.x, worldPt.y - h.y) < 14) {
+            this.isScaling = true;
+            this.dragTarget = { type: 'layer', id: layerData.id };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { x: lx, y: ly };
+            this.dragInitialScale = layerData.scaleX ?? 1;
+            this.dragInitialDist = Math.hypot(worldPt.x - (lx + lw / 2), worldPt.y - (ly + lh / 2));
+            return;
+          }
+        }
+
+        // Check if inside selected layer rectangle for Position Dragging
+        if (worldPt.x >= lx && worldPt.x <= lx + lw && worldPt.y >= ly && worldPt.y <= ly + lh) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'layer', id: layerData.id };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { x: lx, y: ly };
+          return;
+        }
+      }
+    }
+
+    // 2. Check WalkPath vertices
+    for (const wp of this.currentScene.data.walkPaths) {
+      for (let i = 0; i < wp.points.length; i++) {
+        const pt = wp.points[i];
+        if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'walkpath_vertex', index: i };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { ...pt };
+          return;
+        }
+      }
+    }
+
+    // 3. Check Hotspot vertices and Hotspot Area
+    for (let hIdx = 0; hIdx < this.currentScene.data.hotspots.length; hIdx++) {
+      const hs = this.currentScene.data.hotspots[hIdx];
+      for (let i = 0; i < hs.points.length; i++) {
+        const pt = hs.points[i];
+        if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'hotspot_vertex', hIdx, index: i };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { ...pt };
+          return;
+        }
+      }
+
+      if (this.currentScene.findHotspotAt(worldPt)) {
+        this.isDragging = true;
+        this.dragTarget = { type: 'hotspot_poly', hIdx };
+        this.dragStartWorld = worldPt;
+        this.dragInitialPos = { x: worldPt.x, y: worldPt.y };
+        return;
+      }
+    }
+
+    // 4. Check Characters / NPCs
+    const char = this.currentScene.findCharacterAt(worldPt);
+    if (char) {
+      this.isDragging = true;
+      this.dragTarget = { type: 'character', id: char.data.id };
+      this.dragStartWorld = worldPt;
+      this.dragInitialPos = { x: char.container.x, y: char.container.y };
+      return;
+    }
+  }
+
+  private handleMouseMove(e: MouseEvent): void {
+    if (!this.currentScene) return;
+    const worldPt = this.getWorldPoint(e);
+
+    // Perform Drag or Scale in Editor mode
+    if (this.isEditorMode && (this.isDragging || this.isScaling) && this.dragTarget) {
+      const dx = worldPt.x - this.dragStartWorld.x;
+      const dy = worldPt.y - this.dragStartWorld.y;
+
+      if (this.dragTarget.type === 'layer' && this.dragTarget.id) {
+        const layerData = this.currentScene.data.layers.find(l => l.id === this.dragTarget!.id);
+        const layerObj = this.currentScene.layers.find(l => l.data.id === this.dragTarget!.id);
+
+        if (layerData && layerObj) {
+          if (this.isScaling && layerObj.sprite) {
+            // Keep Aspect Ratio: scaleX === scaleY
+            const lx = layerData.x || 0;
+            const ly = layerData.y || 0;
+            const lw = (layerObj.sprite.width || 1920) * (layerData.scaleX ?? 1);
+            const lh = (layerObj.sprite.height || 1080) * (layerData.scaleY ?? 1);
+            const currentDist = Math.hypot(worldPt.x - (lx + lw / 2), worldPt.y - (ly + lh / 2));
+
+            const aspectScale = Math.max(0.05, Math.round((this.dragInitialScale * (currentDist / (this.dragInitialDist || 1))) * 100) / 100);
+            layerData.scaleX = aspectScale;
+            layerData.scaleY = aspectScale; // Strictly preserve aspect ratio!
+          } else {
+            layerData.x = Math.round(this.dragInitialPos.x + dx);
+            layerData.y = Math.round(this.dragInitialPos.y + dy);
+          }
+        }
+      } else if (this.dragTarget.type === 'walkpath_vertex' && this.dragTarget.index !== undefined) {
+        const wp = this.currentScene.data.walkPaths[0];
+        if (wp && wp.points[this.dragTarget.index]) {
+          wp.points[this.dragTarget.index].x = worldPt.x;
+          wp.points[this.dragTarget.index].y = worldPt.y;
+        }
+      } else if (this.dragTarget.type === 'hotspot_vertex' && this.dragTarget.hIdx !== undefined && this.dragTarget.index !== undefined) {
+        const hs = this.currentScene.data.hotspots[this.dragTarget.hIdx];
+        if (hs && hs.points[this.dragTarget.index]) {
+          hs.points[this.dragTarget.index].x = worldPt.x;
+          hs.points[this.dragTarget.index].y = worldPt.y;
+        }
+      } else if (this.dragTarget.type === 'hotspot_poly' && this.dragTarget.hIdx !== undefined) {
+        const hs = this.currentScene.data.hotspots[this.dragTarget.hIdx];
+        if (hs) {
+          for (const pt of hs.points) {
+            pt.x += dx;
+            pt.y += dy;
+          }
+          this.dragStartWorld = worldPt;
+        }
+      } else if (this.dragTarget.type === 'character' && this.dragTarget.id) {
+        const charData = this.currentScene.data.characters.find(c => c.id === this.dragTarget!.id);
+        const charObj = this.currentScene.characters.get(this.dragTarget!.id);
+        if (charData && charObj) {
+          charData.position.x = Math.round(this.dragInitialPos.x + dx);
+          charData.position.y = Math.round(this.dragInitialPos.y + dy);
+          charObj.container.x = charData.position.x;
+          charObj.container.y = charData.position.y;
+        }
+      }
+
+      this.renderDebugOverlay();
+      return;
+    }
+
+    // Hover tooltip processing
+    const hotspot = this.currentScene.findHotspotAt(worldPt);
+    const charNPC = this.currentScene.findCharacterAt(worldPt);
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
     const activeVerb = UISystem.getInstance().activeVerb;
 
@@ -229,17 +399,18 @@ export class Engine {
     }
   }
 
+  private handleMouseUp(e: MouseEvent): void {
+    if (this.isDragging || this.isScaling) {
+      this.isDragging = false;
+      this.isScaling = false;
+      this.dragTarget = null;
+      EventBus.getInstance().emit('editor:project_updated');
+    }
+  }
+
   private handleCanvasClick(e: MouseEvent): void {
-    if (!this.currentScene || DialogSystem.getInstance().isActive()) return;
-
-    const rect = this.app.canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    const worldPoint: Vector2D = {
-      x: Math.round(screenX + this.camera.position.x),
-      y: Math.round(screenY + this.camera.position.y)
-    };
+    if (this.isEditorMode || !this.currentScene || DialogSystem.getInstance().isActive()) return;
+    const worldPoint = this.getWorldPoint(e);
 
     const activeVerb = UISystem.getInstance().activeVerb;
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
@@ -270,8 +441,9 @@ export class Engine {
 
     // Context coin mode opening ONLY when NO item is selected
     if (!selectedItem && (hotspot || charNPC) && UISystem.getInstance().config.preset === 'context_coin') {
+      const rect = this.app.canvas.getBoundingClientRect();
       this.coinTargetHotspot = hotspot;
-      UISystem.getInstance().showContextCoin(screenX, screenY);
+      UISystem.getInstance().showContextCoin(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
 
@@ -312,16 +484,11 @@ export class Engine {
   }
 
   private handleCanvasRightClick(e: MouseEvent): void {
-    if (!this.currentScene) return;
-
+    if (this.isEditorMode || !this.currentScene) return;
     const rect = this.app.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-
-    const worldPoint: Vector2D = {
-      x: Math.round(screenX + this.camera.position.x),
-      y: Math.round(screenY + this.camera.position.y)
-    };
+    const worldPoint = this.getWorldPoint(e);
 
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
@@ -338,17 +505,11 @@ export class Engine {
 
   private handleCanvasDrop(e: DragEvent): void {
     e.preventDefault();
+    if (this.isEditorMode || !this.currentScene) return;
     const itemId = e.dataTransfer?.getData('text/plain') || InventorySystem.getInstance().getSelectedItem()?.id;
-    if (!itemId || !this.currentScene) return;
+    if (!itemId) return;
 
-    const rect = this.app.canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    const worldPoint: Vector2D = {
-      x: Math.round(screenX + this.camera.position.x),
-      y: Math.round(screenY + this.camera.position.y)
-    };
+    const worldPoint = this.getWorldPoint(e as any);
 
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
     if (hotspot) {
@@ -406,13 +567,29 @@ export class Engine {
         this.debugOverlay.stroke({ color: 0x0891b2, width: 2, alpha: 0.8 });
 
         for (const pt of wp.points) {
-          this.debugOverlay.circle(pt.x, pt.y, 5);
+          this.debugOverlay.circle(pt.x, pt.y, 6);
           this.debugOverlay.fill({ color: 0x22d3ee });
+          this.debugOverlay.stroke({ color: 0xffffff, width: 1.5 });
         }
       }
     }
 
-    // Draw Selected Layer Transform Box
+    // Draw Hotspots
+    for (const hs of this.currentScene.data.hotspots) {
+      if (hs.points.length >= 3) {
+        this.debugOverlay.poly(hs.points.flatMap(p => [p.x, p.y]));
+        this.debugOverlay.fill({ color: 0xfbbf24, alpha: 0.2 });
+        this.debugOverlay.stroke({ color: 0xd97706, width: 2, alpha: 0.9 });
+
+        for (const pt of hs.points) {
+          this.debugOverlay.circle(pt.x, pt.y, 5);
+          this.debugOverlay.fill({ color: 0xfef08a });
+          this.debugOverlay.stroke({ color: 0xd97706, width: 1.5 });
+        }
+      }
+    }
+
+    // Draw Selected Layer Aspect-Ratio Scale & Move Handles
     if (this.selectedLayerId && this.currentScene) {
       const selectedLayer = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
       if (selectedLayer && selectedLayer.sprite) {
@@ -423,9 +600,8 @@ export class Engine {
 
         this.debugOverlay.rect(lx, ly, lw, lh);
         this.debugOverlay.stroke({ color: 0xa855f7, width: 3, alpha: 0.9 });
-        this.debugOverlay.fill({ color: 0xa855f7, alpha: 0.1 });
+        this.debugOverlay.fill({ color: 0xa855f7, alpha: 0.12 });
 
-        // Corner scale handles
         const handles = [
           { x: lx, y: ly },
           { x: lx + lw, y: ly },
@@ -434,9 +610,9 @@ export class Engine {
         ];
 
         for (const h of handles) {
-          this.debugOverlay.rect(h.x - 6, h.y - 6, 12, 12);
+          this.debugOverlay.rect(h.x - 7, h.y - 7, 14, 14);
           this.debugOverlay.fill({ color: 0xc084fc });
-          this.debugOverlay.stroke({ color: 0xffffff, width: 1.5 });
+          this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
         }
       }
     }
