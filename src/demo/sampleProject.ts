@@ -128,26 +128,34 @@ export const sampleProject: ProjectData = {
           actions: [
             {
               verb: 'look',
+              notFlag: 'labUnlocked',
               text: 'A heavy oak door reinforced with iron bands. It requires a brass key.'
+            },
+            {
+              verb: 'look',
+              requiredFlag: 'labUnlocked',
+              text: 'A heavy oak door. It stands unlocked and slightly ajar.'
             },
             {
               verb: 'interact',
               requiredFlag: 'labUnlocked',
               targetSceneId: 'scene_lab',
               targetSpawnPoint: { x: 300, y: 800 },
-              text: 'You open the unlocked oak door and enter the laboratory.'
+              text: 'You open the unlocked oak door and step into the laboratory.'
             },
             {
               verb: 'interact',
+              notFlag: 'labUnlocked',
               text: 'The door is locked tight. You need to use a brass key to unlock it.'
             },
             {
               verb: 'use',
               requireItemId: 'item_key',
+              notFlag: 'labUnlocked',
               targetSceneId: 'scene_lab',
               targetSpawnPoint: { x: 300, y: 800 },
               setFlag: 'labUnlocked',
-              text: 'You unlock the heavy oak door with the Brass Key!'
+              text: 'You turn the Brass Key in the lock! The oak door unlocks and opens.'
             }
           ]
         },
@@ -165,19 +173,37 @@ export const sampleProject: ProjectData = {
           actions: [
             {
               verb: 'look',
-              text: 'A dense thorny shrub. Something gleams inside!'
+              notFlag: 'hasKey',
+              text: 'A dense thorny shrub. Something brass gleams inside!'
+            },
+            {
+              verb: 'look',
+              requiredFlag: 'hasKey',
+              text: 'A dense thorny shrub. You have already retrieved the Brass Key from inside.'
             },
             {
               verb: 'pick_up',
-              giveItemId: 'item_key',
-              setFlag: 'hasKey',
-              text: 'You reached inside the shrub and found a Brass Key!'
-            },
-            {
-              verb: 'interact',
+              notFlag: 'hasKey',
               giveItemId: 'item_key',
               setFlag: 'hasKey',
               text: 'You reach inside the thorny shrub and pull out a Brass Key!'
+            },
+            {
+              verb: 'pick_up',
+              requiredFlag: 'hasKey',
+              text: 'You search the shrub again, but there is nothing else inside.'
+            },
+            {
+              verb: 'interact',
+              notFlag: 'hasKey',
+              giveItemId: 'item_key',
+              setFlag: 'hasKey',
+              text: 'You reach inside the thorny shrub and pull out a Brass Key!'
+            },
+            {
+              verb: 'interact',
+              requiredFlag: 'hasKey',
+              text: 'You search the shrub again, but there is nothing else inside.'
             }
           ]
         }
@@ -257,14 +283,20 @@ export const sampleProject: ProjectData = {
           actions: [
             {
               verb: 'look',
-              text: 'A glowing cauldron brewing a magical elixir.'
+              notFlag: 'brewedPotion',
+              text: 'A glowing cauldron bubbling with ancient alchemical ingredients.'
+            },
+            {
+              verb: 'look',
+              requiredFlag: 'brewedPotion',
+              text: 'The cauldron sparkles with remaining traces of the Elixir of Wisdom!'
             },
             {
               verb: 'use',
               requireItemId: 'item_crystal',
               giveItemId: 'item_potion',
               setFlag: 'brewedPotion',
-              text: 'You drop the Glowing Crystal into the cauldron and brew the Elixir of Wisdom!'
+              text: 'You drop the Glowing Crystal into the bubbling cauldron. Pure golden light flashes as you brew the Elixir of Wisdom!'
             }
           ]
         },
@@ -364,19 +396,19 @@ export const sampleProject: ProjectData = {
       id: 'item_key',
       name: 'Brass Key',
       description: 'An ornate brass key found in the shrub outside the castle.',
-      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%23fbbf24" stroke-width="2"><path d="M21 2l-2 2m-1.5 1.5L4 19.5a2.12 2.12 0 0 1-3-3L14.5 3.5M18 6l3 3"/></svg>'
+      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="%23fbbf24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-1.5 1.5L4 19.5a2.12 2.12 0 0 1-3-3L14.5 3.5M18 6l3 3"/><circle cx="7.5" cy="16.5" r="2.5" fill="%23fbbf24" opacity="0.3"/></svg>'
     },
     {
       id: 'item_crystal',
       name: 'Glowing Crystal',
       description: 'A magical blue crystal given by Master Eldrin.',
-      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%2360a5fa" stroke-width="2"><polygon points="12 2 19 9 12 22 5 9 12 2"/></svg>'
+      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="%2338bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 9 12 22 5 9 12 2" fill="%230284c7" opacity="0.5"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="5" y1="9" x2="19" y2="9"/></svg>'
     },
     {
       id: 'item_potion',
       name: 'Elixir of Wisdom',
       description: 'A sparkling potion brewed in Eldrin’s cauldron.',
-      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%23ec4899" stroke-width="2"><path d="M9 3h6m-3 0v4m-5 4a6 6 0 0 0 10 0l-1-4H8l-1 4z"/></svg>'
+      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="%23f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6m-3 0v4m-5 4a6 6 0 0 0 10 0l-1-4H8l-1 4z" fill="%23e11d48" opacity="0.6"/><circle cx="12" cy="14" r="2" fill="%23fef08a"/></svg>'
     }
   ],
   dialogs: [

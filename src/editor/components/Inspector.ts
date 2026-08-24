@@ -6,6 +6,7 @@ export class Inspector {
   private project: ProjectData | null = null;
   private currentScene: SceneData | null = null;
   private activeTab: 'scene' | 'walkpath' | 'hotspots' | 'items' | 'ui' = 'scene';
+  public selectedLayerId: string | null = null;
 
   constructor() {
     this.element = document.createElement('div');
@@ -93,26 +94,51 @@ export class Inspector {
 
       <div class="sidebar-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <div class="sidebar-section-title" style="margin-bottom:0;">Layers (${this.currentScene.layers.length})</div>
+          <div class="sidebar-section-title" style="margin-bottom:0;">Parallax Layers (${this.currentScene.layers.length})</div>
           <button class="btn btn-primary" id="btn-add-layer" style="font-size:0.75rem; padding:4px 8px;">+ Add Layer</button>
         </div>
         ${this.currentScene.layers.map((l, index) => `
-          <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <input type="text" class="form-input layer-name" data-idx="${index}" value="${l.name}" style="font-weight:700; width:70%; font-size:0.8rem;" />
-              <button class="btn btn-del-layer" data-idx="${index}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
+          <div class="layer-card ${this.selectedLayerId === l.id ? 'selected-layer' : ''}" data-id="${l.id}" style="background: rgba(0,0,0,0.3); border: ${this.selectedLayerId === l.id ? '2px solid var(--accent-purple)' : '1px solid var(--panel-border)'}; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <input type="text" class="form-input layer-name" data-idx="${index}" value="${l.name}" style="font-weight:700; width:55%; font-size:0.8rem;" />
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-move-layer-up" data-idx="${index}" title="Move Up" style="padding:2px 5px; font-size:0.65rem;">⬆️</button>
+                <button class="btn btn-move-layer-down" data-idx="${index}" title="Move Down" style="padding:2px 5px; font-size:0.65rem;">⬇️</button>
+                <button class="btn btn-del-layer" data-idx="${index}" title="Delete" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
+              </div>
             </div>
-            <div style="margin-top:6px;">
-              <label style="font-size:0.7rem; color:var(--text-muted);">Image Source / Local Upload</label>
+
+            <div style="margin-bottom:6px;">
+              <label style="font-size:0.65rem; color:var(--text-muted);">Image Source / Local File</label>
               <div style="display:flex; gap:6px;">
                 <input type="text" class="form-input layer-url" data-idx="${index}" value="${l.imageUrl}" style="font-size:0.75rem; flex:1;" />
-                <label class="btn btn-primary" style="font-size:0.75rem; padding:4px 8px; cursor:pointer;">
+                <label class="btn btn-primary" style="font-size:0.7rem; padding:4px 8px; cursor:pointer;" title="Upload custom image from computer">
                   📁
                   <input type="file" class="layer-file-input" data-idx="${index}" accept="image/*" style="display:none;" />
                 </label>
               </div>
             </div>
-            <div style="display:flex; gap:6px; margin-top:6px;">
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
+                <input type="number" class="form-input layer-pos-x" data-idx="${index}" value="${l.x || 0}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
+                <input type="number" class="form-input layer-pos-y" data-idx="${index}" value="${l.y || 0}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
+                <input type="number" step="0.05" class="form-input layer-scale-x" data-idx="${index}" value="${l.scaleX ?? 1}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
+                <input type="number" step="0.05" class="form-input layer-scale-y" data-idx="${index}" value="${l.scaleY ?? 1}" style="font-size:0.75rem;" />
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
               <div>
                 <label style="font-size:0.65rem; color:var(--text-muted);">Parallax X</label>
                 <input type="number" step="0.1" class="form-input layer-px" data-idx="${index}" value="${l.parallaxX}" style="font-size:0.75rem;" />
@@ -121,10 +147,16 @@ export class Inspector {
                 <label style="font-size:0.65rem; color:var(--text-muted);">Parallax Y</label>
                 <input type="number" step="0.1" class="form-input layer-py" data-idx="${index}" value="${l.parallaxY}" style="font-size:0.75rem;" />
               </div>
-              <div>
-                <label style="font-size:0.65rem; color:var(--text-muted);">Z-Index</label>
-                <input type="number" class="form-input layer-z" data-idx="${index}" value="${l.zIndex}" style="font-size:0.75rem;" />
+            </div>
+
+            <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+              <div style="flex:1; margin-right:10px;">
+                <label style="font-size:0.65rem; color:var(--text-muted);">Opacity (${Math.round(l.opacity * 100)}%)</label>
+                <input type="range" min="0" max="1" step="0.05" class="layer-opacity" data-idx="${index}" value="${l.opacity}" style="width:100%;" />
               </div>
+              <button class="btn btn-toggle-vis" data-idx="${index}" style="font-size:0.7rem; padding:4px 8px;">
+                ${l.visible ? '👁️ Visible' : '🙈 Hidden'}
+              </button>
             </div>
           </div>
         `).join('')}
@@ -242,8 +274,14 @@ export class Inspector {
               <button class="btn btn-del-item" data-idx="${idx}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
             </div>
             <div style="margin-top:4px;">
-              <label style="font-size:0.65rem; color:var(--text-muted);">Item ID</label>
-              <input type="text" class="form-input item-id" data-idx="${idx}" value="${item.id}" style="font-size:0.75rem;" />
+              <label style="font-size:0.65rem; color:var(--text-muted);">Icon Source / Local Upload</label>
+              <div style="display:flex; gap:6px;">
+                <input type="text" class="form-input item-icon-url" data-idx="${idx}" value="${item.iconUrl}" style="font-size:0.7rem; flex:1;" />
+                <label class="btn btn-primary" style="font-size:0.7rem; padding:3px 6px; cursor:pointer;">
+                  📁
+                  <input type="file" class="item-icon-file" data-idx="${idx}" accept="image/*" style="display:none;" />
+                </label>
+              </div>
             </div>
             <div style="margin-top:4px;">
               <label style="font-size:0.65rem; color:var(--text-muted);">Description</label>
@@ -330,9 +368,89 @@ export class Inspector {
       });
     });
 
+    // Layer selection
+    this.element.querySelectorAll('.layer-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const id = (e.currentTarget as HTMLElement).dataset.id!;
+        this.selectedLayerId = id;
+        this.renderContent();
+        EventBus.getInstance().emit('editor:select_layer', id);
+      });
+    });
+
+    // Layer Position X/Y, Scale X/Y, Parallax X/Y
+    const bindLayerNum = (selector: string, key: keyof LayerData, isFloat = false) => {
+      this.element.querySelectorAll(selector).forEach(input => {
+        input.addEventListener('input', (e) => {
+          const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+          const val = isFloat ? parseFloat((e.target as HTMLInputElement).value) : parseInt((e.target as HTMLInputElement).value);
+          (this.currentScene!.layers[idx] as any)[key] = isNaN(val) ? 0 : val;
+          emitUpdate();
+        });
+      });
+    };
+
+    bindLayerNum('.layer-pos-x', 'x');
+    bindLayerNum('.layer-pos-y', 'y');
+    bindLayerNum('.layer-scale-x', 'scaleX', true);
+    bindLayerNum('.layer-scale-y', 'scaleY', true);
+    bindLayerNum('.layer-px', 'parallaxX', true);
+    bindLayerNum('.layer-py', 'parallaxY', true);
+
+    // Layer opacity
+    this.element.querySelectorAll('.layer-opacity').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        this.currentScene!.layers[idx].opacity = parseFloat((e.target as HTMLInputElement).value);
+        emitUpdate();
+      });
+    });
+
+    // Layer visibility toggle
+    this.element.querySelectorAll('.btn-toggle-vis').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
+        this.currentScene!.layers[idx].visible = !this.currentScene!.layers[idx].visible;
+        this.renderContent();
+        emitUpdate();
+      });
+    });
+
+    // Move Layer Up
+    this.element.querySelectorAll('.btn-move-layer-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
+        if (idx > 0) {
+          const temp = this.currentScene!.layers[idx];
+          this.currentScene!.layers[idx] = this.currentScene!.layers[idx - 1];
+          this.currentScene!.layers[idx - 1] = temp;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Move Layer Down
+    this.element.querySelectorAll('.btn-move-layer-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
+        if (idx < this.currentScene!.layers.length - 1) {
+          const temp = this.currentScene!.layers[idx];
+          this.currentScene!.layers[idx] = this.currentScene!.layers[idx + 1];
+          this.currentScene!.layers[idx + 1] = temp;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
     // Delete Layer
     this.element.querySelectorAll('.btn-del-layer').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
         this.currentScene!.layers.splice(idx, 1);
         this.renderContent();
@@ -393,6 +511,25 @@ export class Inspector {
         this.project!.items.splice(idx, 1);
         this.renderContent();
         emitUpdate();
+      });
+    });
+
+    // Item icon file upload
+    this.element.querySelectorAll('.item-icon-file').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files[0]) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            if (ev.target?.result) {
+              this.project!.items[idx].iconUrl = ev.target.result as string;
+              this.renderContent();
+              emitUpdate();
+            }
+          };
+          reader.readAsDataURL(files[0]);
+        }
       });
     });
 

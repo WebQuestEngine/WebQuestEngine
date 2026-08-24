@@ -476,6 +476,26 @@ body {
   font-weight: 600;
 }
 
+.direct-verb-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 4px 8px;
+  display: flex;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+}
+
+.direct-verb-bar .verb-btn {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
 .hidden {
   display: none !important;
 }

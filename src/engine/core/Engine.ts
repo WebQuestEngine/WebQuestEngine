@@ -15,6 +15,7 @@ export class Engine {
   public isRunning = false;
   public containerElement: HTMLElement;
   public isEditorMode = true;
+  public selectedLayerId: string | null = null;
 
   private project: ProjectData | null = null;
   private debugOverlay: PIXI.Graphics;
@@ -94,6 +95,12 @@ export class Engine {
       }
     });
 
+    // Select layer handler
+    EventBus.getInstance().on('editor:select_layer', (layerId: string) => {
+      this.selectedLayerId = layerId;
+      this.renderDebugOverlay();
+    });
+
     // Project updated handler
     EventBus.getInstance().on('editor:project_updated', async () => {
       if (this.currentScene) {
@@ -107,6 +114,19 @@ export class Engine {
     this.app.canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.handleCanvasRightClick(e);
+    });
+
+    // Mouse wheel cycles verbs in Direct Cursor and Sierra modes
+    this.app.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const verbs: ('walk' | 'look' | 'interact' | 'talk' | 'pick_up')[] = ['walk', 'look', 'interact', 'talk', 'pick_up'];
+      const current = UISystem.getInstance().activeVerb;
+      const idx = verbs.indexOf(current as any);
+      const nextIdx = e.deltaY > 0 ? (idx + 1) % verbs.length : (idx - 1 + verbs.length) % verbs.length;
+      const nextVerb = verbs[nextIdx];
+
+      InventorySystem.getInstance().selectItem(null);
+      UISystem.getInstance().setActiveVerb(nextVerb);
     });
 
     // Drag & Drop onto WebGL canvas
@@ -392,16 +412,31 @@ export class Engine {
       }
     }
 
-    // Draw Hotspots
-    for (const hs of this.currentScene.data.hotspots) {
-      if (hs.points.length >= 3) {
-        this.debugOverlay.poly(hs.points.flatMap(p => [p.x, p.y]));
-        this.debugOverlay.fill({ color: 0xfbbf24, alpha: 0.2 });
-        this.debugOverlay.stroke({ color: 0xd97706, width: 2, alpha: 0.9 });
+    // Draw Selected Layer Transform Box
+    if (this.selectedLayerId && this.currentScene) {
+      const selectedLayer = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
+      if (selectedLayer && selectedLayer.sprite) {
+        const lx = selectedLayer.data.x || 0;
+        const ly = selectedLayer.data.y || 0;
+        const lw = (selectedLayer.sprite.width || 1920) * (selectedLayer.data.scaleX ?? 1);
+        const lh = (selectedLayer.sprite.height || 1080) * (selectedLayer.data.scaleY ?? 1);
 
-        for (const pt of hs.points) {
-          this.debugOverlay.circle(pt.x, pt.y, 4);
-          this.debugOverlay.fill({ color: 0xfef08a });
+        this.debugOverlay.rect(lx, ly, lw, lh);
+        this.debugOverlay.stroke({ color: 0xa855f7, width: 3, alpha: 0.9 });
+        this.debugOverlay.fill({ color: 0xa855f7, alpha: 0.1 });
+
+        // Corner scale handles
+        const handles = [
+          { x: lx, y: ly },
+          { x: lx + lw, y: ly },
+          { x: lx + lw, y: ly + lh },
+          { x: lx, y: ly + lh }
+        ];
+
+        for (const h of handles) {
+          this.debugOverlay.rect(h.x - 6, h.y - 6, 12, 12);
+          this.debugOverlay.fill({ color: 0xc084fc });
+          this.debugOverlay.stroke({ color: 0xffffff, width: 1.5 });
         }
       }
     }

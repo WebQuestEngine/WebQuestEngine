@@ -152,6 +152,12 @@ export class UISystem {
 
   private getDirectCursorHTML(): string {
     return `
+      <div class="direct-verb-bar">
+        <button class="verb-btn active" data-verb="walk" title="Walk">🥾 Walk</button>
+        <button class="verb-btn" data-verb="look" title="Look">👁️ Look</button>
+        <button class="verb-btn" data-verb="interact" title="Interact/Use">✋ Use</button>
+        <button class="verb-btn" data-verb="talk" title="Talk">💬 Talk</button>
+      </div>
       <button class="floating-inv-btn" id="ui-floating-inv">🎒 Inventory</button>
       <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
       <div class="inventory-drawer hidden" id="ui-inventory-modal">

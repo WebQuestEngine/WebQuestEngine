@@ -1,4 +1,5 @@
 import { Vector2D, HotspotData, VerbType, HotspotAction } from '../types';
+import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 
 export class Hotspot {
   public data: HotspotData;
@@ -7,8 +8,16 @@ export class Hotspot {
     this.data = data;
   }
 
+  public isEnabled(): boolean {
+    if (!this.data.enabled) return false;
+    const storySystem = StoryGraphSystem.getInstance();
+    if (this.data.requiredFlag && !storySystem.getFlag(this.data.requiredFlag)) return false;
+    if (this.data.notFlag && storySystem.getFlag(this.data.notFlag)) return false;
+    return true;
+  }
+
   public containsPoint(p: Vector2D): boolean {
-    if (!this.data.enabled || this.data.points.length < 3) return false;
+    if (!this.isEnabled() || this.data.points.length < 3) return false;
 
     let inside = false;
     const pts = this.data.points;
@@ -37,12 +46,19 @@ export class Hotspot {
     };
   }
 
+  private isActionValid(action: HotspotAction): boolean {
+    const storySystem = StoryGraphSystem.getInstance();
+    if (action.requiredFlag && !storySystem.getFlag(action.requiredFlag)) return false;
+    if (action.notFlag && storySystem.getFlag(action.notFlag)) return false;
+    return true;
+  }
+
   public getActionForVerb(verb: VerbType): HotspotAction | undefined {
-    return this.data.actions.find(a => a.verb === verb);
+    return this.data.actions.find(a => a.verb === verb && this.isActionValid(a));
   }
 
   public getActionForItemId(itemId: string): HotspotAction | undefined {
-    return this.data.actions.find(a => a.requireItemId === itemId);
+    return this.data.actions.find(a => a.requireItemId === itemId && this.isActionValid(a));
   }
 
   public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
@@ -54,11 +70,12 @@ export class Hotspot {
     const verbAction = this.getActionForVerb(activeVerb);
     if (verbAction) return verbAction;
 
-    // Smart fallback order
-    return this.data.actions.find(a => a.verb === 'interact') ||
-           this.data.actions.find(a => a.verb === 'pick_up') ||
-           this.data.actions.find(a => a.verb === 'talk') ||
-           this.data.actions.find(a => a.verb === 'use') ||
-           this.data.actions[0];
+    // Smart fallback order among valid actions
+    const validActions = this.data.actions.filter(a => this.isActionValid(a));
+    return validActions.find(a => a.verb === 'interact') ||
+           validActions.find(a => a.verb === 'pick_up') ||
+           validActions.find(a => a.verb === 'talk') ||
+           validActions.find(a => a.verb === 'use') ||
+           validActions[0];
   }
 }

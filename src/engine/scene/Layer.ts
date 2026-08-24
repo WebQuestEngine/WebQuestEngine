@@ -27,8 +27,16 @@ export class Layer {
   }
 
   public updateParallax(cameraX: number, cameraY: number): void {
-    this.container.x = -cameraX * this.data.parallaxX;
-    this.container.y = -cameraY * this.data.parallaxY;
+    const offsetX = this.data.x || 0;
+    const offsetY = this.data.y || 0;
+    const scaleX = this.data.scaleX ?? 1;
+    const scaleY = this.data.scaleY ?? 1;
+
+    this.container.x = offsetX - cameraX * this.data.parallaxX;
+    this.container.y = offsetY - cameraY * this.data.parallaxY;
+    this.container.scale.set(scaleX, scaleY);
+    this.container.alpha = this.data.opacity;
+    this.container.visible = this.data.visible;
   }
 
   private createProceduralLayerTexture(type: string): PIXI.Texture {

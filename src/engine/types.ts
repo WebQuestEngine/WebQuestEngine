@@ -36,6 +36,7 @@ export interface HotspotAction {
   setFlag?: string;
   clearFlag?: string;
   requiredFlag?: string;
+  notFlag?: string;
   customScript?: string;
 }
 
@@ -47,6 +48,7 @@ export interface HotspotData {
   actions: HotspotAction[];
   enabled: boolean;
   requiredFlag?: string;
+  notFlag?: string;
 }
 
 export interface CharacterAnimFrame {
@@ -99,6 +101,10 @@ export interface LayerData {
   zIndex: number;
   opacity: number;
   visible: boolean;
+  x?: number;
+  y?: number;
+  scaleX?: number;
+  scaleY?: number;
 }
 
 export interface SceneData {
@@ -148,7 +154,7 @@ export interface StoryNodeData {
   name: string;
   description: string;
   position: Vector2D;
-  connections: string[]; // target StoryNode ids
+  connections: string[];
   conditionFlag?: string;
 }
 
