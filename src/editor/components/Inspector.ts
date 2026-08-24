@@ -103,8 +103,14 @@ export class Inspector {
               <button class="btn btn-del-layer" data-idx="${index}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
             </div>
             <div style="margin-top:6px;">
-              <label style="font-size:0.7rem; color:var(--text-muted);">Image URL / Preset</label>
-              <input type="text" class="form-input layer-url" data-idx="${index}" value="${l.imageUrl}" style="font-size:0.75rem;" />
+              <label style="font-size:0.7rem; color:var(--text-muted);">Image Source / Local Upload</label>
+              <div style="display:flex; gap:6px;">
+                <input type="text" class="form-input layer-url" data-idx="${index}" value="${l.imageUrl}" style="font-size:0.75rem; flex:1;" />
+                <label class="btn btn-primary" style="font-size:0.75rem; padding:4px 8px; cursor:pointer;">
+                  📁
+                  <input type="file" class="layer-file-input" data-idx="${index}" accept="image/*" style="display:none;" />
+                </label>
+              </div>
             </div>
             <div style="display:flex; gap:6px; margin-top:6px;">
               <div>
@@ -303,6 +309,25 @@ export class Inspector {
       });
       this.renderContent();
       emitUpdate();
+    });
+
+    // Layer file upload
+    this.element.querySelectorAll('.layer-file-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files[0]) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            if (ev.target?.result) {
+              this.currentScene!.layers[idx].imageUrl = ev.target.result as string;
+              this.renderContent();
+              emitUpdate();
+            }
+          };
+          reader.readAsDataURL(files[0]);
+        }
+      });
     });
 
     // Delete Layer

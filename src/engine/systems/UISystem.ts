@@ -269,13 +269,35 @@ export class UISystem {
       const slot = document.createElement('div');
       slot.className = `inv-item-slot ${selectedItem && selectedItem.id === item.id ? 'selected' : ''}`;
       slot.dataset.id = item.id;
-      slot.title = item.name;
+      slot.title = `${item.name} (Click to select, or drag onto scene)`;
+      slot.draggable = true;
 
       slot.innerHTML = `
         <img src="${item.iconUrl}" alt="${item.name}" onError="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'40\\' height=\\'40\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'gold\\' stroke-width=\\'2\\'><circle cx=\\'12\\' cy=\\'12\\' r=\\'10\\'/></svg>'" />
         <span class="inv-item-label">${item.name}</span>
       `;
 
+      // Drag & Drop
+      slot.addEventListener('dragstart', (e) => {
+        InventorySystem.getInstance().selectItem(item.id);
+        this.setActiveVerb('use');
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', item.id);
+          e.dataTransfer.effectAllowed = 'copyMove';
+        }
+      });
+
+      slot.addEventListener('dragover', (e) => e.preventDefault());
+
+      slot.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const draggedId = e.dataTransfer?.getData('text/plain');
+        if (draggedId && draggedId !== item.id) {
+          InventorySystem.getInstance().combineItems(draggedId, item.id);
+        }
+      });
+
+      // Click select
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
         const currentSelected = InventorySystem.getInstance().getSelectedItem();

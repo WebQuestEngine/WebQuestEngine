@@ -287,6 +287,32 @@ export const sampleProject: ProjectData = {
               text: 'You step back out into the courtyard.'
             }
           ]
+        },
+        {
+          id: 'hs_eldrin',
+          name: 'Master Eldrin',
+          cursor: 'talk',
+          enabled: true,
+          points: [
+            { x: 860, y: 620 },
+            { x: 940, y: 620 },
+            { x: 940, y: 730 },
+            { x: 860, y: 730 }
+          ],
+          actions: [
+            {
+              verb: 'look',
+              text: 'Master Eldrin the Alchemist, wearing blue robes and holding an ancient staff.'
+            },
+            {
+              verb: 'talk',
+              dialogId: 'dlg_eldrin'
+            },
+            {
+              verb: 'interact',
+              dialogId: 'dlg_eldrin'
+            }
+          ]
         }
       ],
       characters: [

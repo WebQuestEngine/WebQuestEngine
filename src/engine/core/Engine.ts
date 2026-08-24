@@ -18,6 +18,7 @@ export class Engine {
 
   private project: ProjectData | null = null;
   private debugOverlay: PIXI.Graphics;
+  private coinTargetHotspot: any = null;
 
   constructor(container: HTMLElement) {
     this.containerElement = container;
@@ -70,6 +71,27 @@ export class Engine {
     EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
       this.isEditorMode = !data.isPlayMode;
       this.renderDebugOverlay();
+      this.showNotification(this.isEditorMode ? 'Editor Mode (Character frozen)' : 'Play Mode (Game active)');
+    });
+
+    // Coin verb listener
+    EventBus.getInstance().on('ui:coin_verb', (verb: any) => {
+      if (this.coinTargetHotspot) {
+        const action = this.coinTargetHotspot.getBestAction(verb);
+        const player = this.currentScene?.playerCharacter;
+        const walkPath = this.currentScene?.getWalkPath();
+
+        if (action) {
+          if (!this.isEditorMode && player) {
+            player.walkTo(this.coinTargetHotspot.getCenter(), walkPath, () => {
+              this.executeAction(action);
+            });
+          } else {
+            this.executeAction(action);
+          }
+        }
+        this.coinTargetHotspot = null;
+      }
     });
 
     // Project updated handler
@@ -86,6 +108,14 @@ export class Engine {
       e.preventDefault();
       this.handleCanvasRightClick(e);
     });
+
+    // Drag & Drop onto WebGL canvas
+    this.app.canvas.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+
+    this.app.canvas.addEventListener('drop', (e) => this.handleCanvasDrop(e));
 
     // Start loop
     this.app.ticker.add((ticker) => {
@@ -137,22 +167,26 @@ export class Engine {
     };
 
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
+    const charNPC = this.currentScene.findCharacterAt(worldPoint);
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
     const activeVerb = UISystem.getInstance().activeVerb;
 
-    if (hotspot) {
+    if (hotspot || charNPC) {
       this.app.canvas.style.cursor = 'pointer';
 
+      const targetName = hotspot ? hotspot.data.name : charNPC!.data.name;
       let text = '';
       if (selectedItem) {
-        text = `Use ${selectedItem.name} with ${hotspot.data.name}`;
+        text = `Use ${selectedItem.name} with ${targetName}`;
       } else {
-        const action = hotspot.getBestAction(activeVerb);
+        const action = hotspot ? hotspot.getBestAction(activeVerb) : null;
         if (action) {
           const verbStr = (action.verb || activeVerb).replace('_', ' ');
-          text = `${verbStr.charAt(0).toUpperCase() + verbStr.slice(1)} ${hotspot.data.name}`;
+          text = `${verbStr.charAt(0).toUpperCase() + verbStr.slice(1)} ${targetName}`;
+        } else if (charNPC) {
+          text = `Talk to ${targetName}`;
         } else {
-          text = `Look at ${hotspot.data.name}`;
+          text = `Look at ${targetName}`;
         }
       }
 
@@ -178,9 +212,6 @@ export class Engine {
   private handleCanvasClick(e: MouseEvent): void {
     if (!this.currentScene || DialogSystem.getInstance().isActive()) return;
 
-    // Hide context coin if open
-    UISystem.getInstance().hideContextCoin();
-
     const rect = this.app.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -193,30 +224,60 @@ export class Engine {
     const activeVerb = UISystem.getInstance().activeVerb;
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
+    const charNPC = this.currentScene.findCharacterAt(worldPoint);
     const player = this.currentScene.playerCharacter;
     const walkPath = this.currentScene.getWalkPath();
 
-    if (selectedItem && hotspot) {
-      const action = hotspot.getActionForItemId(selectedItem.id) || hotspot.getBestAction('use', selectedItem.id);
-      if (action) {
-        if (player) {
-          player.walkTo(hotspot.getCenter(), walkPath, () => {
+    // If an item IS selected, use item directly! Do not open Context Coin!
+    if (selectedItem && (hotspot || charNPC)) {
+      const targetHotspot = hotspot || (charNPC ? this.currentScene.findHotspotAt({ x: charNPC.container.x, y: charNPC.container.y - 40 }) : null);
+      if (targetHotspot) {
+        const action = targetHotspot.getActionForItemId(selectedItem.id) || targetHotspot.getBestAction('use', selectedItem.id);
+        if (action) {
+          if (!this.isEditorMode && player) {
+            player.walkTo(targetHotspot.getCenter(), walkPath, () => this.executeAction(action));
+          } else {
             this.executeAction(action);
-          });
+          }
         } else {
-          this.executeAction(action);
+          EventBus.getInstance().emit('ui:notify', `That doesn't seem to work with ${targetHotspot.data.name}.`);
         }
-      } else {
-        EventBus.getInstance().emit('ui:notify', `That doesn't seem to work with ${hotspot.data.name}.`);
       }
       InventorySystem.getInstance().selectItem(null);
       UISystem.getInstance().setActiveVerb('walk');
       return;
     }
 
+    // Context coin mode opening ONLY when NO item is selected
+    if (!selectedItem && (hotspot || charNPC) && UISystem.getInstance().config.preset === 'context_coin') {
+      this.coinTargetHotspot = hotspot;
+      UISystem.getInstance().showContextCoin(screenX, screenY);
+      return;
+    }
+
+    UISystem.getInstance().hideContextCoin();
+
+    // Interaction with NPC character
+    if (charNPC) {
+      const npcHotspot = this.currentScene.findHotspotAt({ x: charNPC.container.x, y: charNPC.container.y - 40 });
+      if (npcHotspot) {
+        const action = npcHotspot.getBestAction(activeVerb);
+        if (action) {
+          if (!this.isEditorMode && player) {
+            player.walkTo(npcHotspot.getCenter(), walkPath, () => this.executeAction(action));
+          } else {
+            this.executeAction(action);
+          }
+          return;
+        }
+      }
+      DialogSystem.getInstance().startDialog('dlg_eldrin', (flag) => StoryGraphSystem.getInstance().getFlag(flag));
+      return;
+    }
+
     if (hotspot) {
       const action = hotspot.getBestAction(activeVerb);
-      if (player) {
+      if (!this.isEditorMode && player) {
         player.walkTo(hotspot.getCenter(), walkPath, () => {
           if (action) this.executeAction(action);
         });
@@ -224,7 +285,7 @@ export class Engine {
         this.executeAction(action);
       }
     } else {
-      if (player) {
+      if (!this.isEditorMode && player) {
         player.walkTo(worldPoint, walkPath);
       }
     }
@@ -243,14 +304,51 @@ export class Engine {
     };
 
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
-    if (hotspot && UISystem.getInstance().config.preset === 'context_coin') {
+    const selectedItem = InventorySystem.getInstance().getSelectedItem();
+
+    if (!selectedItem && hotspot && UISystem.getInstance().config.preset === 'context_coin') {
+      this.coinTargetHotspot = hotspot;
       UISystem.getInstance().showContextCoin(screenX, screenY);
       return;
     }
 
-    // Default right click triggers 'look'
     UISystem.getInstance().setActiveVerb('look');
     this.handleCanvasClick(e);
+  }
+
+  private handleCanvasDrop(e: DragEvent): void {
+    e.preventDefault();
+    const itemId = e.dataTransfer?.getData('text/plain') || InventorySystem.getInstance().getSelectedItem()?.id;
+    if (!itemId || !this.currentScene) return;
+
+    const rect = this.app.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const worldPoint: Vector2D = {
+      x: Math.round(screenX + this.camera.position.x),
+      y: Math.round(screenY + this.camera.position.y)
+    };
+
+    const hotspot = this.currentScene.findHotspotAt(worldPoint);
+    if (hotspot) {
+      const action = hotspot.getActionForItemId(itemId) || hotspot.getBestAction('use', itemId);
+      if (action) {
+        const player = this.currentScene.playerCharacter;
+        const walkPath = this.currentScene.getWalkPath();
+
+        if (!this.isEditorMode && player) {
+          player.walkTo(hotspot.getCenter(), walkPath, () => this.executeAction(action));
+        } else {
+          this.executeAction(action);
+        }
+      } else {
+        EventBus.getInstance().emit('ui:notify', `That doesn't seem to work with ${hotspot.data.name}.`);
+      }
+    }
+
+    InventorySystem.getInstance().selectItem(null);
+    UISystem.getInstance().setActiveVerb('walk');
   }
 
   private executeAction(action: any): void {
@@ -307,6 +405,10 @@ export class Engine {
         }
       }
     }
+  }
+
+  private showNotification(text: string): void {
+    EventBus.getInstance().emit('ui:notify', text);
   }
 
   public destroy(): void {

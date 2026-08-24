@@ -54,7 +54,6 @@ export class Scene {
       this.characters.set(charData.id, char);
       this.entityContainer.addChild(char.container);
 
-      // Set player character if first character or hero
       if (!this.playerCharacter || charData.id === 'player') {
         this.playerCharacter = char;
         camera.follow(char.container);
@@ -70,18 +69,30 @@ export class Scene {
     return this.hotspots.find(hs => hs.containsPoint(point));
   }
 
+  public findCharacterAt(point: Vector2D): Character | undefined {
+    for (const char of this.characters.values()) {
+      if (char.data.id === 'player') continue; // Don't interact with self
+      const cx = char.container.x;
+      const cy = char.container.y;
+      const hw = (char.data.frameWidth * char.data.scale) / 2;
+      const hh = char.data.frameHeight * char.data.scale;
+
+      if (point.x >= cx - hw && point.x <= cx + hw && point.y >= cy - hh && point.y <= cy) {
+        return char;
+      }
+    }
+    return undefined;
+  }
+
   public update(delta: number, camera: Camera): void {
     const activeWalkPath = this.getWalkPath();
 
-    // Update characters
     for (const char of this.characters.values()) {
       char.update(delta, activeWalkPath);
     }
 
-    // Sort entity container by Y-position for natural depth sorting
     this.entityContainer.children.sort((a, b) => a.y - b.y);
 
-    // Update parallax on layers
     for (const layer of this.layers) {
       layer.updateParallax(camera.position.x, camera.position.y);
     }
