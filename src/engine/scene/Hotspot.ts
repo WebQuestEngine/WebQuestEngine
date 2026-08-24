@@ -54,7 +54,12 @@ export class Hotspot {
   }
 
   public containsPoint(p: Vector2D): boolean {
-    if (!this.isEnabled() || this.data.points.length < 3) return false;
+    if (!this.isEnabled()) return false;
+    return this.containsPointInEditor(p);
+  }
+
+  public containsPointInEditor(p: Vector2D): boolean {
+    if (this.data.points.length < 3) return false;
 
     let inside = false;
     const pts = this.data.points;

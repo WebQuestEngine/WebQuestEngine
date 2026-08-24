@@ -269,7 +269,8 @@ export class Engine {
         }
       }
 
-      if (this.currentScene.findHotspotAt(worldPt)) {
+      const hsObj = this.currentScene.hotspots[hIdx];
+      if (hsObj && hsObj.containsPointInEditor(worldPt)) {
         this.isDragging = true;
         this.dragTarget = { type: 'hotspot_poly', hIdx };
         this.dragStartWorld = worldPt;
