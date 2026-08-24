@@ -132,7 +132,14 @@ export const sampleProject: ProjectData = {
             },
             {
               verb: 'interact',
-              text: 'The door is locked tight.'
+              requiredFlag: 'labUnlocked',
+              targetSceneId: 'scene_lab',
+              targetSpawnPoint: { x: 300, y: 800 },
+              text: 'You open the unlocked oak door and enter the laboratory.'
+            },
+            {
+              verb: 'interact',
+              text: 'The door is locked tight. You need to use a brass key to unlock it.'
             },
             {
               verb: 'use',
@@ -140,7 +147,7 @@ export const sampleProject: ProjectData = {
               targetSceneId: 'scene_lab',
               targetSpawnPoint: { x: 300, y: 800 },
               setFlag: 'labUnlocked',
-              text: 'You unlock the door with the Brass Key!'
+              text: 'You unlock the heavy oak door with the Brass Key!'
             }
           ]
         },
@@ -168,7 +175,9 @@ export const sampleProject: ProjectData = {
             },
             {
               verb: 'interact',
-              text: 'You search the shrub.'
+              giveItemId: 'item_key',
+              setFlag: 'hasKey',
+              text: 'You reach inside the thorny shrub and pull out a Brass Key!'
             }
           ]
         }

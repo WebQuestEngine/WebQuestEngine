@@ -1,5 +1,6 @@
 import { UIConfig, VerbType, InventoryItemData, UIPresetType } from '../types';
 import { EventBus } from '../core/EventBus';
+import { InventorySystem } from './InventorySystem';
 
 export class UISystem {
   private static instance: UISystem;
@@ -80,6 +81,7 @@ export class UISystem {
 
     this.containerElement.appendChild(overlay);
     this.attachEvents(overlay);
+    this.renderInventoryItems(InventorySystem.getInstance().getItems());
   }
 
   private getLucasArtsHTML(): string {
@@ -136,8 +138,8 @@ export class UISystem {
         <button class="coin-btn" data-verb="interact" title="Use/Touch">✋</button>
         <button class="coin-btn" data-verb="talk" title="Talk">💬</button>
       </div>
-      <button class="floating-inv-btn" id="ui-floating-inv">🎒</button>
-      <div class="action-sentence floating" id="ui-action-sentence">Look around</div>
+      <button class="floating-inv-btn" id="ui-floating-inv">🎒 Inventory</button>
+      <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
       <div class="inventory-drawer hidden" id="ui-inventory-modal">
         <div class="inventory-drawer-header">
           <span>Inventory</span>
@@ -151,7 +153,7 @@ export class UISystem {
   private getDirectCursorHTML(): string {
     return `
       <button class="floating-inv-btn" id="ui-floating-inv">🎒 Inventory</button>
-      <div class="action-sentence floating" id="ui-action-sentence">Walk</div>
+      <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
       <div class="inventory-drawer hidden" id="ui-inventory-modal">
         <div class="inventory-drawer-header">
           <span>Inventory</span>
@@ -164,11 +166,24 @@ export class UISystem {
 
   private attachEvents(overlay: HTMLElement): void {
     // Verb buttons
-    overlay.querySelectorAll('.verb-btn, .sierra-btn, .coin-btn').forEach(btn => {
+    overlay.querySelectorAll('.verb-btn, .sierra-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const verb = (e.currentTarget as HTMLElement).dataset.verb as VerbType;
+        if (verb) {
+          InventorySystem.getInstance().selectItem(null);
+          this.setActiveVerb(verb);
+        }
+      });
+    });
+
+    // Coin buttons
+    overlay.querySelectorAll('.coin-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const verb = (e.currentTarget as HTMLElement).dataset.verb as VerbType;
         if (verb) {
           this.setActiveVerb(verb);
+          EventBus.getInstance().emit('ui:coin_verb', verb);
+          this.hideContextCoin();
         }
       });
     });
@@ -190,6 +205,24 @@ export class UISystem {
     }
   }
 
+  public showContextCoin(x: number, y: number): void {
+    if (!this.containerElement) return;
+    const coin = this.containerElement.querySelector('#ui-context-coin') as HTMLElement;
+    if (coin) {
+      coin.style.left = `${x}px`;
+      coin.style.top = `${y}px`;
+      coin.classList.remove('hidden');
+    }
+  }
+
+  public hideContextCoin(): void {
+    if (!this.containerElement) return;
+    const coin = this.containerElement.querySelector('#ui-context-coin') as HTMLElement;
+    if (coin) {
+      coin.classList.add('hidden');
+    }
+  }
+
   private updateVerbHighlights(): void {
     if (!this.containerElement) return;
     this.containerElement.querySelectorAll('.verb-btn, .sierra-btn').forEach(btn => {
@@ -203,19 +236,24 @@ export class UISystem {
 
     const sentence = this.containerElement.querySelector('#ui-action-sentence');
     if (sentence) {
-      const labelMap: Record<VerbType, string> = {
-        walk: 'Walk to',
-        look: 'Look at',
-        interact: 'Use',
-        talk: 'Talk to',
-        pick_up: 'Pick up',
-        use: 'Use',
-        open: 'Open',
-        close: 'Close',
-        push: 'Push',
-        pull: 'Pull'
-      };
-      sentence.textContent = labelMap[this.activeVerb] || 'Walk to';
+      const selectedItem = InventorySystem.getInstance().getSelectedItem();
+      if (selectedItem) {
+        sentence.textContent = `Use ${selectedItem.name} with`;
+      } else {
+        const labelMap: Record<VerbType, string> = {
+          walk: 'Walk to',
+          look: 'Look at',
+          interact: 'Use',
+          talk: 'Talk to',
+          pick_up: 'Pick up',
+          use: 'Use',
+          open: 'Open',
+          close: 'Close',
+          push: 'Push',
+          pull: 'Pull'
+        };
+        sentence.textContent = labelMap[this.activeVerb] || 'Walk to';
+      }
     }
   }
 
@@ -224,10 +262,12 @@ export class UISystem {
     const grid = this.containerElement.querySelector('#ui-inventory-slots');
     if (!grid) return;
 
+    const selectedItem = InventorySystem.getInstance().getSelectedItem();
+
     grid.innerHTML = '';
     for (const item of items) {
       const slot = document.createElement('div');
-      slot.className = 'inv-item-slot';
+      slot.className = `inv-item-slot ${selectedItem && selectedItem.id === item.id ? 'selected' : ''}`;
       slot.dataset.id = item.id;
       slot.title = item.name;
 
@@ -236,8 +276,17 @@ export class UISystem {
         <span class="inv-item-label">${item.name}</span>
       `;
 
-      slot.addEventListener('click', () => {
-        EventBus.getInstance().emit('inventory:item_clicked', item);
+      slot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentSelected = InventorySystem.getInstance().getSelectedItem();
+        if (currentSelected && currentSelected.id === item.id) {
+          InventorySystem.getInstance().selectItem(null);
+          this.setActiveVerb('walk');
+        } else {
+          InventorySystem.getInstance().selectItem(item.id);
+          this.setActiveVerb('use');
+        }
+        this.renderInventoryItems(items);
       });
 
       grid.appendChild(slot);

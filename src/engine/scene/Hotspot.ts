@@ -40,4 +40,25 @@ export class Hotspot {
   public getActionForVerb(verb: VerbType): HotspotAction | undefined {
     return this.data.actions.find(a => a.verb === verb);
   }
+
+  public getActionForItemId(itemId: string): HotspotAction | undefined {
+    return this.data.actions.find(a => a.requireItemId === itemId);
+  }
+
+  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+    if (selectedItemId) {
+      const itemAction = this.getActionForItemId(selectedItemId);
+      if (itemAction) return itemAction;
+    }
+
+    const verbAction = this.getActionForVerb(activeVerb);
+    if (verbAction) return verbAction;
+
+    // Smart fallback order
+    return this.data.actions.find(a => a.verb === 'interact') ||
+           this.data.actions.find(a => a.verb === 'pick_up') ||
+           this.data.actions.find(a => a.verb === 'talk') ||
+           this.data.actions.find(a => a.verb === 'use') ||
+           this.data.actions[0];
+  }
 }
