@@ -50,7 +50,9 @@ export function getThumbnailHTML(url: string | undefined): string {
     return `<div class="inspector-thumbnail-box" style="background:${bg};" title="${url}"><span style="font-size:1.1rem;">${icon}</span></div>`;
   }
 
-  const resolved = AssetManager.getInstance().resolvePath(url);
+  const resolved = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')
+    ? url
+    : `src/demo/${url.replace(/^\/+/, '')}`;
   return `
     <div class="inspector-thumbnail-box" title="${url}">
       <img src="${resolved}" style="width:100%; height:100%; object-fit:contain;" onerror="this.onerror=null; this.outerHTML='<span style=\\'font-size:0.9rem; color:#ef4444;\\'>⚠️</span>';" />
