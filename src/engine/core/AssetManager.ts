@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js';
 export class AssetManager {
   private static instance: AssetManager;
   private textures: Map<string, PIXI.Texture> = new Map();
+  private baseFolders: Set<string> = new Set(['src/demo', 'src/assets', 'assets', 'src']);
 
   private constructor() {}
 
@@ -13,23 +14,101 @@ export class AssetManager {
     return AssetManager.instance;
   }
 
+  public setBaseFolder(folder: string): void {
+    if (!folder) return;
+    const normalized = folder.replace(/\\/g, '/').replace(/\/+$/, '');
+    this.baseFolders.add(normalized);
+  }
+
+  public addBaseFolder(folder: string): void {
+    this.setBaseFolder(folder);
+  }
+
+  public getBaseFolders(): string[] {
+    return Array.from(this.baseFolders);
+  }
+
+  public trackFileFolder(filePath: string): void {
+    if (!filePath) return;
+    const normalized = filePath.replace(/\\/g, '/');
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash > 0) {
+      const folder = normalized.substring(0, lastSlash);
+      this.addBaseFolder(folder);
+    }
+  }
+
   public async loadTexture(url: string): Promise<PIXI.Texture> {
+    if (!url || url.trim() === '') {
+      return this.createPlaceholderTexture('empty');
+    }
+
     if (this.textures.has(url)) {
       return this.textures.get(url)!;
     }
 
-    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {
+    this.trackFileFolder(url);
+
+    const candidates: string[] = [url];
+    const filename = url.split('/').pop() || url;
+
+    if (
+      !url.startsWith('/') &&
+      !url.startsWith('http://') &&
+      !url.startsWith('https://') &&
+      !url.startsWith('data:') &&
+      !url.startsWith('blob:')
+    ) {
+      for (const folder of this.baseFolders) {
+        if (folder) {
+          candidates.push(`${folder}/${url}`);
+          candidates.push(`${folder}/${filename}`);
+        }
+      }
+      candidates.push(`/${url}`);
+    }
+
+    const uniqueCandidates = Array.from(new Set(candidates));
+
+    for (const candidate of uniqueCandidates) {
       try {
-        const texture = await PIXI.Assets.load(url);
-        this.textures.set(url, texture);
-        return texture;
+        const texture = await PIXI.Assets.load(candidate);
+        if (texture) {
+          this.textures.set(url, texture);
+          this.textures.set(candidate, texture);
+          return texture;
+        }
       } catch (err) {
-        console.warn(`Failed to load texture at ${url}, generating fallback.`, err);
-        return this.createPlaceholderTexture(url);
+        // Try next candidate
       }
     }
 
+    console.warn(`Failed to load texture at ${url}, generating fallback.`);
     return this.createPlaceholderTexture(url);
+  }
+
+  public setTexture(key: string, texture: PIXI.Texture): void {
+    if (key) {
+      this.textures.set(key, texture);
+    }
+  }
+
+  public async registerFileTexture(key: string, file: File): Promise<PIXI.Texture> {
+    const fullPath = (file as any).path || file.name || '';
+    this.trackFileFolder(fullPath);
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const texture = await PIXI.Assets.load(objectUrl);
+      if (texture) {
+        this.setTexture(key, texture);
+        this.setTexture(objectUrl, texture);
+        return texture;
+      }
+    } catch (err) {
+      console.warn(`Failed to load texture from file ${file.name}`, err);
+    }
+    return this.createPlaceholderTexture(key);
   }
 
   public createPlaceholderTexture(name: string, width = 64, height = 64, color = 0x3b82f6): PIXI.Texture {

@@ -1,19 +1,19 @@
 import * as PIXI from 'pixi.js';
+import { GraphicalElement } from './GraphicalElement';
 import { LayerData } from '../types';
 import { AssetManager } from '../core/AssetManager';
 
-export class Layer {
+export class Layer extends GraphicalElement {
   public data: LayerData;
-  public container: PIXI.Container;
-  public sprite: PIXI.Sprite;
 
   constructor(data: LayerData) {
+    super(data.id, data.name, { x: data.x || 0, y: data.y || 0 });
     this.data = data;
-    this.container = new PIXI.Container();
-    this.sprite = new PIXI.Sprite();
-    this.container.addChild(this.sprite);
-    this.container.alpha = data.opacity;
-    this.container.visible = data.visible;
+    this.imageUrl = data.imageUrl;
+    this.opacity = data.opacity;
+    this.visible = data.visible;
+    this.scaleX = data.scaleX ?? 1;
+    this.scaleY = data.scaleY ?? 1;
   }
 
   public async init(): Promise<void> {

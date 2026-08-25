@@ -328,16 +328,33 @@ export class Engine {
         }
       } else if (this.dragTarget.type === 'hotspot_vertex' && this.dragTarget.hIdx !== undefined && this.dragTarget.index !== undefined) {
         const hs = this.currentScene.data.hotspots[this.dragTarget.hIdx];
+        const hsObj = this.currentScene.hotspots[this.dragTarget.hIdx];
         if (hs && hs.points[this.dragTarget.index]) {
           hs.points[this.dragTarget.index].x = worldPt.x;
           hs.points[this.dragTarget.index].y = worldPt.y;
+          if (hsObj) {
+            if (hs.position) {
+              const center = hsObj.getCenter();
+              hs.position.x = center.x;
+              hs.position.y = center.y;
+            }
+            hsObj.update();
+          }
         }
       } else if (this.dragTarget.type === 'hotspot_poly' && this.dragTarget.hIdx !== undefined) {
         const hs = this.currentScene.data.hotspots[this.dragTarget.hIdx];
+        const hsObj = this.currentScene.hotspots[this.dragTarget.hIdx];
         if (hs) {
           for (const pt of hs.points) {
             pt.x += dx;
             pt.y += dy;
+          }
+          if (hs.position) {
+            hs.position.x += dx;
+            hs.position.y += dy;
+          }
+          if (hsObj) {
+            hsObj.update();
           }
           this.dragStartWorld = worldPt;
         }

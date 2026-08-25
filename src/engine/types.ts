@@ -174,6 +174,7 @@ export interface ProjectData {
   version: string;
   title: string;
   author: string;
+  assetBasePath?: string;
   uiConfig: UIConfig;
   chapters: ChapterData[];
   storyNodes: StoryNodeData[];

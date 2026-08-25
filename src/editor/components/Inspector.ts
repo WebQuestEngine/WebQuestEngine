@@ -1,6 +1,51 @@
 import { ProjectData, SceneData, WalkPathData, HotspotData, UIPresetType, LayerData, InventoryItemData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
 
+import { AssetManager } from '../../engine/core/AssetManager';
+
+export function normalizeImagePath(input: string): string {
+  if (!input) return '';
+  const trimmed = input.trim();
+  if (trimmed.startsWith('data:') || trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('procedural:')) {
+    return trimmed;
+  }
+  let normalized = trimmed.replace(/\\/g, '/');
+
+  AssetManager.getInstance().trackFileFolder(normalized);
+
+  const baseFolders = AssetManager.getInstance().getBaseFolders();
+  for (const folder of baseFolders) {
+    if (!folder) continue;
+    const folderPattern = `/${folder}/`;
+    const idx = normalized.indexOf(folderPattern);
+    if (idx !== -1) {
+      return normalized.substring(idx + folderPattern.length);
+    }
+  }
+
+  const srcIndex = normalized.indexOf('/src/');
+  if (srcIndex !== -1) return normalized.substring(srcIndex + 1);
+  const assetsIndex = normalized.indexOf('/assets/');
+  if (assetsIndex !== -1) return normalized.substring(assetsIndex + 1);
+  const demoIndex = normalized.indexOf('/demo/');
+  if (demoIndex !== -1) return normalized.substring(demoIndex + 1);
+
+  return normalized;
+}
+
+export function getRelativeFilePath(file: File): string {
+  const fullPath = (file as any).path || '';
+  if (fullPath) {
+    AssetManager.getInstance().trackFileFolder(fullPath);
+    return normalizeImagePath(fullPath);
+  }
+  if (file.webkitRelativePath && file.webkitRelativePath.trim() !== '') {
+    AssetManager.getInstance().trackFileFolder(file.webkitRelativePath);
+    return file.webkitRelativePath;
+  }
+  return file.name;
+}
+
 export class Inspector {
   public element: HTMLElement;
   private project: ProjectData | null = null;
@@ -16,6 +61,9 @@ export class Inspector {
 
   public setProject(project: ProjectData, currentScene?: SceneData): void {
     this.project = project;
+    if (project.assetBasePath) {
+      AssetManager.getInstance().setBaseFolder(project.assetBasePath);
+    }
     if (currentScene) this.currentScene = currentScene;
     this.renderContent();
   }
@@ -69,12 +117,17 @@ export class Inspector {
 
   private getSceneHTML(): string {
     if (!this.currentScene) return '<div class="sidebar-section">No scene selected.</div>';
+    const activeBaseFolder = this.project?.assetBasePath || AssetManager.getInstance().getBaseFolders()[0] || 'src/demo';
     return `
       <div class="sidebar-section">
-        <div class="sidebar-section-title">Scene Info</div>
+        <div class="sidebar-section-title">Scene & Asset Config</div>
         <div class="form-group">
           <label>Scene Name</label>
           <input type="text" class="form-input" id="sc-name" value="${this.currentScene.name}" />
+        </div>
+        <div class="form-group">
+          <label>Base Asset Folder</label>
+          <input type="text" class="form-input" id="sc-base-path" value="${activeBaseFolder}" placeholder="e.g. src/demo or assets" />
         </div>
         <div class="form-group">
           <label>Dimensions (W x H)</label>
@@ -226,6 +279,24 @@ export class Inspector {
                 </label>
               </div>
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
+                <input type="number" class="form-input hs-pos-x" data-hidx="${hIdx}" value="${hs.position ? hs.position.x : Math.round(hs.points.reduce((s,p)=>s+p.x,0)/(hs.points.length||1))}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
+                <input type="number" class="form-input hs-pos-y" data-hidx="${hIdx}" value="${hs.position ? hs.position.y : Math.round(hs.points.reduce((s,p)=>s+p.y,0)/(hs.points.length||1))}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
+                <input type="number" step="0.05" class="form-input hs-scale-x" data-hidx="${hIdx}" value="${hs.scaleX ?? 1}" style="font-size:0.75rem;" />
+              </div>
+              <div>
+                <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
+                <input type="number" step="0.05" class="form-input hs-scale-y" data-hidx="${hIdx}" value="${hs.scaleY ?? 1}" style="font-size:0.75rem;" />
+              </div>
+            </div>
             <div style="margin-top:6px;">
               <label style="font-size:0.7rem; color:var(--text-muted);">Cursor Context</label>
               <input type="text" class="form-input hs-cursor" data-hidx="${hIdx}" value="${hs.cursor}" style="font-size:0.75rem;" />
@@ -334,6 +405,14 @@ export class Inspector {
       this.currentScene!.name = (e.target as HTMLInputElement).value;
       emitUpdate();
     });
+    this.element.querySelector('#sc-base-path')?.addEventListener('input', (e) => {
+      const val = (e.target as HTMLInputElement).value;
+      if (this.project) {
+        this.project.assetBasePath = val;
+        AssetManager.getInstance().setBaseFolder(val);
+      }
+      emitUpdate();
+    });
     this.element.querySelector('#sc-w')?.addEventListener('change', (e) => {
       this.currentScene!.width = parseInt((e.target as HTMLInputElement).value) || 1920;
       emitUpdate();
@@ -359,21 +438,26 @@ export class Inspector {
       emitUpdate();
     });
 
+    // Layer URL input
+    this.element.querySelectorAll('.layer-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const rawVal = (e.target as HTMLInputElement).value;
+        this.currentScene!.layers[idx].imageUrl = normalizeImagePath(rawVal);
+        emitUpdate();
+      });
+    });
+
     // Layer file upload
     this.element.querySelectorAll('.layer-file-input').forEach(input => {
       input.addEventListener('change', (e) => {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0]) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            if (ev.target?.result) {
-              this.currentScene!.layers[idx].imageUrl = ev.target.result as string;
-              this.renderContent();
-              emitUpdate();
-            }
-          };
-          reader.readAsDataURL(files[0]);
+          const relPath = getRelativeFilePath(files[0]);
+          this.currentScene!.layers[idx].imageUrl = relPath;
+          this.renderContent();
+          emitUpdate();
         }
       });
     });
@@ -495,7 +579,56 @@ export class Inspector {
     this.element.querySelectorAll('.hs-img-url').forEach(input => {
       input.addEventListener('input', (e) => {
         const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
-        this.currentScene!.hotspots[hIdx].imageUrl = (e.target as HTMLInputElement).value || undefined;
+        const rawVal = (e.target as HTMLInputElement).value;
+        this.currentScene!.hotspots[hIdx].imageUrl = rawVal ? normalizeImagePath(rawVal) : undefined;
+        emitUpdate();
+      });
+    });
+
+    // Hotspot Position X/Y and Scale X/Y
+    this.element.querySelectorAll('.hs-pos-x').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const hs = this.currentScene!.hotspots[hIdx];
+        if (hs) {
+          const newX = parseFloat((e.target as HTMLInputElement).value) || 0;
+          const currentX = hs.position ? hs.position.x : (hs.points.reduce((s,p)=>s+p.x,0)/(hs.points.length||1));
+          const dx = newX - currentX;
+          for (const pt of hs.points) { pt.x += dx; }
+          if (!hs.position) hs.position = { x: newX, y: hs.points.reduce((s,p)=>s+p.y,0)/(hs.points.length||1) };
+          else hs.position.x = newX;
+          emitUpdate();
+        }
+      });
+    });
+    this.element.querySelectorAll('.hs-pos-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const hs = this.currentScene!.hotspots[hIdx];
+        if (hs) {
+          const newY = parseFloat((e.target as HTMLInputElement).value) || 0;
+          const currentY = hs.position ? hs.position.y : (hs.points.reduce((s,p)=>s+p.y,0)/(hs.points.length||1));
+          const dy = newY - currentY;
+          for (const pt of hs.points) { pt.y += dy; }
+          if (!hs.position) hs.position = { x: hs.points.reduce((s,p)=>s+p.x,0)/(hs.points.length||1), y: newY };
+          else hs.position.y = newY;
+          emitUpdate();
+        }
+      });
+    });
+    this.element.querySelectorAll('.hs-scale-x').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        this.currentScene!.hotspots[hIdx].scaleX = isNaN(val) ? 1 : val;
+        emitUpdate();
+      });
+    });
+    this.element.querySelectorAll('.hs-scale-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        this.currentScene!.hotspots[hIdx].scaleY = isNaN(val) ? 1 : val;
         emitUpdate();
       });
     });
@@ -506,15 +639,10 @@ export class Inspector {
         const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0]) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            if (ev.target?.result) {
-              this.currentScene!.hotspots[hIdx].imageUrl = ev.target.result as string;
-              this.renderContent();
-              emitUpdate();
-            }
-          };
-          reader.readAsDataURL(files[0]);
+          const relPath = getRelativeFilePath(files[0]);
+          this.currentScene!.hotspots[hIdx].imageUrl = relPath;
+          this.renderContent();
+          emitUpdate();
         }
       });
     });
@@ -552,21 +680,26 @@ export class Inspector {
       });
     });
 
+    // Item icon URL input
+    this.element.querySelectorAll('.item-icon-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const rawVal = (e.target as HTMLInputElement).value;
+        this.project!.items[idx].iconUrl = normalizeImagePath(rawVal);
+        emitUpdate();
+      });
+    });
+
     // Item icon file upload
     this.element.querySelectorAll('.item-icon-file').forEach(input => {
       input.addEventListener('change', (e) => {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0]) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            if (ev.target?.result) {
-              this.project!.items[idx].iconUrl = ev.target.result as string;
-              this.renderContent();
-              emitUpdate();
-            }
-          };
-          reader.readAsDataURL(files[0]);
+          const relPath = getRelativeFilePath(files[0]);
+          this.project!.items[idx].iconUrl = relPath;
+          this.renderContent();
+          emitUpdate();
         }
       });
     });

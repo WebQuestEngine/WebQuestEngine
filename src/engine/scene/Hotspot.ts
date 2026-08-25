@@ -1,28 +1,40 @@
 import * as PIXI from 'pixi.js';
+import { InteractableElement } from './InteractableElement';
 import { Vector2D, HotspotData, VerbType, HotspotAction } from '../types';
-import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { AssetManager } from '../core/AssetManager';
 
-export class Hotspot {
+export class Hotspot extends InteractableElement {
   public data: HotspotData;
-  public container: PIXI.Container;
-  public sprite: PIXI.Sprite;
 
   constructor(data: HotspotData) {
-    this.data = data;
-    this.container = new PIXI.Container();
-    this.sprite = new PIXI.Sprite();
-    this.container.addChild(this.sprite);
-
-    const center = this.getCenter();
+    const center = Hotspot.calcCenter(data.points);
     const pos = data.position || center;
-    this.container.x = pos.x;
-    this.container.y = pos.y;
-    this.container.scale.set(data.scaleX ?? 1, data.scaleY ?? 1);
-    this.sprite.anchor.set(0.5, 0.5);
+    super(data.id, data.name, pos);
+
+    this.data = data;
+    this.imageUrl = data.imageUrl;
+    this.cursor = data.cursor;
+    this.points = data.points;
+    this.actions = data.actions;
+    this.enabled = data.enabled;
+    this.requiredFlag = data.requiredFlag;
+    this.notFlag = data.notFlag;
+    this.scaleX = data.scaleX ?? 1;
+    this.scaleY = data.scaleY ?? 1;
+    this.visible = data.visible ?? true;
   }
 
-  public async init(): Promise<void> {
+  private static calcCenter(pts: Vector2D[]): Vector2D {
+    if (!pts || pts.length === 0) return { x: 0, y: 0 };
+    let sumX = 0, sumY = 0;
+    for (const p of pts) {
+      sumX += p.x;
+      sumY += p.y;
+    }
+    return { x: sumX / pts.length, y: sumY / pts.length };
+  }
+
+  public override async init(): Promise<void> {
     if (!this.data.imageUrl) return;
 
     const assetManager = AssetManager.getInstance();
@@ -34,73 +46,35 @@ export class Hotspot {
     }
   }
 
-  public update(): void {
-    const isVisible = this.isEnabled() && (this.data.visible ?? true);
-    this.container.visible = isVisible;
-
+  public override update(_delta?: number): void {
     const center = this.getCenter();
     const pos = this.data.position || center;
-    this.container.x = pos.x;
-    this.container.y = pos.y;
-    this.container.scale.set(this.data.scaleX ?? 1, this.data.scaleY ?? 1);
-  }
+    this.position.x = pos.x;
+    this.position.y = pos.y;
+    this.scaleX = this.data.scaleX ?? 1;
+    this.scaleY = this.data.scaleY ?? 1;
+    this.visible = this.data.visible ?? true;
+    this.cursor = this.data.cursor;
+    this.points = this.data.points;
+    this.actions = this.data.actions;
+    this.enabled = this.data.enabled;
+    this.requiredFlag = this.data.requiredFlag;
+    this.notFlag = this.data.notFlag;
 
-  public isEnabled(): boolean {
-    if (!this.data.enabled) return false;
-    const storySystem = StoryGraphSystem.getInstance();
-    if (this.data.requiredFlag && !storySystem.getFlag(this.data.requiredFlag)) return false;
-    if (this.data.notFlag && storySystem.getFlag(this.data.notFlag)) return false;
-    return true;
-  }
-
-  public containsPoint(p: Vector2D): boolean {
-    if (!this.isEnabled()) return false;
-    return this.containsPointInEditor(p);
-  }
-
-  public containsPointInEditor(p: Vector2D): boolean {
-    if (this.data.points.length < 3) return false;
-
-    let inside = false;
-    const pts = this.data.points;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      const xi = pts[i].x, yi = pts[i].y;
-      const xj = pts[j].x, yj = pts[j].y;
-
-      const intersect = ((yi > p.y) !== (yj > p.y)) &&
-        (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  }
-
-  public getCenter(): Vector2D {
-    if (this.data.points.length === 0) return { x: 0, y: 0 };
-    let sumX = 0;
-    let sumY = 0;
-    for (const pt of this.data.points) {
-      sumX += pt.x;
-      sumY += pt.y;
-    }
-    return {
-      x: sumX / this.data.points.length,
-      y: sumY / this.data.points.length
-    };
-  }
-
-  private isActionValid(action: HotspotAction): boolean {
-    const storySystem = StoryGraphSystem.getInstance();
-    if (action.requiredFlag && !storySystem.getFlag(action.requiredFlag)) return false;
-    if (action.notFlag && storySystem.getFlag(action.notFlag)) return false;
-    return true;
-  }
-
-  public getActionForVerb(verb: VerbType): HotspotAction | undefined {
-    return this.data.actions.find(a => a.verb === verb && this.isActionValid(a));
+    super.update(_delta);
   }
 
   public getActionForItemId(itemId: string): HotspotAction | undefined {
     return this.data.actions.find(a => a.requireItemId === itemId && this.isActionValid(a));
+  }
+
+  private isActionValid(action: HotspotAction): boolean {
+    const storySystem = (window as any).StoryGraphSystem?.getInstance ? (window as any).StoryGraphSystem.getInstance() : null;
+    if (storySystem) {
+      if (action.requiredFlag && !storySystem.getFlag(action.requiredFlag)) return false;
+      if (action.notFlag && storySystem.getFlag(action.notFlag)) return false;
+    }
+    return true;
   }
 
   public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {

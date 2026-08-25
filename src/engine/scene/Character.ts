@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { MovableElement } from './MovableElement';
 import { Vector2D, CharacterData } from '../types';
 import { AssetManager } from '../core/AssetManager';
 import { WalkPath } from './WalkPath';
@@ -6,10 +7,8 @@ import { WalkPath } from './WalkPath';
 export type CharacterState = 'idle' | 'walking' | 'talking';
 export type CharacterDirection = 'down' | 'side' | 'up';
 
-export class Character {
+export class Character extends MovableElement {
   public data: CharacterData;
-  public container: PIXI.Container;
-  public sprite: PIXI.Sprite;
   public state: CharacterState = 'idle';
   public direction: CharacterDirection = 'down';
   public isFacingLeft = false;
@@ -23,14 +22,10 @@ export class Character {
   private onWalkCompleteCallback: (() => void) | null = null;
 
   constructor(data: CharacterData) {
+    super(data.id, data.name, data.position);
     this.data = data;
-    this.container = new PIXI.Container();
-    this.sprite = new PIXI.Sprite();
-    this.sprite.anchor.set(0.5, 0.9); // Bottom-center anchor for accurate foot placement on ground
-    this.container.addChild(this.sprite);
-
-    this.container.x = data.position.x;
-    this.container.y = data.position.y;
+    this.imageUrl = data.spriteSheetUrl;
+    this.sprite.anchor.set(0.5, 0.9); // Bottom-center anchor for foot placement
   }
 
   public async init(): Promise<void> {
