@@ -5,7 +5,7 @@ export class AssetManager {
   private textures: Map<string, PIXI.Texture> = new Map();
   private baseFolders: Set<string> = new Set(['src/demo', 'src/assets', 'assets', 'src']);
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): AssetManager {
     if (!AssetManager.instance) {

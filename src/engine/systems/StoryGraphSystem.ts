@@ -81,11 +81,65 @@ export class StoryGraphSystem {
 
   public setFlag(flag: string, value = true): void {
     this.flags.set(flag, value);
+    // Also set bare flag name if scoped
+    if (flag.includes(':')) {
+      const bare = flag.split(':')[1];
+      this.flags.set(bare, value);
+    }
     EventBus.getInstance().emit('flag:changed', { flag, value });
   }
 
   public getFlag(flag: string): boolean {
-    return this.flags.get(flag) || false;
+    if (!flag) return false;
+    if (this.flags.has(flag)) return this.flags.get(flag)!;
+
+    // Scoped fallback
+    if (flag.includes(':')) {
+      const bare = flag.split(':')[1];
+      if (this.flags.has(bare)) return this.flags.get(bare)!;
+    }
+    return false;
+  }
+
+  public getKnownFlags(): { scope: string; flag: string; label: string }[] {
+    const known: Map<string, string> = new Map();
+
+    // Default scoped flags
+    known.set('player:hasKey', 'Player Inventory: Brass Key');
+    known.set('quest:labUnlocked', 'Quest Progress: Laboratory Access');
+    known.set('shrub:searched', 'Scene Element: Shrub Searched');
+    known.set('eldrin:talkedOnce', 'Character: Met Master Eldrin');
+
+    if (this.project) {
+      if (this.project.initialFlags) {
+        for (const k of Object.keys(this.project.initialFlags)) {
+          if (!known.has(k)) known.set(k, `State: ${k}`);
+        }
+      }
+      for (const sc of this.project.scenes) {
+        for (const hs of sc.hotspots) {
+          for (const act of hs.actions) {
+            if (act.requiredFlag) known.set(act.requiredFlag, `Condition: ${act.requiredFlag}`);
+            if (act.notFlag) known.set(act.notFlag, `Condition: ${act.notFlag}`);
+            if (act.setFlag) known.set(act.setFlag, `Outcome Flag: ${act.setFlag}`);
+          }
+        }
+        for (const char of sc.characters) {
+          if (char.actions) {
+            for (const act of char.actions) {
+              if (act.requiredFlag) known.set(act.requiredFlag, `Condition: ${act.requiredFlag}`);
+              if (act.notFlag) known.set(act.notFlag, `Condition: ${act.notFlag}`);
+              if (act.setFlag) known.set(act.setFlag, `Outcome Flag: ${act.setFlag}`);
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(known.entries()).map(([flag, label]) => {
+      const scope = flag.includes(':') ? flag.split(':')[0] : 'global';
+      return { scope, flag, label };
+    });
   }
 
   public getCurrentScene(): SceneData | null {

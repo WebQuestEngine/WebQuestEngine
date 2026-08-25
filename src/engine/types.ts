@@ -132,6 +132,7 @@ export interface DialogChoice {
   text: string;
   nextNodeId: string;
   requiredFlag?: string;
+  notFlag?: string;
   setFlag?: string;
   giveItem?: string;
 }
@@ -143,6 +144,8 @@ export interface DialogNode {
   portraitUrl?: string;
   choices?: DialogChoice[];
   nextNodeId?: string;
+  requiredFlag?: string;
+  notFlag?: string;
   setFlag?: string;
   giveItem?: string;
 }

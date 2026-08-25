@@ -119,19 +119,47 @@ export class DialogEditor {
                 <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.75rem; padding:4px 8px;">+ Choice</button>
               </div>
 
-              <div style="margin-bottom:10px;">
+              <div style="margin-bottom:8px;">
                 <label style="font-size:0.7rem; color:var(--text-muted);">Dialogue Text</label>
                 <textarea class="form-input node-text" data-nodeid="${node.id}" style="width:100%; height:50px; font-size:0.85rem;">${node.text}</textarea>
               </div>
 
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px;">
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🚩 Set Story Flag On Node Start</label>
+                  <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlag || ''}" placeholder="e.g. eldrin:talkedOnce" style="font-size:0.75rem;" />
+                </div>
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🎁 Give Quest Item On Node Start</label>
+                  <input type="text" class="form-input node-give-item" data-nodeid="${node.id}" value="${node.giveItem || ''}" placeholder="e.g. item_elixir" style="font-size:0.75rem;" />
+                </div>
+              </div>
+
               ${node.choices && node.choices.length > 0 ? `
-                <div style="font-size:0.75rem; font-weight:700; color:var(--accent-blue); margin-bottom:6px;">Player Choices:</div>
+                <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">Player Choices & Condition Rules:</div>
                 <div style="display:flex; flex-direction:column; gap:6px;">
                   ${node.choices.map((choice, cIdx) => `
-                    <div style="display:flex; gap:6px; background:rgba(0,0,0,0.3); padding:6px; border-radius:4px; align-items:center;">
-                      <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.text}" placeholder="Option Text" style="flex:2; font-size:0.8rem;" />
-                      <span style="font-size:0.7rem; color:var(--text-muted);">➔ Leads to:</span>
-                      <input type="text" class="form-input choice-next" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.nextNodeId}" placeholder="Target Node ID" style="flex:1; font-size:0.8rem;" />
+                    <div style="background:rgba(0,0,0,0.35); border:1px solid var(--panel-border); padding:8px; border-radius:6px;">
+                      <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
+                        <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.text}" placeholder="Option Text" style="flex:2; font-size:0.8rem; font-weight:600;" />
+                        <span style="font-size:0.7rem; color:var(--text-muted);">➔ Leads to:</span>
+                        <input type="text" class="form-input choice-next" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.nextNodeId}" placeholder="Target Node ID" style="width:110px; font-size:0.8rem;" />
+                        <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
+                      </div>
+                      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
+                        <div>
+                          <label style="font-size:0.6rem; color:var(--text-muted);">Required Flag (IF TRUE)</label>
+                          <input type="text" class="form-input choice-req-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.requiredFlag || ''}" placeholder="e.g. player:hasElixir" style="font-size:0.7rem;" />
+                        </div>
+                        <div>
+                          <label style="font-size:0.6rem; color:var(--text-muted);">Not Flag (IF FALSE)</label>
+                          <input type="text" class="form-input choice-not-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.notFlag || ''}" placeholder="e.g. player:hasElixir" style="font-size:0.7rem;" />
+                        </div>
+                        <div>
+                          <label style="font-size:0.6rem; color:var(--text-muted);">Set Flag On Choose</label>
+                          <input type="text" class="form-input choice-set-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${choice.setFlag || ''}" placeholder="e.g. eldrin:talkedOnce" style="font-size:0.7rem;" />
+                        </div>
+                      </div>
                     </div>
                   `).join('')}
                 </div>
@@ -190,6 +218,26 @@ export class DialogEditor {
       });
     });
 
+    this.element.querySelectorAll('.node-set-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nodeId]) {
+          tree.nodes[nodeId].setFlag = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-give-item').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nodeId]) {
+          tree.nodes[nodeId].giveItem = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
     // Add Choice
     this.element.querySelectorAll('.btn-add-choice').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -202,6 +250,19 @@ export class DialogEditor {
             text: 'New choice response',
             nextNodeId: 'node_1'
           });
+          this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-del-choice').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const nodeId = (e.currentTarget as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((e.currentTarget as HTMLElement).dataset.cidx!);
+        const node = tree.nodes[nodeId];
+        if (node && node.choices) {
+          node.choices.splice(cIdx, 1);
           this.renderTree();
           emitUpdate();
         }
@@ -227,6 +288,39 @@ export class DialogEditor {
         const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
         if (tree.nodes[nodeId] && tree.nodes[nodeId].choices) {
           tree.nodes[nodeId].choices![cIdx].nextNodeId = (e.target as HTMLInputElement).value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.choice-req-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
+        if (tree.nodes[nodeId] && tree.nodes[nodeId].choices) {
+          tree.nodes[nodeId].choices![cIdx].requiredFlag = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.choice-not-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
+        if (tree.nodes[nodeId] && tree.nodes[nodeId].choices) {
+          tree.nodes[nodeId].choices![cIdx].notFlag = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.choice-set-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
+        if (tree.nodes[nodeId] && tree.nodes[nodeId].choices) {
+          tree.nodes[nodeId].choices![cIdx].setFlag = (e.target as HTMLInputElement).value.trim() || undefined;
           emitUpdate();
         }
       });

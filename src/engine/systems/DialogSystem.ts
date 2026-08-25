@@ -51,12 +51,13 @@ export class DialogSystem {
       EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
     }
 
-    // Filter available choices based on required flags
+    // Filter available choices based on required & not flags
     let availableChoices: DialogChoice[] = [];
     if (this.currentNode.choices) {
       availableChoices = this.currentNode.choices.filter(choice => {
-        if (!choice.requiredFlag) return true;
-        return getFlagState ? getFlagState(choice.requiredFlag) : true;
+        if (choice.requiredFlag && getFlagState && !getFlagState(choice.requiredFlag)) return false;
+        if (choice.notFlag && getFlagState && getFlagState(choice.notFlag)) return false;
+        return true;
       });
     }
 

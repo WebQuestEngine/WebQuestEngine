@@ -1,4 +1,4 @@
-import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, InventoryItemData, ChapterData } from '../../engine/types';
+import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, InventoryItemData, ChapterData, HotspotAction } from '../../engine/types';
 import { AssetManager } from '../../engine/core/AssetManager';
 import { EventBus } from '../../engine/core/EventBus';
 
@@ -33,11 +33,64 @@ export function getRelativeFilePath(file: File): string {
   return file.name;
 }
 
+export function getThumbnailHTML(url: string | undefined): string {
+  if (!url) {
+    return `<div class="inspector-thumbnail-box" title="No graphic loaded"><span style="font-size:1.1rem; opacity:0.3;">🖼️</span></div>`;
+  }
+
+  if (url.startsWith('procedural:')) {
+    const type = url.replace('procedural:', '');
+    let bg = '#3b82f6';
+    let icon = '🎨';
+    if (type.includes('shrub')) { bg = '#15803d'; icon = '🌿'; }
+    else if (type.includes('lab')) { bg = '#581c87'; icon = '🧪'; }
+    else if (type.includes('castle')) { bg = '#334155'; icon = '🏰'; }
+    else if (type.includes('cauldron')) { bg = '#065f46'; icon = '🥣'; }
+    else if (type.includes('hero') || type.includes('npc')) { bg = '#1e3a8a'; icon = '👤'; }
+    return `<div class="inspector-thumbnail-box" style="background:${bg};" title="${url}"><span style="font-size:1.1rem;">${icon}</span></div>`;
+  }
+
+  const resolved = AssetManager.getInstance().resolvePath(url);
+  return `
+    <div class="inspector-thumbnail-box" title="${url}">
+      <img src="${resolved}" style="width:100%; height:100%; object-fit:contain;" onerror="this.onerror=null; this.outerHTML='<span style=\\'font-size:0.9rem; color:#ef4444;\\'>⚠️</span>';" />
+    </div>
+  `;
+}
+
+export function getVerbIcon(verb: string): string {
+  switch (verb) {
+    case 'look': return '👁️';
+    case 'interact': return '🖐️';
+    case 'talk': return '💬';
+    case 'use': return '🔑';
+    case 'pick_up': return '🎒';
+    default: return '⚡';
+  }
+}
+
+export function getConditionHumanText(act: HotspotAction): string {
+  if (act.requiredFlag) return `✅ [${act.requiredFlag}]`;
+  if (act.notFlag) return `❌ NOT [${act.notFlag}]`;
+  return '✨ ALWAYS';
+}
+
+export function getOutcomesSummary(act: HotspotAction): string {
+  const outcomes: string[] = [];
+  if (act.text) outcomes.push('💬 Text');
+  if (act.giveItemId) outcomes.push(`🎁 ${act.giveItemId}`);
+  if (act.setFlag) outcomes.push(`🚩 ${act.setFlag}`);
+  if (act.targetSceneId) outcomes.push(`🚪 Scene`);
+  if (act.dialogId) outcomes.push(`💬 Dialog`);
+  return outcomes.length > 0 ? outcomes.join(' + ') : 'None';
+}
+
 export class Inspector {
   public element: HTMLElement;
   private project: ProjectData | null = null;
   private currentScene: SceneData | null = null;
   private selectedTarget: SelectionTarget | null = null;
+  private activeSubTab: 'properties' | 'interactions' | 'dialogs' = 'properties';
 
   constructor() {
     this.element = document.createElement('div');
@@ -47,6 +100,7 @@ export class Inspector {
     // Listen to selection events
     EventBus.getInstance().on('editor:select_target', (target: SelectionTarget) => {
       this.selectedTarget = target;
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
@@ -56,31 +110,37 @@ export class Inspector {
         if (sc) this.currentScene = sc;
       }
       this.selectedTarget = { type: 'scene', id: sceneId };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
     EventBus.getInstance().on('editor:select_walkpath', (sceneId: string) => {
       this.selectedTarget = { type: 'walkpath', sceneId };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
     EventBus.getInstance().on('editor:select_layer', (id: string) => {
       this.selectedTarget = { type: 'layer', id };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
     EventBus.getInstance().on('editor:select_hotspot', (id: string) => {
       this.selectedTarget = { type: 'hotspot', id };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
     EventBus.getInstance().on('editor:select_character', (id: string) => {
       this.selectedTarget = { type: 'character', id };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
 
     EventBus.getInstance().on('editor:select_item', (id: string) => {
       this.selectedTarget = { type: 'item', id };
+      this.activeSubTab = 'properties';
       this.renderContent();
     });
   }
@@ -221,9 +281,10 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Background Image Path / Upload</label>
-          <div style="display:flex; gap:6px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${getThumbnailHTML(bgUrl)}
             <input type="text" class="form-input" id="sc-bg-url" value="${bgUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose Background File">
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose Background File">
               📁
               <input type="file" id="sc-bg-file" accept="image/*" style="display:none;" />
             </label>
@@ -284,10 +345,28 @@ export class Inspector {
 
   private getHotspotHTML(scene: SceneData, hs: HotspotData): string {
     const hIdx = scene.hotspots.indexOf(hs);
+    const actionsCount = hs.actions.length;
+    const linkedDialog = hs.actions.find(a => a.dialogId)?.dialogId;
+    const dialogsCount = linkedDialog ? 1 : 0;
+
+    const subtabsHTML = `
+      <div class="inspector-subtabs">
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'properties' ? 'active' : ''}" data-tab="properties">⚙️ Properties</button>
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'interactions' ? 'active' : ''}" data-tab="interactions">⚡ Actions (${actionsCount})</button>
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'dialogs' ? 'active' : ''}" data-tab="dialogs">💬 Dialogs (${dialogsCount})</button>
+      </div>
+    `;
+
+    if (this.activeSubTab === 'interactions') {
+      return subtabsHTML + this.getInteractionsTabHTML(hIdx, hs.actions, false);
+    } else if (this.activeSubTab === 'dialogs') {
+      return subtabsHTML + this.getDialogsTabHTML(linkedDialog);
+    }
+
     const posX = hs.position ? hs.position.x : Math.round(hs.points.reduce((s,p)=>s+p.x,0)/(hs.points.length||1));
     const posY = hs.position ? hs.position.y : Math.round(hs.points.reduce((s,p)=>s+p.y,0)/(hs.points.length||1));
 
-    return `
+    return subtabsHTML + `
       <div class="sidebar-section">
         <div class="form-group">
           <label>Object Name</label>
@@ -295,9 +374,10 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Graphic Image Path / Upload</label>
-          <div style="display:flex; gap:6px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${getThumbnailHTML(hs.imageUrl)}
             <input type="text" class="form-input single-hs-img-url" data-hidx="${hIdx}" value="${hs.imageUrl || ''}" placeholder="None (Invisible Polygon)" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Upload custom graphic">
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Upload custom graphic">
               📁
               <input type="file" class="single-hs-file-input" data-hidx="${hIdx}" accept="image/*" style="display:none;" />
             </label>
@@ -339,43 +419,6 @@ export class Inspector {
 
       <div class="sidebar-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div class="sidebar-section-title" style="margin-bottom:0;">Interaction Actions</div>
-          <button class="btn btn-primary" id="btn-add-hs-action" data-hidx="${hIdx}" style="font-size:0.7rem; padding:3px 6px;">+ Action</button>
-        </div>
-        ${hs.actions.map((act, aIdx) => `
-          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:8px; border-radius:6px; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; gap:6px; margin-bottom:4px;">
-              <select class="form-select act-verb" data-hidx="${hIdx}" data-aidx="${aIdx}" style="font-size:0.75rem; flex:1;">
-                <option value="look" ${act.verb === 'look' ? 'selected' : ''}>Look</option>
-                <option value="interact" ${act.verb === 'interact' ? 'selected' : ''}>Interact / Touch</option>
-                <option value="talk" ${act.verb === 'talk' ? 'selected' : ''}>Talk</option>
-                <option value="use" ${act.verb === 'use' ? 'selected' : ''}>Use Item</option>
-                <option value="pick_up" ${act.verb === 'pick_up' ? 'selected' : ''}>Pick Up</option>
-              </select>
-              <button class="btn btn-del-action" data-hidx="${hIdx}" data-aidx="${aIdx}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
-            </div>
-            <div>
-              <label style="font-size:0.65rem; color:var(--text-muted);">Action Text</label>
-              <input type="text" class="form-input act-text" data-hidx="${hIdx}" data-aidx="${aIdx}" value="${act.text || ''}" style="font-size:0.75rem;" />
-            </div>
-            ${act.verb === 'use' ? `
-              <div style="margin-top:4px;">
-                <label style="font-size:0.65rem; color:var(--text-muted);">Required Item ID</label>
-                <input type="text" class="form-input act-req-item" data-hidx="${hIdx}" data-aidx="${aIdx}" value="${act.requireItemId || ''}" style="font-size:0.75rem;" />
-              </div>
-            ` : ''}
-            ${act.targetSceneId ? `
-              <div style="margin-top:4px;">
-                <label style="font-size:0.65rem; color:var(--text-muted);">Target Scene ID</label>
-                <input type="text" class="form-input act-target-scene" data-hidx="${hIdx}" data-aidx="${aIdx}" value="${act.targetSceneId || ''}" style="font-size:0.75rem;" />
-              </div>
-            ` : ''}
-          </div>
-        `).join('')}
-      </div>
-
-      <div class="sidebar-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <div class="sidebar-section-title" style="margin-bottom:0;">Polygon Vertices (${hs.points.length})</div>
           <button class="btn btn-primary" id="btn-add-hs-pt" data-hidx="${hIdx}" style="font-size:0.7rem; padding:3px 6px;">+ Point</button>
         </div>
@@ -391,6 +434,216 @@ export class Inspector {
     `;
   }
 
+  private getCharacterHTML(scene: SceneData, char: CharacterData): string {
+    const cIdx = scene.characters.indexOf(char);
+    const actions = char.actions || [];
+    const actionsCount = actions.length;
+    const linkedDialog = actions.find(a => a.dialogId)?.dialogId || `dlg_${char.id.replace('npc_', '')}`;
+    const hasDialog = this.project?.dialogs.some(d => d.id === linkedDialog);
+    const dialogsCount = hasDialog ? 1 : 0;
+
+    const subtabsHTML = `
+      <div class="inspector-subtabs">
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'properties' ? 'active' : ''}" data-tab="properties">⚙️ Properties</button>
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'interactions' ? 'active' : ''}" data-tab="interactions">⚡ Actions (${actionsCount})</button>
+        <button class="inspector-subtab-btn ${this.activeSubTab === 'dialogs' ? 'active' : ''}" data-tab="dialogs">💬 Dialogs (${dialogsCount})</button>
+      </div>
+    `;
+
+    if (this.activeSubTab === 'interactions') {
+      return subtabsHTML + this.getInteractionsTabHTML(cIdx, actions, true);
+    } else if (this.activeSubTab === 'dialogs') {
+      return subtabsHTML + this.getDialogsTabHTML(linkedDialog);
+    }
+
+    return subtabsHTML + `
+      <div class="sidebar-section">
+        <div class="form-group">
+          <label>Character Name</label>
+          <input type="text" class="form-input char-name" data-idx="${cIdx}" value="${char.name}" style="font-weight:700;" />
+        </div>
+        <div class="form-group">
+          <label>Sprite Sheet Path / Upload</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${getThumbnailHTML(char.spriteSheetUrl)}
+            <input type="text" class="form-input char-spritesheet" data-idx="${cIdx}" value="${char.spriteSheetUrl}" style="flex:1;" />
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
+              📁
+              <input type="file" class="char-file-input" data-idx="${cIdx}" accept="image/*" style="display:none;" />
+            </label>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
+            <input type="number" class="form-input char-pos-x" data-idx="${cIdx}" value="${char.position.x}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
+            <input type="number" class="form-input char-pos-y" data-idx="${cIdx}" value="${char.position.y}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Scale</label>
+            <input type="number" step="0.05" class="form-input char-scale" data-idx="${cIdx}" value="${char.scale}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Speed</label>
+            <input type="number" class="form-input char-speed" data-idx="${cIdx}" value="${char.speed}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Width</label>
+            <input type="number" class="form-input char-fw" data-idx="${cIdx}" value="${char.frameWidth}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Height</label>
+            <input type="number" class="form-input char-fh" data-idx="${cIdx}" value="${char.frameHeight}" />
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private getInteractionsTabHTML(hIdx: number, actions: HotspotAction[], isCharacter = false): string {
+    return `
+      <div class="sidebar-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div class="sidebar-section-title" style="margin-bottom:0;">Interaction Rules (${actions.length})</div>
+          <button class="btn btn-primary ${isCharacter ? 'btn-add-char-action' : 'btn-add-hs-action'}" data-hidx="${hIdx}" style="font-size:0.7rem; padding:4px 8px;">+ Add Action Rule</button>
+        </div>
+        ${actions.length === 0 ? `
+          <div style="font-size:0.75rem; color:var(--text-muted); font-style:italic; padding:8px 0;">
+            No interaction rules defined yet. Click "+ Add Action Rule" to create one.
+          </div>
+        ` : actions.map((act, aIdx) => `
+          <div class="action-flow-card" style="padding:10px;">
+            <!-- WHEN Section -->
+            <div class="flow-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span class="flow-group-title">⚡ WHEN USER PERFORMS</span>
+                <button class="btn btn-del-action" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕ Delete</button>
+              </div>
+              <select class="form-select act-verb" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">
+                <option value="look" ${act.verb === 'look' ? 'selected' : ''}>👁️ Look At</option>
+                <option value="interact" ${act.verb === 'interact' ? 'selected' : ''}>🖐️ Interact / Touch</option>
+                <option value="talk" ${act.verb === 'talk' ? 'selected' : ''}>💬 Talk To</option>
+                <option value="use" ${act.verb === 'use' ? 'selected' : ''}>🔑 Use Item With</option>
+                <option value="pick_up" ${act.verb === 'pick_up' ? 'selected' : ''}>🎒 Pick Up</option>
+              </select>
+              ${act.verb === 'use' ? `
+                <div style="margin-top:6px;">
+                  <label style="font-size:0.65rem; color:var(--text-muted);">Required Item ID</label>
+                  <input type="text" class="form-input act-req-item" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.requireItemId || ''}" placeholder="e.g. item_key" style="font-size:0.75rem;" />
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- CONDITION Section: True/False toggle button + Flag name input (empty = ALWAYS) -->
+            <div class="flow-group">
+              <span class="flow-group-title">🔀 IF CONDITION (LEAVE FLAG EMPTY FOR ALWAYS)</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button class="btn act-cond-toggle ${act.notFlag ? 'mode-false' : 'mode-true'}" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" title="Click to toggle between IF TRUE and IF FALSE">
+                  ${act.notFlag ? '❌ FALSE' : '✅ TRUE'}
+                </button>
+                <input type="text" class="form-input act-flag-input" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.requiredFlag || act.notFlag || ''}" placeholder="Flag Name (e.g. player:hasKey)" style="flex:1; font-size:0.75rem;" />
+              </div>
+            </div>
+
+            <!-- THEN Section -->
+            <div class="flow-group">
+              <span class="flow-group-title">🎬 THEN OUTCOMES</span>
+              <div style="margin-bottom:6px;">
+                <label style="font-size:0.65rem; color:var(--text-muted);">💬 Speak Response Text</label>
+                <input type="text" class="form-input act-text" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.text || ''}" placeholder="Character or narrator response..." style="font-size:0.75rem;" />
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🎁 Give Quest Item</label>
+                  <input type="text" class="form-input act-give-item" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.giveItemId || ''}" placeholder="e.g. item_key" style="font-size:0.75rem;" />
+                </div>
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🚩 Set Story Flag</label>
+                  <input type="text" class="form-input act-set-flag" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.setFlag || ''}" placeholder="e.g. hasKey" style="font-size:0.75rem;" />
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🚪 Teleport Scene</label>
+                  <input type="text" class="form-input act-target-scene" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.targetSceneId || ''}" placeholder="None" style="font-size:0.75rem;" />
+                </div>
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">💬 Trigger Dialogue</label>
+                  <input type="text" class="form-input act-dialog-id" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.dialogId || ''}" placeholder="e.g. dlg_eldrin" style="font-size:0.75rem;" />
+                </div>
+              </div>
+
+              <!-- Direct Shortcuts -->
+              <div style="display:flex; gap:6px; margin-top:8px;">
+                ${act.dialogId ? `
+                  <button class="btn btn-gold btn-open-dialog-editor" data-dlgid="${act.dialogId}" style="flex:1; font-size:0.7rem; padding:4px;">
+                    💬 Open Dialog Editor
+                  </button>
+                ` : ''}
+                ${act.targetSceneId ? `
+                  <button class="btn btn-primary btn-open-story-graph" style="flex:1; font-size:0.7rem; padding:4px;">
+                    🕸️ Open Story Graph
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  private getDialogsTabHTML(dialogId?: string): string {
+    const dialog = dialogId ? this.project?.dialogs.find(d => d.id === dialogId) : undefined;
+    if (!dialog) {
+      return `
+        <div class="sidebar-section">
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px; font-style:italic;">
+            No dialogue flow assigned to this element.
+          </div>
+          <button class="btn btn-primary btn-open-dialog-editor" style="width:100%; font-size:0.75rem; padding:8px;">
+            💬 Open Specialized Dialog Editor
+          </button>
+        </div>
+      `;
+    }
+
+    const startNode = dialog.nodes[dialog.startNodeId];
+    const choices = startNode?.choices || [];
+
+    return `
+      <div class="sidebar-section">
+        <div style="background:rgba(139, 92, 246, 0.08); border:1px solid var(--accent-purple); padding:10px; border-radius:8px; margin-bottom:12px;">
+          <div style="font-weight:700; font-family:var(--font-heading); color:var(--accent-gold); font-size:0.85rem; margin-bottom:4px;">
+            💬 ${dialog.title}
+          </div>
+          <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">ID: <code>${dialog.id}</code></div>
+          ${startNode ? `
+            <div style="font-size:0.75rem; margin-bottom:6px;">
+              <b>Speaker:</b> ${startNode.speaker}<br/>
+              <b>Initial Line:</b> <i>"${startNode.text}"</i>
+            </div>
+            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">
+              <b>Player Options (${choices.length}):</b>
+              <ul style="margin:4px 0 0 16px; padding:0;">
+                ${choices.map(c => `<li>${c.text}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+        </div>
+
+        <button class="btn btn-gold btn-open-dialog-editor" data-dlgid="${dialog.id}" style="width:100%; font-size:0.8rem; padding:8px; font-weight:700;">
+          💬 Open Specialized Dialog Editor
+        </button>
+      </div>
+    `;
+  }
+
   private getLayerHTML(scene: SceneData, layer: LayerData): string {
     const lIdx = scene.layers.indexOf(layer);
     return `
@@ -401,9 +654,10 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Image Path / Upload</label>
-          <div style="display:flex; gap:6px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${getThumbnailHTML(layer.imageUrl)}
             <input type="text" class="form-input single-layer-url" data-idx="${lIdx}" value="${layer.imageUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose File">
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose File">
               📁
               <input type="file" class="single-layer-file" data-idx="${lIdx}" accept="image/*" style="display:none;" />
             </label>
@@ -449,54 +703,6 @@ export class Inspector {
     `;
   }
 
-  private getCharacterHTML(scene: SceneData, char: CharacterData): string {
-    const cIdx = scene.characters.indexOf(char);
-    return `
-      <div class="sidebar-section">
-        <div class="form-group">
-          <label>Character Name</label>
-          <input type="text" class="form-input char-name" data-idx="${cIdx}" value="${char.name}" style="font-weight:700;" />
-        </div>
-        <div class="form-group">
-          <label>Sprite Sheet Path / Upload</label>
-          <div style="display:flex; gap:6px;">
-            <input type="text" class="form-input char-spritesheet" data-idx="${cIdx}" value="${char.spriteSheetUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;">
-              📁
-              <input type="file" class="char-file-input" data-idx="${cIdx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
-            <input type="number" class="form-input char-pos-x" data-idx="${cIdx}" value="${char.position.x}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
-            <input type="number" class="form-input char-pos-y" data-idx="${cIdx}" value="${char.position.y}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale</label>
-            <input type="number" step="0.05" class="form-input char-scale" data-idx="${cIdx}" value="${char.scale}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Speed</label>
-            <input type="number" class="form-input char-speed" data-idx="${cIdx}" value="${char.speed}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Width</label>
-            <input type="number" class="form-input char-fw" data-idx="${cIdx}" value="${char.frameWidth}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Height</label>
-            <input type="number" class="form-input char-fh" data-idx="${cIdx}" value="${char.frameHeight}" />
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
   private getItemHTML(item: InventoryItemData): string {
     const idx = this.project?.items.indexOf(item) ?? 0;
     return `
@@ -511,9 +717,10 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Icon Path / Upload</label>
-          <div style="display:flex; gap:6px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${getThumbnailHTML(item.iconUrl)}
             <input type="text" class="form-input item-icon-url" data-idx="${idx}" value="${item.iconUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;">
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
               📁
               <input type="file" class="item-icon-file" data-idx="${idx}" accept="image/*" style="display:none;" />
             </label>
@@ -580,6 +787,30 @@ export class Inspector {
       EventBus.getInstance().emit('editor:project_updated');
     };
 
+    // Sub-tabs switching
+    this.element.querySelectorAll('.inspector-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const tab = (e.target as HTMLElement).dataset.tab as any;
+        if (tab) {
+          this.activeSubTab = tab;
+          this.renderContent();
+        }
+      });
+    });
+
+    // Special Editor Modal Openers
+    this.element.querySelectorAll('.btn-open-dialog-editor').forEach(btn => {
+      btn.addEventListener('click', () => {
+        EventBus.getInstance().emit('editor:toggle_dialog_editor');
+      });
+    });
+
+    this.element.querySelectorAll('.btn-open-story-graph').forEach(btn => {
+      btn.addEventListener('click', () => {
+        EventBus.getInstance().emit('editor:toggle_story_graph');
+      });
+    });
+
     // Scene events
     const scName = this.element.querySelector('#sc-name') as HTMLInputElement;
     if (scName && this.currentScene) {
@@ -608,6 +839,7 @@ export class Inspector {
             this.currentScene!.layers[0].imageUrl = relPath;
           }
           if (scBgUrl) scBgUrl.value = relPath;
+          this.renderContent();
           emitUpdate();
         }
       });
@@ -667,6 +899,207 @@ export class Inspector {
       emitUpdate();
     });
 
+    // Action Adding
+    this.element.querySelectorAll('.btn-add-hs-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        if (this.currentScene?.hotspots[hIdx]) {
+          this.currentScene.hotspots[hIdx].actions.push({ verb: 'look', text: 'New action text.' });
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-add-char-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        if (this.currentScene?.characters[cIdx]) {
+          if (!this.currentScene.characters[cIdx].actions) this.currentScene.characters[cIdx].actions = [];
+          this.currentScene.characters[cIdx].actions!.push({ verb: 'talk', text: 'New speech response.' });
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Action Editing
+    this.element.querySelectorAll('.act-verb').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const targetEl = e.target as HTMLSelectElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].verb = targetEl.value as any;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-text').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].text = targetEl.value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-cond-toggle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.currentTarget as HTMLButtonElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          const act = actions[aIdx];
+          const flagVal = act.requiredFlag || act.notFlag;
+          if (act.notFlag) {
+            // Switch to TRUE mode
+            act.requiredFlag = flagVal;
+            act.notFlag = undefined;
+          } else {
+            // Switch to FALSE mode
+            act.notFlag = flagVal;
+            act.requiredFlag = undefined;
+          }
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-flag-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          const val = targetEl.value.trim() || undefined;
+          const isFalseMode = actions[aIdx].notFlag !== undefined;
+          if (!val) {
+            actions[aIdx].requiredFlag = undefined;
+            actions[aIdx].notFlag = undefined;
+          } else if (isFalseMode) {
+            actions[aIdx].notFlag = val;
+            actions[aIdx].requiredFlag = undefined;
+          } else {
+            actions[aIdx].requiredFlag = val;
+            actions[aIdx].notFlag = undefined;
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-give-item').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].giveItemId = targetEl.value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-req-item').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].requireItemId = targetEl.value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-target-scene').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].targetSceneId = targetEl.value;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-set-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].setFlag = targetEl.value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-dialog-id').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].dialogId = targetEl.value;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-del-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.target as HTMLElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions.splice(aIdx, 1);
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
     // WalkPath events
     const wpMinY = this.element.querySelector('#wp-min-y') as HTMLInputElement;
     const wpMaxY = this.element.querySelector('#wp-max-y') as HTMLInputElement;
@@ -698,6 +1131,7 @@ export class Inspector {
         const val = (e.target as HTMLInputElement).value;
         if (this.currentScene && this.currentScene.hotspots[hIdx]) {
           this.currentScene.hotspots[hIdx].imageUrl = val ? normalizeImagePath(val) : undefined;
+          this.renderContent();
           emitUpdate();
         }
       });
@@ -796,6 +1230,7 @@ export class Inspector {
         const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.currentScene?.layers[lIdx]) {
           this.currentScene.layers[lIdx].imageUrl = normalizeImagePath((e.target as HTMLInputElement).value);
+          this.renderContent();
           emitUpdate();
         }
       });
@@ -863,6 +1298,7 @@ export class Inspector {
         const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.currentScene?.characters[cIdx]) {
           this.currentScene.characters[cIdx].spriteSheetUrl = normalizeImagePath((e.target as HTMLInputElement).value);
+          this.renderContent();
           emitUpdate();
         }
       });
@@ -897,6 +1333,7 @@ export class Inspector {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.project?.items[idx]) {
           this.project.items[idx].iconUrl = normalizeImagePath((e.target as HTMLInputElement).value);
+          this.renderContent();
           emitUpdate();
         }
       });
