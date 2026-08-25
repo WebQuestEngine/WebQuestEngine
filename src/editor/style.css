@@ -126,6 +126,37 @@ body {
   background: #020617;
 }
 
+/* Floating Zoom Widget Overlay */
+.zoom-widget-overlay {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.zoom-level-text {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-gold);
+  min-width: 44px;
+  text-align: center;
+}
+
+.btn-zoom {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .editor-canvas-wrapper {
   position: relative;
   width: 100%;

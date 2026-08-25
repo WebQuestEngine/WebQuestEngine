@@ -3,6 +3,7 @@ import { Engine } from '../engine/core/Engine';
 import { Toolbar } from './components/Toolbar';
 import { Inspector } from './components/Inspector';
 import { ProjectTreeView } from './components/ProjectTreeView';
+import { ZoomWidget } from './components/ZoomWidget';
 import { StoryGraphView } from './components/StoryGraphView';
 import { DialogEditor } from './components/DialogEditor';
 import { EventBus } from '../engine/core/EventBus';
@@ -20,6 +21,7 @@ export class EditorApp {
   private toolbar: Toolbar;
   private inspector: Inspector;
   private treeView: ProjectTreeView;
+  private zoomWidget: ZoomWidget;
   private storyGraphView: StoryGraphView;
   private dialogEditor: DialogEditor;
   private engine: Engine | null = null;
@@ -32,6 +34,7 @@ export class EditorApp {
     this.toolbar = new Toolbar();
     this.inspector = new Inspector();
     this.treeView = new ProjectTreeView();
+    this.zoomWidget = new ZoomWidget();
     this.storyGraphView = new StoryGraphView();
     this.dialogEditor = new DialogEditor();
 
@@ -51,6 +54,7 @@ export class EditorApp {
     // Viewport Container
     this.viewportElement = document.createElement('div');
     this.viewportElement.className = 'editor-viewport-container';
+    this.viewportElement.appendChild(this.zoomWidget.element);
 
     mainLayout.appendChild(this.treeView.element);
     mainLayout.appendChild(this.viewportElement);

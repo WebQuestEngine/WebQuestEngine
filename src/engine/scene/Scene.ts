@@ -131,7 +131,7 @@ export class Scene {
     this.entityContainer.children.sort((a, b) => a.y - b.y);
 
     for (const layer of this.layers) {
-      layer.updateParallax(camera.position.x, camera.position.y);
+      layer.updateParallax(camera.position.x, camera.position.y, this.data.width, this.data.height);
     }
   }
 }

@@ -27,6 +27,8 @@ export class Engine {
   // WYSIWYG Drag & Scale State
   private isDragging = false;
   private isScaling = false;
+  private isPanning = false;
+  private panStartScreen: Vector2D = { x: 0, y: 0 };
   private dragTarget: { type: 'layer' | 'hotspot_vertex' | 'walkpath_vertex' | 'character' | 'hotspot_poly'; id?: string; index?: number; hIdx?: number } | null = null;
   private dragStartWorld: Vector2D = { x: 0, y: 0 };
   private dragInitialPos: Vector2D = { x: 0, y: 0 };
@@ -107,6 +109,17 @@ export class Engine {
       }
     });
 
+    // Editor mode change listener
+    EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
+      this.isEditorMode = !data.isPlayMode;
+      if (!this.isEditorMode && this.currentScene?.playerCharacter) {
+        this.camera.follow(this.currentScene.playerCharacter.container);
+      } else {
+        this.camera.follow(null);
+      }
+      this.renderDebugOverlay();
+    });
+
     // Selection handlers
     EventBus.getInstance().on('editor:select_layer', (layerId: string) => {
       this.selectedLayerId = layerId;
@@ -136,6 +149,31 @@ export class Engine {
       }
     });
 
+    // Camera zoom event handlers
+    EventBus.getInstance().on('camera:zoom_in', () => {
+      this.camera.zoomBy(1.2);
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_out', () => {
+      this.camera.zoomBy(0.8);
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_reset', () => {
+      this.camera.resetZoom();
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_fit', () => {
+      this.camera.fitToViewport();
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
     // Global canvas listeners
     this.app.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.app.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -146,10 +184,19 @@ export class Engine {
       this.handleCanvasRightClick(e);
     });
 
-    // Mouse wheel cycles verbs in Direct Cursor and Sierra modes
+    // Mouse wheel zoom and verb cycling
     this.app.canvas.addEventListener('wheel', (e) => {
-      if (this.isEditorMode) return;
       e.preventDefault();
+      const worldPt = this.getWorldPoint(e);
+
+      if (this.isEditorMode || e.ctrlKey || e.metaKey) {
+        const factor = e.deltaY < 0 ? 1.15 : 0.85;
+        this.camera.zoomBy(factor, worldPt);
+        EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+        this.renderDebugOverlay();
+        return;
+      }
+
       const verbs: ('walk' | 'look' | 'interact' | 'talk' | 'pick_up')[] = ['walk', 'look', 'interact', 'talk', 'pick_up'];
       const current = UISystem.getInstance().activeVerb;
       const idx = verbs.indexOf(current as any);
@@ -193,6 +240,12 @@ export class Engine {
       this.currentScene.playerCharacter.container.y = spawnPoint.y;
     }
 
+    if (this.isEditorMode) {
+      this.camera.follow(null);
+    } else if (this.currentScene.playerCharacter) {
+      this.camera.follow(this.currentScene.playerCharacter.container);
+    }
+
     this.app.stage.addChild(this.currentScene.container);
     this.currentScene.container.addChild(this.debugOverlay);
     this.renderDebugOverlay();
@@ -200,8 +253,19 @@ export class Engine {
 
   public update(delta: number): void {
     if (this.currentScene) {
+      this.camera.viewport = {
+        width: this.containerElement.clientWidth || 1280,
+        height: this.containerElement.clientHeight || 720
+      };
       this.camera.update();
       this.currentScene.update(delta, this.camera);
+
+      const viewCenterX = this.camera.viewport.width / 2;
+      const viewCenterY = this.camera.viewport.height / 2;
+
+      this.currentScene.container.scale.set(this.camera.zoom, this.camera.zoom);
+      this.currentScene.container.x = viewCenterX - this.camera.position.x * this.camera.zoom;
+      this.currentScene.container.y = viewCenterY - this.camera.position.y * this.camera.zoom;
     }
   }
 
@@ -209,14 +273,25 @@ export class Engine {
     const rect = this.app.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
+
+    const viewCenterX = (this.containerElement.clientWidth || this.app.canvas.width || 1280) / 2;
+    const viewCenterY = (this.containerElement.clientHeight || this.app.canvas.height || 720) / 2;
+
     return {
-      x: Math.round(screenX + this.camera.position.x),
-      y: Math.round(screenY + this.camera.position.y)
+      x: Math.round(this.camera.position.x + (screenX - viewCenterX) / this.camera.zoom),
+      y: Math.round(this.camera.position.y + (screenY - viewCenterY) / this.camera.zoom)
     };
   }
 
   private handleMouseDown(e: MouseEvent): void {
     if (!this.isEditorMode || !this.currentScene) return;
+
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      this.isPanning = true;
+      this.panStartScreen = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const worldPt = this.getWorldPoint(e);
 
     // 1. Check selected layer corner handles for Aspect-Ratio Scaling
@@ -323,6 +398,17 @@ export class Engine {
 
   private handleMouseMove(e: MouseEvent): void {
     if (!this.currentScene) return;
+
+    if (this.isPanning) {
+      const dx = e.clientX - this.panStartScreen.x;
+      const dy = e.clientY - this.panStartScreen.y;
+      this.camera.pan(dx, dy);
+      this.panStartScreen = { x: e.clientX, y: e.clientY };
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+      return;
+    }
+
     const worldPt = this.getWorldPoint(e);
 
     // Perform Drag or Scale in Editor mode
@@ -449,6 +535,10 @@ export class Engine {
   }
 
   private handleMouseUp(e: MouseEvent): void {
+    if (this.isPanning) {
+      this.isPanning = false;
+      return;
+    }
     if (this.isDragging || this.isScaling) {
       this.isDragging = false;
       this.isScaling = false;
