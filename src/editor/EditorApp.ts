@@ -2,6 +2,7 @@ import { ProjectData, UIPresetType } from '../engine/types';
 import { Engine } from '../engine/core/Engine';
 import { Toolbar } from './components/Toolbar';
 import { Inspector } from './components/Inspector';
+import { ProjectTreeView } from './components/ProjectTreeView';
 import { StoryGraphView } from './components/StoryGraphView';
 import { DialogEditor } from './components/DialogEditor';
 import { EventBus } from '../engine/core/EventBus';
@@ -18,6 +19,7 @@ export class EditorApp {
   private project: ProjectData;
   private toolbar: Toolbar;
   private inspector: Inspector;
+  private treeView: ProjectTreeView;
   private storyGraphView: StoryGraphView;
   private dialogEditor: DialogEditor;
   private engine: Engine | null = null;
@@ -29,6 +31,7 @@ export class EditorApp {
 
     this.toolbar = new Toolbar();
     this.inspector = new Inspector();
+    this.treeView = new ProjectTreeView();
     this.storyGraphView = new StoryGraphView();
     this.dialogEditor = new DialogEditor();
 
@@ -49,6 +52,7 @@ export class EditorApp {
     this.viewportElement = document.createElement('div');
     this.viewportElement.className = 'editor-viewport-container';
 
+    mainLayout.appendChild(this.treeView.element);
     mainLayout.appendChild(this.viewportElement);
     mainLayout.appendChild(this.inspector.element);
 
@@ -59,6 +63,7 @@ export class EditorApp {
     this.container.appendChild(this.dialogEditor.element);
 
     // Set initial project data
+    this.treeView.setProject(this.project);
     this.storyGraphView.setProject(this.project);
     this.dialogEditor.setProject(this.project);
 
@@ -183,6 +188,7 @@ export class EditorApp {
   }
 
   private syncAllViews(): void {
+    this.treeView.setProject(this.project);
     this.storyGraphView.setProject(this.project);
     this.dialogEditor.setProject(this.project);
     const activeScene = StoryGraphSystem.getInstance().getCurrentScene() || this.project.scenes[0];

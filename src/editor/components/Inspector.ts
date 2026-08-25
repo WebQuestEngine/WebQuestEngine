@@ -52,11 +52,62 @@ export class Inspector {
   private currentScene: SceneData | null = null;
   private activeTab: 'scene' | 'walkpath' | 'hotspots' | 'items' | 'ui' = 'scene';
   public selectedLayerId: string | null = null;
+  public selectedHotspotId: string | null = null;
+  public selectedCharacterId: string | null = null;
+  public selectedItemId: string | null = null;
 
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'editor-sidebar';
     this.render();
+
+    EventBus.getInstance().on('editor:select_layer', (id: string) => {
+      this.selectedLayerId = id;
+      this.activeTab = 'scene';
+      this.updateActiveTabButton();
+      this.renderContent();
+      this.scrollToElement(`.layer-card[data-id="${id}"]`);
+    });
+
+    EventBus.getInstance().on('editor:select_hotspot', (id: string) => {
+      this.selectedHotspotId = id;
+      this.activeTab = 'hotspots';
+      this.updateActiveTabButton();
+      this.renderContent();
+      this.scrollToElement(`.hs-card[data-id="${id}"]`);
+    });
+
+    EventBus.getInstance().on('editor:select_character', (id: string) => {
+      this.selectedCharacterId = id;
+      this.activeTab = 'scene';
+      this.updateActiveTabButton();
+      this.renderContent();
+    });
+
+    EventBus.getInstance().on('editor:select_item', (id: string) => {
+      this.selectedItemId = id;
+      this.activeTab = 'items';
+      this.updateActiveTabButton();
+      this.renderContent();
+      this.scrollToElement(`.item-card[data-id="${id}"]`);
+    });
+  }
+
+  private updateActiveTabButton(): void {
+    this.element.querySelectorAll('.tab-btn').forEach(b => {
+      const tab = (b as HTMLElement).dataset.tab;
+      if (tab === this.activeTab) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+  }
+
+  private scrollToElement(selector: string): void {
+    setTimeout(() => {
+      const el = this.element.querySelector(selector);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 50);
   }
 
   public setProject(project: ProjectData, currentScene?: SceneData): void {
@@ -263,8 +314,10 @@ export class Inspector {
           <div class="sidebar-section-title" style="margin-bottom:0;">Hotspots (${this.currentScene.hotspots.length})</div>
           <button class="btn btn-primary" id="btn-add-hotspot" style="font-size:0.75rem; padding:4px 8px;">+ Add Hotspot</button>
         </div>
-        ${this.currentScene.hotspots.map((hs, hIdx) => `
-          <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+        ${this.currentScene.hotspots.map((hs, hIdx) => {
+          const isSelected = this.selectedHotspotId === hs.id;
+          return `
+          <div class="hs-card" data-id="${hs.id}" style="background: ${isSelected ? 'rgba(139, 92, 246, 0.18)' : 'rgba(0,0,0,0.3)'}; border: 1px solid ${isSelected ? 'var(--accent-purple)' : 'var(--panel-border)'}; padding: 10px; border-radius: 6px; margin-bottom: 12px; transition: all 0.2s ease;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <input type="text" class="form-input hs-name" data-hidx="${hIdx}" value="${hs.name}" style="font-weight:700; font-size:0.85rem; width:75%;" />
               <button class="btn btn-del-hs" data-hidx="${hIdx}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
@@ -335,7 +388,8 @@ export class Inspector {
               `).join('')}
             </div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `;
   }
@@ -348,8 +402,10 @@ export class Inspector {
           <div class="sidebar-section-title" style="margin-bottom:0;">Inventory Items (${this.project.items.length})</div>
           <button class="btn btn-primary" id="btn-add-item" style="font-size:0.75rem; padding:4px 8px;">+ Add Item</button>
         </div>
-        ${this.project.items.map((item, idx) => `
-          <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); padding: 8px; border-radius: 6px; margin-bottom: 8px;">
+        ${this.project.items.map((item, idx) => {
+          const isSelected = this.selectedItemId === item.id;
+          return `
+          <div class="item-card" data-id="${item.id}" style="background: ${isSelected ? 'rgba(139, 92, 246, 0.18)' : 'rgba(0,0,0,0.3)'}; border: 1px solid ${isSelected ? 'var(--accent-purple)' : 'var(--panel-border)'}; padding: 8px; border-radius: 6px; margin-bottom: 8px; transition: all 0.2s ease;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <input type="text" class="form-input item-name" data-idx="${idx}" value="${item.name}" style="font-weight:700; font-size:0.85rem; width:75%;" />
               <button class="btn btn-del-item" data-idx="${idx}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;">🗑️</button>
@@ -369,7 +425,8 @@ export class Inspector {
               <input type="text" class="form-input item-desc" data-idx="${idx}" value="${item.description}" style="font-size:0.75rem;" />
             </div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `;
   }

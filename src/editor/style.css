@@ -138,6 +138,89 @@ body {
   display: block;
 }
 
+/* Left Sidebar Tree View */
+.editor-tree-sidebar {
+  width: 280px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  border-right: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.tree-header {
+  padding: 12px 14px;
+  font-family: var(--font-heading);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-gold);
+  border-bottom: 1px solid var(--panel-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.tree-content {
+  padding: 8px 6px;
+  font-size: 0.8rem;
+}
+
+.tree-group {
+  margin-bottom: 2px;
+}
+
+.tree-children {
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding-left: 4px;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.15s ease;
+  user-select: none;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.tree-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tree-item.selected {
+  background: rgba(139, 92, 246, 0.35);
+  border-color: var(--accent-purple);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
+}
+
+.tree-toggler {
+  font-size: 0.65rem;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.tree-toggler:hover {
+  color: var(--accent-gold);
+}
+
 /* Sidebar Inspector */
 .editor-sidebar {
   width: 340px;

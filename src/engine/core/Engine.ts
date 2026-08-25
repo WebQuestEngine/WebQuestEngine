@@ -15,11 +15,14 @@ export class Engine {
   public isRunning = false;
   public containerElement: HTMLElement;
   public isEditorMode = true;
-  public selectedLayerId: string | null = null;
 
   private project: ProjectData | null = null;
   private debugOverlay: PIXI.Graphics;
   private coinTargetHotspot: any = null;
+
+  public selectedLayerId: string | null = null;
+  public selectedHotspotId: string | null = null;
+  public selectedCharacterId: string | null = null;
 
   // WYSIWYG Drag & Scale State
   private isDragging = false;
@@ -104,9 +107,25 @@ export class Engine {
       }
     });
 
-    // Select layer handler
+    // Selection handlers
     EventBus.getInstance().on('editor:select_layer', (layerId: string) => {
       this.selectedLayerId = layerId;
+      this.selectedHotspotId = null;
+      this.selectedCharacterId = null;
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('editor:select_hotspot', (hotspotId: string) => {
+      this.selectedHotspotId = hotspotId;
+      this.selectedLayerId = null;
+      this.selectedCharacterId = null;
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('editor:select_character', (characterId: string) => {
+      this.selectedCharacterId = characterId;
+      this.selectedLayerId = null;
+      this.selectedHotspotId = null;
       this.renderDebugOverlay();
     });
 
@@ -272,9 +291,15 @@ export class Engine {
       const hsObj = this.currentScene.hotspots[hIdx];
       if (hsObj && hsObj.containsPointInEditor(worldPt)) {
         this.isDragging = true;
+        this.selectedHotspotId = hs.id;
+        this.selectedLayerId = null;
+        this.selectedCharacterId = null;
         this.dragTarget = { type: 'hotspot_poly', hIdx };
         this.dragStartWorld = worldPt;
         this.dragInitialPos = { x: worldPt.x, y: worldPt.y };
+        EventBus.getInstance().emit('editor:select_hotspot', hs.id);
+        EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
+        this.renderDebugOverlay();
         return;
       }
     }
@@ -283,9 +308,15 @@ export class Engine {
     const char = this.currentScene.findCharacterAt(worldPt);
     if (char) {
       this.isDragging = true;
+      this.selectedCharacterId = char.data.id;
+      this.selectedHotspotId = null;
+      this.selectedLayerId = null;
       this.dragTarget = { type: 'character', id: char.data.id };
       this.dragStartWorld = worldPt;
       this.dragInitialPos = { x: char.container.x, y: char.container.y };
+      EventBus.getInstance().emit('editor:select_character', char.data.id);
+      EventBus.getInstance().emit('editor:element_selected', { type: 'character', id: char.data.id });
+      this.renderDebugOverlay();
       return;
     }
   }
@@ -595,15 +626,29 @@ export class Engine {
     // Draw Hotspots
     for (const hs of this.currentScene.data.hotspots) {
       if (hs.points.length >= 3) {
+        const isSelected = this.selectedHotspotId === hs.id;
         this.debugOverlay.poly(hs.points.flatMap(p => [p.x, p.y]));
-        this.debugOverlay.fill({ color: 0xfbbf24, alpha: 0.2 });
-        this.debugOverlay.stroke({ color: 0xd97706, width: 2, alpha: 0.9 });
+        this.debugOverlay.fill({ color: isSelected ? 0x8b5cf6 : 0xfbbf24, alpha: isSelected ? 0.4 : 0.2 });
+        this.debugOverlay.stroke({ color: isSelected ? 0xa855f7 : 0xd97706, width: isSelected ? 4 : 2, alpha: 0.9 });
 
         for (const pt of hs.points) {
-          this.debugOverlay.circle(pt.x, pt.y, 5);
-          this.debugOverlay.fill({ color: 0xfef08a });
-          this.debugOverlay.stroke({ color: 0xd97706, width: 1.5 });
+          this.debugOverlay.circle(pt.x, pt.y, isSelected ? 7 : 5);
+          this.debugOverlay.fill({ color: isSelected ? 0xc084fc : 0xfef08a });
+          this.debugOverlay.stroke({ color: isSelected ? 0x7e22ce : 0xd97706, width: 1.5 });
         }
+      }
+    }
+
+    // Draw Selected Character Highlight
+    if (this.selectedCharacterId && this.currentScene) {
+      const charObj = this.currentScene.characters.get(this.selectedCharacterId);
+      if (charObj) {
+        const cx = charObj.container.x;
+        const cy = charObj.container.y;
+        const hw = (charObj.data.frameWidth * charObj.data.scale) / 2;
+        const hh = charObj.data.frameHeight * charObj.data.scale;
+        this.debugOverlay.rect(cx - hw, cy - hh, hw * 2, hh);
+        this.debugOverlay.stroke({ color: 0x8b5cf6, width: 3, alpha: 0.9 });
       }
     }
 
