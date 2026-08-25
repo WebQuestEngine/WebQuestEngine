@@ -182,6 +182,28 @@ export class EditorApp {
       this.dialogEditor.show();
     });
 
+    EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
+      let exitBar = document.querySelector('.play-mode-exit-bar');
+
+      if (data.isPlayMode) {
+        document.body.classList.add('play-mode-active');
+        if (!exitBar) {
+          exitBar = document.createElement('div');
+          exitBar.className = 'play-mode-exit-bar';
+          exitBar.innerHTML = `
+            <button class="btn btn-gold" id="btn-exit-play-bar" style="font-weight: 700;">✏️ Exit to Editor (Esc)</button>
+          `;
+          exitBar.querySelector('#btn-exit-play-bar')?.addEventListener('click', () => {
+            EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: false });
+          });
+          document.body.appendChild(exitBar);
+        }
+      } else {
+        document.body.classList.remove('play-mode-active');
+        if (exitBar) exitBar.remove();
+      }
+    });
+
     EventBus.getInstance().on('editor:select_scene', (sceneId: string) => {
       const targetScene = this.project.scenes.find(s => s.id === sceneId);
       if (targetScene) {
@@ -201,6 +223,11 @@ export class EditorApp {
 
   private attachKeyboardShortcuts(): void {
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('play-mode-active')) {
+        EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: false });
+        return;
+      }
+
       // Don't trigger undo/redo if typing inside text input or textarea
       const targetTag = (e.target as HTMLElement)?.tagName;
       if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;

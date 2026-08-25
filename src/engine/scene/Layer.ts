@@ -26,19 +26,14 @@ export class Layer extends GraphicalElement {
     }
   }
 
-  public updateParallax(cameraCenterX: number, cameraCenterY: number, sceneWidth: number = 1920, sceneHeight: number = 1080): void {
+  public updateParallax(cameraX: number, cameraY: number): void {
     const offsetX = this.data.x || 0;
     const offsetY = this.data.y || 0;
     const scaleX = this.data.scaleX ?? 1;
     const scaleY = this.data.scaleY ?? 1;
-    const pX = this.data.parallaxX ?? 1;
-    const pY = this.data.parallaxY ?? 1;
 
-    const sceneCenterX = sceneWidth / 2;
-    const sceneCenterY = sceneHeight / 2;
-
-    this.container.x = offsetX + (1 - pX) * (cameraCenterX - sceneCenterX);
-    this.container.y = offsetY + (1 - pY) * (cameraCenterY - sceneCenterY);
+    this.container.x = offsetX - cameraX * (this.data.parallaxX ?? 1);
+    this.container.y = offsetY - cameraY * (this.data.parallaxY ?? 1);
     this.container.scale.set(scaleX, scaleY);
     this.container.alpha = this.data.opacity;
     this.container.visible = this.data.visible;

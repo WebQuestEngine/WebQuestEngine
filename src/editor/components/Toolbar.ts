@@ -48,11 +48,11 @@ export class Toolbar {
 
   private attachEvents(): void {
     const playBtn = this.element.querySelector('#btn-play-toggle') as HTMLButtonElement;
-    playBtn.addEventListener('click', () => {
-      this.isPlayMode = !this.isPlayMode;
+
+    EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
+      this.isPlayMode = data.isPlayMode;
       const playIcon = this.element.querySelector('#play-icon');
       const playText = this.element.querySelector('#play-text');
-
       if (this.isPlayMode) {
         playBtn.classList.remove('btn-gold');
         playBtn.classList.add('btn-primary');
@@ -64,8 +64,10 @@ export class Toolbar {
         if (playIcon) playIcon.textContent = '▶';
         if (playText) playText.textContent = 'Play Test';
       }
+    });
 
-      EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: this.isPlayMode });
+    playBtn.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: !this.isPlayMode });
     });
 
     const undoBtn = this.element.querySelector('#btn-undo') as HTMLButtonElement;

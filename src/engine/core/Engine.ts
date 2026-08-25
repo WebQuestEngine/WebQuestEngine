@@ -112,8 +112,11 @@ export class Engine {
     // Editor mode change listener
     EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
       this.isEditorMode = !data.isPlayMode;
-      if (!this.isEditorMode && this.currentScene?.playerCharacter) {
-        this.camera.follow(this.currentScene.playerCharacter.container);
+      if (data.isPlayMode) {
+        this.camera.resetZoom();
+        if (this.currentScene?.playerCharacter) {
+          this.camera.follow(this.currentScene.playerCharacter.container);
+        }
       } else {
         this.camera.follow(null);
       }
@@ -191,7 +194,7 @@ export class Engine {
 
       if (this.isEditorMode || e.ctrlKey || e.metaKey) {
         const factor = e.deltaY < 0 ? 1.15 : 0.85;
-        this.camera.zoomBy(factor, worldPt);
+        this.camera.zoomBy(factor);
         EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
         this.renderDebugOverlay();
         return;
@@ -260,12 +263,23 @@ export class Engine {
       this.camera.update();
       this.currentScene.update(delta, this.camera);
 
+      const sceneWidth = this.currentScene.data.width || 1920;
+      const sceneHeight = this.currentScene.data.height || 1080;
+
       const viewCenterX = this.camera.viewport.width / 2;
       const viewCenterY = this.camera.viewport.height / 2;
 
       this.currentScene.container.scale.set(this.camera.zoom, this.camera.zoom);
-      this.currentScene.container.x = viewCenterX - this.camera.position.x * this.camera.zoom;
-      this.currentScene.container.y = viewCenterY - this.camera.position.y * this.camera.zoom;
+
+      if (this.isEditorMode) {
+        this.currentScene.container.pivot.set(sceneWidth / 2, sceneHeight / 2);
+        this.currentScene.container.x = viewCenterX + this.camera.panOffset.x;
+        this.currentScene.container.y = viewCenterY + this.camera.panOffset.y;
+      } else {
+        this.currentScene.container.pivot.set(0, 0);
+        this.currentScene.container.x = -this.camera.position.x * this.camera.zoom;
+        this.currentScene.container.y = -this.camera.position.y * this.camera.zoom;
+      }
     }
   }
 
@@ -274,13 +288,26 @@ export class Engine {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
+    if (!this.currentScene) return { x: 0, y: 0 };
+
+    const sceneWidth = this.currentScene.data.width || 1920;
+    const sceneHeight = this.currentScene.data.height || 1080;
+
     const viewCenterX = (this.containerElement.clientWidth || this.app.canvas.width || 1280) / 2;
     const viewCenterY = (this.containerElement.clientHeight || this.app.canvas.height || 720) / 2;
 
-    return {
-      x: Math.round(this.camera.position.x + (screenX - viewCenterX) / this.camera.zoom),
-      y: Math.round(this.camera.position.y + (screenY - viewCenterY) / this.camera.zoom)
-    };
+    if (this.isEditorMode) {
+      const sceneCenterX = sceneWidth / 2;
+      const sceneCenterY = sceneHeight / 2;
+
+      const worldX = Math.round(sceneCenterX + (screenX - (viewCenterX + this.camera.panOffset.x)) / this.camera.zoom);
+      const worldY = Math.round(sceneCenterY + (screenY - (viewCenterY + this.camera.panOffset.y)) / this.camera.zoom);
+      return { x: worldX, y: worldY };
+    } else {
+      const worldX = Math.round(screenX / this.camera.zoom + this.camera.position.x);
+      const worldY = Math.round(screenY / this.camera.zoom + this.camera.position.y);
+      return { x: worldX, y: worldY };
+    }
   }
 
   private handleMouseDown(e: MouseEvent): void {
