@@ -233,10 +233,17 @@ body {
   overflow-y: auto;
 }
 
-.sidebar-tab-header {
-  display: flex;
+.inspector-header {
+  padding: 12px 14px;
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-gold);
   border-bottom: 1px solid var(--panel-border);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tab-btn {

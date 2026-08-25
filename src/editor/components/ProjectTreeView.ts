@@ -1,6 +1,12 @@
 import { ProjectData, SceneData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
 
+export interface SelectionTarget {
+  type: 'project' | 'chapter' | 'scene' | 'walkpath' | 'layer' | 'hotspot' | 'character' | 'item';
+  id?: string;
+  sceneId?: string;
+}
+
 export class ProjectTreeView {
   public element: HTMLElement;
   private project: ProjectData | null = null;
@@ -13,9 +19,11 @@ export class ProjectTreeView {
     this.render();
 
     // Listen to selection events from editor/engine to highlight tree nodes bi-directionally
-    EventBus.getInstance().on('editor:element_selected', (payload: { type: string; id: string }) => {
+    EventBus.getInstance().on('editor:element_selected', (payload: { type: string; id: string; sceneId?: string }) => {
       if (payload.type === 'scene') {
         this.selectedNodeId = `scene_${payload.id}`;
+      } else if (payload.type === 'walkpath') {
+        this.selectedNodeId = `walkpath_${payload.sceneId || payload.id}`;
       } else if (payload.type === 'layer') {
         this.selectedNodeId = `layer_${payload.id}`;
       } else if (payload.type === 'hotspot') {
@@ -45,6 +53,11 @@ export class ProjectTreeView {
 
     EventBus.getInstance().on('editor:select_item', (id: string) => {
       this.selectedNodeId = `item_${id}`;
+      this.renderContent();
+    });
+
+    EventBus.getInstance().on('editor:select_walkpath', (sceneId: string) => {
+      this.selectedNodeId = `walkpath_${sceneId}`;
       this.renderContent();
     });
 
@@ -100,7 +113,7 @@ export class ProjectTreeView {
 
       html += `
         <div class="tree-group">
-          <div class="tree-item ${this.selectedNodeId === chKey ? 'selected' : ''}" data-nodeid="${chKey}" data-type="chapter">
+          <div class="tree-item ${this.selectedNodeId === chKey ? 'selected' : ''}" data-nodeid="${chKey}" data-type="chapter" data-id="${ch.id}">
             <span class="tree-toggler" data-key="${chKey}">${isChCollapsed ? '▶' : '▼'}</span>
             <span>📖 ${ch.title}</span>
           </div>
@@ -141,6 +154,7 @@ export class ProjectTreeView {
           <div class="tree-children">
             ${this.project.scenes.map(sc => {
               const scKey = `scene_${sc.id}`;
+              const wpKey = `walkpath_${sc.id}`;
               const isScCollapsed = this.collapsedNodes.has(scKey);
               return `
                 <div class="tree-group tree-node">
@@ -151,6 +165,12 @@ export class ProjectTreeView {
 
                   ${!isScCollapsed ? `
                     <div class="tree-children">
+                      <!-- WalkPath Polygon Node -->
+                      <div class="tree-item tree-node ${this.selectedNodeId === wpKey ? 'selected' : ''}" data-nodeid="${wpKey}" data-type="walkpath" data-sceneid="${sc.id}">
+                        <span>🚶 WalkPath Polygon</span>
+                      </div>
+
+                      <!-- Objects Folder -->
                       ${this.renderObjectsFolder(sc)}
                     </div>
                   ` : ''}
@@ -209,10 +229,14 @@ export class ProjectTreeView {
     const folderKey = `characters_folder_${chapterId}`;
     const isCollapsed = this.collapsedNodes.has(folderKey);
 
+    const seenCharIds = new Set<string>();
     const allChars: { id: string; name: string; sceneId: string }[] = [];
     this.project.scenes.forEach(sc => {
       sc.characters.forEach(c => {
-        allChars.push({ id: c.id, name: c.name, sceneId: sc.id });
+        if (!seenCharIds.has(c.id)) {
+          seenCharIds.add(c.id);
+          allChars.push({ id: c.id, name: c.name, sceneId: sc.id });
+        }
       });
     });
 
@@ -297,18 +321,29 @@ export class ProjectTreeView {
 
         if (type === 'scene' && id) {
           EventBus.getInstance().emit('editor:select_scene', id);
+          EventBus.getInstance().emit('editor:select_target', { type: 'scene', id });
+        } else if (type === 'walkpath' && sceneId) {
+          EventBus.getInstance().emit('editor:select_scene', sceneId);
+          EventBus.getInstance().emit('editor:select_walkpath', sceneId);
+          EventBus.getInstance().emit('editor:select_target', { type: 'walkpath', sceneId });
         } else if (type === 'layer' && id) {
           if (sceneId) EventBus.getInstance().emit('editor:select_scene', sceneId);
           EventBus.getInstance().emit('editor:select_layer', id);
+          EventBus.getInstance().emit('editor:select_target', { type: 'layer', sceneId, id });
         } else if (type === 'hotspot' && id) {
           if (sceneId) EventBus.getInstance().emit('editor:select_scene', sceneId);
           EventBus.getInstance().emit('editor:select_hotspot', id);
+          EventBus.getInstance().emit('editor:select_target', { type: 'hotspot', sceneId, id });
         } else if (type === 'character' && id) {
           if (sceneId) EventBus.getInstance().emit('editor:select_scene', sceneId);
           EventBus.getInstance().emit('editor:select_character', id);
+          EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId, id });
         } else if (type === 'item' && id) {
           EventBus.getInstance().emit('editor:select_item', id);
-        } else if (type.endsWith('folder') || type === 'chapter') {
+          EventBus.getInstance().emit('editor:select_target', { type: 'item', id });
+        } else if (type === 'chapter' && id) {
+          EventBus.getInstance().emit('editor:select_target', { type: 'chapter', id });
+        } else if (type.endsWith('folder')) {
           if (this.collapsedNodes.has(nodeId)) {
             this.collapsedNodes.delete(nodeId);
           } else {

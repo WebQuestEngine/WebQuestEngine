@@ -73,6 +73,8 @@ export interface CharacterData {
   speed: number;
   scale: number;
   talkColor: string;
+  cursor?: string;
+  actions?: HotspotAction[];
   animations: {
     idleDown: number[];
     idleSide: number[];

@@ -25,7 +25,23 @@ export class Character extends MovableElement {
     super(data.id, data.name, data.position);
     this.data = data;
     this.imageUrl = data.spriteSheetUrl;
+    this.cursor = data.cursor || 'talk';
+    this.actions = data.actions || [];
+    this.speed = data.speed;
     this.sprite.anchor.set(0.5, 0.9); // Bottom-center anchor for foot placement
+  }
+
+  public override containsPointInEditor(p: Vector2D): boolean {
+    if (this.points && this.points.length >= 3) {
+      return super.containsPointInEditor(p);
+    }
+    const hw = (this.data.frameWidth * (this.data.scale || 1)) / 2;
+    const hh = this.data.frameHeight * (this.data.scale || 1);
+    const minX = this.position.x - hw;
+    const maxX = this.position.x + hw;
+    const minY = this.position.y - hh;
+    const maxY = this.position.y;
+    return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
   }
 
   public async init(): Promise<void> {

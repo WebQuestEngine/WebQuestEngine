@@ -66,4 +66,37 @@ export class InteractableElement extends GraphicalElement {
       return true;
     });
   }
+
+  public getActionForItemId(itemId: string): HotspotAction | undefined {
+    const storySystem = StoryGraphSystem.getInstance();
+    return this.actions.find(a => {
+      if (a.requireItemId !== itemId) return false;
+      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
+      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      return true;
+    });
+  }
+
+  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+    if (selectedItemId) {
+      const itemAction = this.getActionForItemId(selectedItemId);
+      if (itemAction) return itemAction;
+    }
+
+    const verbAction = this.getActionForVerb(activeVerb);
+    if (verbAction) return verbAction;
+
+    const storySystem = StoryGraphSystem.getInstance();
+    const validActions = this.actions.filter(a => {
+      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
+      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      return true;
+    });
+
+    return validActions.find(a => a.verb === 'interact') ||
+           validActions.find(a => a.verb === 'talk') ||
+           validActions.find(a => a.verb === 'pick_up') ||
+           validActions.find(a => a.verb === 'use') ||
+           validActions[0];
+  }
 }

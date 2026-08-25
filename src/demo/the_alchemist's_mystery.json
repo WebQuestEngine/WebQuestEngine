@@ -471,30 +471,23 @@
               "text": "You step back out into the courtyard."
             }
           ]
-        },
+        }
+      ],
+      "characters": [
         {
-          "id": "hs_eldrin",
+          "id": "npc_eldrin",
           "name": "Master Eldrin",
+          "spriteSheetUrl": "procedural_eldrin",
+          "frameWidth": 64,
+          "frameHeight": 96,
+          "position": {
+            "x": 900,
+            "y": 700
+          },
+          "speed": 0,
+          "scale": 1,
+          "talkColor": "#60a5fa",
           "cursor": "talk",
-          "enabled": true,
-          "points": [
-            {
-              "x": 860,
-              "y": 620
-            },
-            {
-              "x": 940,
-              "y": 620
-            },
-            {
-              "x": 940,
-              "y": 730
-            },
-            {
-              "x": 860,
-              "y": 730
-            }
-          ],
           "actions": [
             {
               "verb": "look",
@@ -508,72 +501,7 @@
               "verb": "interact",
               "dialogId": "dlg_eldrin"
             }
-          ]
-        }
-      ],
-      "characters": [
-        {
-          "id": "player",
-          "name": "Sir Ronald",
-          "spriteSheetUrl": "procedural_hero",
-          "frameWidth": 64,
-          "frameHeight": 96,
-          "position": {
-            "x": 300,
-            "y": 800
-          },
-          "speed": 4,
-          "scale": 1,
-          "talkColor": "#fef08a",
-          "animations": {
-            "idleDown": [
-              0
-            ],
-            "idleSide": [
-              4
-            ],
-            "idleUp": [
-              8
-            ],
-            "walkDown": [
-              0,
-              1,
-              2,
-              3
-            ],
-            "walkSide": [
-              4,
-              5,
-              6,
-              7
-            ],
-            "walkUp": [
-              8,
-              9,
-              10,
-              11
-            ],
-            "talk": [
-              12,
-              13,
-              14,
-              15
-            ]
-          }
-        },
-        {
-          "id": "npc_eldrin",
-          "name": "Master Eldrin",
-          "spriteSheetUrl": "procedural_eldrin",
-          "frameWidth": 64,
-          "frameHeight": 96,
-          "position": {
-            "x": 900,
-            "y": 720
-          },
-          "speed": 3,
-          "scale": 1,
-          "talkColor": "#60a5fa",
+          ],
           "animations": {
             "idleDown": [
               0

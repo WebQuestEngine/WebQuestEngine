@@ -53,16 +53,44 @@ export class Scene {
     }
 
     // Initialize characters
+    let hasPlayer = false;
     for (const charData of this.data.characters) {
       const char = new Character(charData);
       await char.init();
       this.characters.set(charData.id, char);
       this.entityContainer.addChild(char.container);
 
-      if (!this.playerCharacter || charData.id === 'player') {
+      if (charData.id === 'player') {
         this.playerCharacter = char;
+        hasPlayer = true;
         camera.follow(char.container);
       }
+    }
+
+    // Automatically spawn player at playerSpawn if not explicitly listed in scene characters
+    if (!hasPlayer) {
+      const defaultPlayerData = {
+        id: 'player',
+        name: 'Sir Ronald',
+        spriteSheetUrl: 'procedural_hero',
+        frameWidth: 64,
+        frameHeight: 96,
+        position: { ...(this.data.playerSpawn || { x: 300, y: 750 }) },
+        speed: 4,
+        scale: 1,
+        talkColor: '#fef08a',
+        animations: {
+          idleDown: [0], idleSide: [4], idleUp: [8],
+          walkDown: [0, 1, 2, 3], walkSide: [4, 5, 6, 7], walkUp: [8, 9, 10, 11],
+          talk: [12, 13, 14, 15]
+        }
+      };
+      const playerChar = new Character(defaultPlayerData);
+      await playerChar.init();
+      this.characters.set('player', playerChar);
+      this.playerCharacter = playerChar;
+      this.entityContainer.addChild(playerChar.container);
+      camera.follow(playerChar.container);
     }
   }
 

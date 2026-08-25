@@ -499,20 +499,19 @@ export class Engine {
     UISystem.getInstance().hideContextCoin();
 
     // Interaction with NPC character
-    if (charNPC) {
-      const npcHotspot = this.currentScene.findHotspotAt({ x: charNPC.container.x, y: charNPC.container.y - 40 });
-      if (npcHotspot) {
-        const action = npcHotspot.getBestAction(activeVerb);
-        if (action) {
-          if (!this.isEditorMode && player) {
-            player.walkTo(npcHotspot.getCenter(), walkPath, () => this.executeAction(action));
-          } else {
-            this.executeAction(action);
-          }
-          return;
+    if (charNPC && charNPC !== player) {
+      const action = charNPC.getBestAction(activeVerb);
+      if (action) {
+        if (!this.isEditorMode && player) {
+          player.walkTo(charNPC.position, walkPath, () => this.executeAction(action));
+        } else {
+          this.executeAction(action);
         }
+        return;
       }
-      DialogSystem.getInstance().startDialog('dlg_eldrin', (flag) => StoryGraphSystem.getInstance().getFlag(flag));
+      if (charNPC.data.id === 'npc_eldrin') {
+        DialogSystem.getInstance().startDialog('dlg_eldrin', (flag) => StoryGraphSystem.getInstance().getFlag(flag));
+      }
       return;
     }
 
