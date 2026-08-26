@@ -1152,19 +1152,19 @@
       "id": "item_key",
       "name": "Brass Key",
       "description": "An ornate brass key found in the shrub outside the castle.",
-      "iconUrl": "brass_key.png"
+      "iconUrl": "assets/items/brass_key.png"
     },
     {
       "id": "item_crystal",
       "name": "Glowing Crystal",
       "description": "A magical blue crystal given by Master Eldrin.",
-      "iconUrl": "glowing_crystal.png"
+      "iconUrl": "assets/items/glowing_crystal.png"
     },
     {
       "id": "item_potion",
       "name": "Elixir of Wisdom",
       "description": "A sparkling potion brewed in Eldrin’s cauldron.",
-      "iconUrl": "elixir.webp"
+      "iconUrl": "assets/items/elixir.png"
     }
   ],
   "dialogs": [
