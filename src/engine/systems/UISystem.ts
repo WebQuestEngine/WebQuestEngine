@@ -158,14 +158,23 @@ export class UISystem {
         <button class="verb-btn" data-verb="interact" title="Interact/Use">✋ Use</button>
         <button class="verb-btn" data-verb="talk" title="Talk">💬 Talk</button>
       </div>
-      <button class="floating-inv-btn" id="ui-floating-inv">🎒 Inventory</button>
-      <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
-      <div class="inventory-drawer hidden" id="ui-inventory-modal">
-        <div class="inventory-drawer-header">
-          <span>Inventory</span>
-          <button id="ui-close-inv">✕</button>
+
+      <div class="direct-inv-dock">
+        <div class="direct-inv-header">
+          <span>🎒 INVENTORY</span>
+          <button class="floating-inv-btn" id="ui-floating-inv" style="padding:2px 8px; font-size:0.7rem;">Modal ⤢</button>
         </div>
         <div class="inventory-grid" id="ui-inventory-slots"></div>
+      </div>
+
+      <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
+
+      <div class="inventory-drawer hidden" id="ui-inventory-modal">
+        <div class="inventory-drawer-header">
+          <span>Inventory Drawer</span>
+          <button id="ui-close-inv">✕</button>
+        </div>
+        <div class="inventory-grid" id="ui-inventory-slots-drawer"></div>
       </div>
     `;
   }
@@ -263,61 +272,104 @@ export class UISystem {
     }
   }
 
+  public showSubtitle(text: string): void {
+    if (!this.containerElement) return;
+    const existing = this.containerElement.querySelector('.speech-subtitle-box');
+    if (existing) existing.remove();
+
+    const box = document.createElement('div');
+    box.className = 'speech-subtitle-box';
+    box.textContent = `"${text}"`;
+    this.containerElement.appendChild(box);
+
+    setTimeout(() => {
+      box.remove();
+    }, 4000);
+  }
+
+  private getItemIconHTML(item: InventoryItemData): string {
+    const url = item.iconUrl || '';
+    if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/') || url.endsWith('.png') || url.endsWith('.jpg') || url.endsWith('.svg')) {
+      return `<img src="${url}" alt="${item.name}" onError="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+              <div style="display:none;">${this.getProceduralSVG(item.id, item.name)}</div>`;
+    }
+    return this.getProceduralSVG(item.id, item.name);
+  }
+
+  private getProceduralSVG(id: string, name: string): string {
+    const keyStr = (id + ' ' + name).toLowerCase();
+    if (keyStr.includes('key')) {
+      return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L19 4M15 4l2 2M18 7l2 2"/></svg>`;
+    }
+    if (keyStr.includes('crystal')) {
+      return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2.5"><path d="M12 2L5 9v6l7 7 7-7V9l-7-7z"/><path d="M12 2v20M5 9h14M5 15h14"/></svg>`;
+    }
+    if (keyStr.includes('potion') || keyStr.includes('elixir')) {
+      return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5"><path d="M9 3h6M10 3v4L5 16a3 3 0 003 4h8a3 3 0 003-4L14 7V3"/></svg>`;
+    }
+    if (keyStr.includes('scroll') || keyStr.includes('note') || keyStr.includes('paper')) {
+      return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-.7-2.7-1.1-4.5C14.7 4.7 13.9 4 13 4H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-1z"/></svg>`;
+    }
+    return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2M12 12v3"/></svg>`;
+  }
+
   public renderInventoryItems(items: InventoryItemData[]): void {
     if (!this.containerElement) return;
-    const grid = this.containerElement.querySelector('#ui-inventory-slots');
-    if (!grid) return;
+    const grids = Array.from(this.containerElement.querySelectorAll('#ui-inventory-slots, #ui-inventory-slots-drawer'));
+    if (grids.length === 0) return;
 
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
 
-    grid.innerHTML = '';
-    for (const item of items) {
-      const slot = document.createElement('div');
-      slot.className = `inv-item-slot ${selectedItem && selectedItem.id === item.id ? 'selected' : ''}`;
-      slot.dataset.id = item.id;
-      slot.title = `${item.name} (Click to select, or drag onto scene)`;
-      slot.draggable = true;
+    for (const grid of grids) {
+      grid.innerHTML = '';
+      for (const item of items) {
+        const slot = document.createElement('div');
+        slot.className = `inv-item-slot ${selectedItem && selectedItem.id === item.id ? 'selected' : ''}`;
+        slot.dataset.id = item.id;
+        slot.title = `${item.name} (Click to select, or drag onto scene)`;
+        slot.draggable = true;
 
-      slot.innerHTML = `
-        <img src="${item.iconUrl}" alt="${item.name}" onError="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'40\\' height=\\'40\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'gold\\' stroke-width=\\'2\\'><circle cx=\\'12\\' cy=\\'12\\' r=\\'10\\'/></svg>'" />
-        <span class="inv-item-label">${item.name}</span>
-      `;
+        slot.innerHTML = `
+          ${this.getItemIconHTML(item)}
+          <span class="inv-item-label">${item.name}</span>
+        `;
 
-      // Drag & Drop
-      slot.addEventListener('dragstart', (e) => {
-        InventorySystem.getInstance().selectItem(item.id);
-        this.setActiveVerb('use');
-        if (e.dataTransfer) {
-          e.dataTransfer.setData('text/plain', item.id);
-          e.dataTransfer.effectAllowed = 'copyMove';
-        }
-      });
-
-      slot.addEventListener('dragover', (e) => e.preventDefault());
-
-      slot.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const draggedId = e.dataTransfer?.getData('text/plain');
-        if (draggedId && draggedId !== item.id) {
-          InventorySystem.getInstance().combineItems(draggedId, item.id);
-        }
-      });
-
-      // Click select
-      slot.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const currentSelected = InventorySystem.getInstance().getSelectedItem();
-        if (currentSelected && currentSelected.id === item.id) {
-          InventorySystem.getInstance().selectItem(null);
-          this.setActiveVerb('walk');
-        } else {
+        // Drag & Drop
+        slot.addEventListener('dragstart', (e) => {
           InventorySystem.getInstance().selectItem(item.id);
           this.setActiveVerb('use');
-        }
-        this.renderInventoryItems(items);
-      });
+          if (e.dataTransfer) {
+            e.dataTransfer.setData('text/plain', item.id);
+            e.dataTransfer.effectAllowed = 'copyMove';
+          }
+        });
 
-      grid.appendChild(slot);
+        slot.addEventListener('dragover', (e) => e.preventDefault());
+
+        slot.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const draggedId = e.dataTransfer?.getData('text/plain');
+          if (draggedId && draggedId !== item.id) {
+            InventorySystem.getInstance().combineItems(draggedId, item.id);
+          }
+        });
+
+        // Click select
+        slot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const currentSelected = InventorySystem.getInstance().getSelectedItem();
+          if (currentSelected && currentSelected.id === item.id) {
+            InventorySystem.getInstance().selectItem(null);
+            this.setActiveVerb('walk');
+          } else {
+            InventorySystem.getInstance().selectItem(item.id);
+            this.setActiveVerb('use');
+          }
+          this.renderInventoryItems(items);
+        });
+
+        grid.appendChild(slot);
+      }
     }
   }
 }

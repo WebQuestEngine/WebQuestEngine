@@ -85,19 +85,24 @@ export class Character extends MovableElement {
     this.currentPathIndex = 0;
     this.state = 'walking';
     this.currentCustomAnimKey = null;
+    if (this.customAnimTimer) {
+      clearTimeout(this.customAnimTimer);
+      this.customAnimTimer = null;
+    }
     this.onWalkCompleteCallback = onComplete || null;
+    this.faceTarget(destination);
   }
 
   public talk(onComplete?: () => void): void {
     this.state = 'talking';
     this.animFrame = 0;
     this.currentCustomAnimKey = null;
-    if (onComplete) {
-      setTimeout(() => {
+    setTimeout(() => {
+      if (this.state === 'talking') {
         this.state = 'idle';
-        onComplete();
-      }, 2500);
-    }
+      }
+      if (onComplete) onComplete();
+    }, 3000);
   }
 
   public playCustomAnimation(animName: string, durationMs = 1500, onComplete?: () => void): void {

@@ -1673,23 +1673,23 @@ export class Inspector {
     const otherClipKeys = Object.keys(anims).filter(k => k !== animKey);
 
     overlay.innerHTML = `
-      <div class="sprite-picker-modal" style="width:980px; max-height:92vh;">
+      <div class="sprite-picker-modal" style="width:1080px; max-width:96vw; height:92vh; max-height:92vh; display:flex; flex-direction:column;">
         <div class="sprite-picker-header">
           <span>🖼️ Visual Frame Studio - ${char.name} (${animKey})</span>
           <button class="btn btn-del-action" id="btn-close-sprite-picker" style="font-size:0.8rem; padding:4px 8px;">✕ Close</button>
         </div>
 
         <!-- Studio Control Bar -->
-        <div style="padding:10px 16px; background:#0f172a; border-bottom:1px solid var(--panel-border); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+        <div style="padding:8px 16px; background:#0f172a; border-bottom:1px solid var(--panel-border); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
           <!-- Grid Settings -->
           <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem;">
             <span style="font-weight:700; color:var(--accent-gold);">Grid:</span>
-            <input type="number" id="input-grid-w" value="${gridW}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Grid Cell Width" /> x
-            <input type="number" id="input-grid-h" value="${gridH}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Grid Cell Height" />
+            <input type="number" id="input-grid-w" value="${gridW}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Cell Width" /> x
+            <input type="number" id="input-grid-h" value="${gridH}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Cell Height" />
             <span style="font-weight:700; color:var(--text-muted); margin-left:4px;">Offset:</span>
             X:<input type="number" id="input-grid-off-x" value="${gridOffsetX}" style="width:40px; font-size:0.75rem; padding:2px 4px;" />
             Y:<input type="number" id="input-grid-off-y" value="${gridOffsetY}" style="width:40px; font-size:0.75rem; padding:2px 4px;" />
-            
+
             <button class="btn ${showGridOverlay ? 'btn-gold' : 'btn-primary'}" id="btn-toggle-grid" style="font-size:0.7rem; padding:3px 8px;">
               ${showGridOverlay ? '👁️ Grid ON' : '🙈 Grid OFF'}
             </button>
@@ -1698,60 +1698,63 @@ export class Inspector {
             </button>
           </div>
 
-          <!-- Zoom & Frame Duplicate Controls -->
+          <!-- Zoom Controls -->
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted);">Zoom:</span>
             <button class="btn btn-primary btn-zoom" data-zoom="1" style="font-size:0.7rem; padding:2px 6px;">100%</button>
             <button class="btn btn-primary btn-zoom" data-zoom="2" style="font-size:0.7rem; padding:2px 6px;">200%</button>
             <button class="btn btn-primary btn-zoom" data-zoom="4" style="font-size:0.7rem; padding:2px 6px;">400%</button>
-
-            <button class="btn btn-gold" id="btn-dup-frame-right" style="font-size:0.7rem; padding:3px 8px; margin-left:8px;">➕ Duplicate Right →</button>
-            <button class="btn btn-gold" id="btn-dup-frame-down" style="font-size:0.7rem; padding:3px 8px;">➕ Duplicate Down ↓</button>
           </div>
         </div>
 
-        <div class="sprite-picker-body" style="grid-template-columns: 1fr 320px;">
-          <div>
-            <div class="sprite-picker-grid-container" style="user-select:none; max-height:480px;">
-              <div id="picker-zoom-wrapper" style="transform-origin:0 0; transition:transform 0.1s ease; display:inline-block;">
-                <div id="picker-sheet-wrapper" style="position:relative; display:inline-block;">
-                  <img id="picker-sheet-img" src="${imgUrl}" style="display:block; image-rendering:pixelated; pointer-events:none;" />
-                  <div id="picker-grid-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair; pointer-events:auto;"></div>
-                </div>
+        <!-- Main Workspace (Canvas Left + Properties Right) -->
+        <div style="flex:1; display:grid; grid-template-columns:1fr 280px; gap:12px; padding:12px; min-height:0; overflow:hidden;">
+          <!-- Main Canvas Container -->
+          <div class="sprite-picker-grid-container" style="user-select:none; height:100%; width:100%; overflow:auto; display:flex; justify-content:center;">
+            <div id="picker-zoom-wrapper" style="transform-origin:0 0; transition:transform 0.1s ease; display:inline-block;">
+              <div id="picker-sheet-wrapper" style="position:relative; display:inline-block;">
+                <img id="picker-sheet-img" src="${imgUrl}" style="display:block; image-rendering:pixelated; pointer-events:none;" />
+                <div id="picker-grid-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair; pointer-events:auto;"></div>
               </div>
             </div>
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:10px; background:rgba(15,23,42,0.5); padding:12px; border-radius:8px; border:1px solid var(--panel-border); overflow-y:auto; max-height:480px;">
-            <div class="sidebar-section-title" style="margin-bottom:0;">Frames Sequence (${rawFrames.length})</div>
-            <div id="picker-frames-list" style="display:flex; flex-direction:column; gap:4px; max-height:140px; overflow-y:auto;"></div>
-
+          <!-- Properties Panel (Right) -->
+          <div style="display:flex; flex-direction:column; gap:10px; background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid var(--panel-border); overflow-y:auto; height:100%;">
             <!-- Selected Frame Edit & Pixel Nudging -->
-            <div id="frame-edit-panel" style="background:rgba(30,41,59,0.9); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
-              <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">
-                🎯 Edit Frame #${selectedFrameIndex + 1} (Drag box or corner handle on image)
+            <div id="frame-edit-panel" style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
+              <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">
+                🎯 Edit Frame #${selectedFrameIndex + 1}
               </div>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-bottom:6px;">
-                <div><label style="font-size:0.6rem; color:var(--text-muted);">X</label><input type="number" id="edit-frame-x" class="form-input" style="font-size:0.7rem;" /></div>
-                <div><label style="font-size:0.6rem; color:var(--text-muted);">Y</label><input type="number" id="edit-frame-y" class="form-input" style="font-size:0.7rem;" /></div>
-                <div><label style="font-size:0.6rem; color:var(--text-muted);">Width</label><input type="number" id="edit-frame-w" class="form-input" style="font-size:0.7rem;" /></div>
-                <div><label style="font-size:0.6rem; color:var(--text-muted);">Height</label><input type="number" id="edit-frame-h" class="form-input" style="font-size:0.7rem;" /></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+                <div><label style="font-size:0.65rem; color:var(--text-muted);">X</label><input type="number" id="edit-frame-x" class="form-input" style="font-size:0.75rem;" /></div>
+                <div><label style="font-size:0.65rem; color:var(--text-muted);">Y</label><input type="number" id="edit-frame-y" class="form-input" style="font-size:0.75rem;" /></div>
+                <div><label style="font-size:0.65rem; color:var(--text-muted);">Width</label><input type="number" id="edit-frame-w" class="form-input" style="font-size:0.75rem;" /></div>
+                <div><label style="font-size:0.65rem; color:var(--text-muted);">Height</label><input type="number" id="edit-frame-h" class="form-input" style="font-size:0.75rem;" /></div>
               </div>
-              <!-- Pixel Nudge Buttons -->
               <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
                 <span style="font-size:0.65rem; color:var(--text-muted);">Nudge:</span>
-                <button class="btn btn-primary btn-nudge" data-dir="left" style="font-size:0.65rem; padding:2px 6px;">◄ Left</button>
-                <button class="btn btn-primary btn-nudge" data-dir="up" style="font-size:0.65rem; padding:2px 6px;">▲ Up</button>
-                <button class="btn btn-primary btn-nudge" data-dir="down" style="font-size:0.65rem; padding:2px 6px;">▼ Down</button>
-                <button class="btn btn-primary btn-nudge" data-dir="right" style="font-size:0.65rem; padding:2px 6px;">► Right</button>
+                <button class="btn btn-primary btn-nudge" data-dir="left" style="font-size:0.7rem; padding:2px 6px;">◄ Left</button>
+                <button class="btn btn-primary btn-nudge" data-dir="up" style="font-size:0.7rem; padding:2px 6px;">▲ Up</button>
+                <button class="btn btn-primary btn-nudge" data-dir="down" style="font-size:0.7rem; padding:2px 6px;">▼ Down</button>
+                <button class="btn btn-primary btn-nudge" data-dir="right" style="font-size:0.7rem; padding:2px 6px;">► Right</button>
+              </div>
+            </div>
+
+            <!-- Quick Duplication -->
+            <div style="background:rgba(30,41,59,0.7); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
+              <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">➕ Duplicate Frame Box</div>
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-gold" id="btn-dup-frame-right" style="flex:1; font-size:0.7rem; padding:4px 6px;">Right →</button>
+                <button class="btn btn-gold" id="btn-dup-frame-down" style="flex:1; font-size:0.7rem; padding:4px 6px;">Down ↓</button>
               </div>
             </div>
 
             <!-- Copy Frames From Another Animation -->
             <div style="background:rgba(30,41,59,0.7); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
-              <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">📋 Copy Frames From Clip</div>
+              <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">📋 Copy From Clip</div>
               <div style="display:flex; gap:6px;">
-                <select id="select-copy-clip" class="form-input" style="font-size:0.7rem; flex:1; padding:2px 4px;">
+                <select id="select-copy-clip" class="form-input" style="font-size:0.7rem; flex:1; padding:3px 4px;">
                   ${otherClipKeys.length > 0
                     ? otherClipKeys.map(k => `<option value="${k}">${k}</option>`).join('')
                     : '<option value="">(No other clips)</option>'}
@@ -1760,16 +1763,27 @@ export class Inspector {
               </div>
             </div>
 
-            <div style="display:flex; gap:6px;">
-              <button class="btn btn-primary" id="btn-picker-clear" style="flex:1; font-size:0.7rem;">🧹 Clear All</button>
-              <button class="btn btn-gold" id="btn-picker-save" style="flex:1; font-size:0.7rem; font-weight:700;">💾 Save Clip</button>
+            <div style="display:flex; gap:6px; margin-top:auto;">
+              <button class="btn btn-primary" id="btn-picker-clear" style="flex:1; font-size:0.75rem;">🧹 Clear All</button>
+              <button class="btn btn-gold" id="btn-picker-save" style="flex:1; font-size:0.75rem; font-weight:700;">💾 Save Clip</button>
             </div>
+          </div>
+        </div>
 
-            <div style="margin-top:2px;">
-              <div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); margin-bottom:4px;">Live Preview</div>
-              <div style="width:100%; height:90px; background:#000; border-radius:6px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                <canvas id="picker-preview-canvas" width="${gridW}" height="${gridH}" style="image-rendering:pixelated; width:${gridW * 1.5}px; height:${gridH * 1.5}px;"></canvas>
-              </div>
+        <!-- Bottom Bar: Horizontal Frame Timeline Strip (Left) & Live Preview (Right) -->
+        <div style="background:rgba(15,23,42,0.95); border-top:1px solid var(--panel-border); padding:10px 16px; display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:center;">
+          <div style="display:flex; flex-direction:column; gap:6px; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">🎞️ Frame Sequence (${rawFrames.length} Frames)</span>
+              <span style="font-size:0.65rem; color:var(--text-muted);">Click thumbnail to select • Drag box on sheet to reposition</span>
+            </div>
+            <div id="picker-frames-list" class="horizontal-frames-strip"></div>
+          </div>
+
+          <div style="background:rgba(30,41,59,0.8); padding:8px; border-radius:6px; border:1px solid var(--panel-border); display:flex; flex-direction:column; align-items:center;">
+            <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">▶ Live Preview</div>
+            <div style="width:100%; height:90px; background:#000; border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+              <canvas id="picker-preview-canvas" width="${gridW}" height="${gridH}" style="image-rendering:pixelated; width:${gridW * 1.4}px; height:${gridH * 1.4}px;"></canvas>
             </div>
           </div>
         </div>
@@ -1852,25 +1866,60 @@ export class Inspector {
         const isSel = i === selectedFrameIndex;
         const rect = getFrameRect(f);
         return `
-          <div class="frame-item-row" data-idx="${i}" style="display:flex; gap:4px; align-items:center; background:${isSel ? 'rgba(59,130,246,0.3)' : 'rgba(30,41,59,0.8)'}; border:${isSel ? '1px solid #3b82f6' : '1px solid transparent'}; padding:4px 6px; border-radius:4px; font-size:0.7rem; cursor:pointer;">
-            <span style="color:${isSel ? '#3b82f6' : 'var(--accent-gold)'}; font-weight:700;">#${i + 1}</span>
-            <span style="flex:1; font-family:monospace; font-size:0.65rem;">(${rect.x},${rect.y}, ${rect.w}x${rect.h})</span>
-            <button class="btn btn-del-frame-item" data-idx="${i}" style="padding:1px 4px; font-size:0.65rem; color:#ef4444;">✕</button>
+          <div class="frame-thumb-card ${isSel ? 'active' : ''}" data-idx="${i}">
+            <div class="frame-thumb-badge">#${i + 1}</div>
+            <div class="frame-thumb-canvas-box">
+              <canvas class="frame-mini-canvas" data-idx="${i}" width="${rect.w}" height="${rect.h}"></canvas>
+            </div>
+            <div class="frame-thumb-coords">${rect.x},${rect.y}</div>
+            <div class="frame-thumb-actions">
+              <button class="btn btn-dup-frame-thumb" data-idx="${i}" title="Duplicate Frame">📋</button>
+              <button class="btn btn-del-frame-thumb" data-idx="${i}" title="Delete Frame">🗑️</button>
+            </div>
           </div>
         `;
-      }).join('');
+      }).join('') + `
+        <button class="btn-add-frame-thumb" id="btn-add-frame-end" title="Add Frame">+ Add Frame</button>
+      `;
 
-      framesListEl.querySelectorAll('.frame-item-row').forEach(row => {
-        row.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).classList.contains('btn-del-frame-item')) return;
-          selectedFrameIndex = parseInt((row as HTMLElement).dataset.idx!);
+      // Render mini frame canvas images
+      framesListEl.querySelectorAll('.frame-mini-canvas').forEach((cvs) => {
+        const canvas = cvs as HTMLCanvasElement;
+        const idx = parseInt(canvas.dataset.idx!);
+        const rect = getFrameRect(rawFrames[idx]);
+        const ctx = canvas.getContext('2d');
+        if (ctx && sheetImg.complete) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(sheetImg, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
+        }
+      });
+
+      framesListEl.querySelectorAll('.frame-thumb-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+          selectedFrameIndex = parseInt((card as HTMLElement).dataset.idx!);
           renderFramesList();
           renderOverlayBoxes();
           updateEditPanelInputs();
         });
       });
 
-      framesListEl.querySelectorAll('.btn-del-frame-item').forEach(btn => {
+      framesListEl.querySelectorAll('.btn-dup-frame-thumb').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
+          const rect = getFrameRect(rawFrames[idx]);
+          const dupRect = { x: rect.x + rect.w, y: rect.y, w: rect.w, h: rect.h };
+          rawFrames.splice(idx + 1, 0, dupRect);
+          selectedFrameIndex = idx + 1;
+          renderFramesList();
+          renderOverlayBoxes();
+          updateEditPanelInputs();
+          startPreview();
+        });
+      });
+
+      framesListEl.querySelectorAll('.btn-del-frame-thumb').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
@@ -1881,6 +1930,20 @@ export class Inspector {
           updateEditPanelInputs();
           startPreview();
         });
+      });
+
+      framesListEl.querySelector('#btn-add-frame-end')?.addEventListener('click', () => {
+        if (rawFrames.length > 0) {
+          const lastRect = getFrameRect(rawFrames[rawFrames.length - 1]);
+          rawFrames.push({ x: lastRect.x + lastRect.w, y: lastRect.y, w: lastRect.w, h: lastRect.h });
+        } else {
+          rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: gridW, h: gridH });
+        }
+        selectedFrameIndex = rawFrames.length - 1;
+        renderFramesList();
+        renderOverlayBoxes();
+        updateEditPanelInputs();
+        startPreview();
       });
     };
 

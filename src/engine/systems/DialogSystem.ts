@@ -17,6 +17,13 @@ export class DialogSystem {
     return DialogSystem.instance;
   }
 
+  public clear(): void {
+    this.dialogs.clear();
+    this.currentTree = null;
+    this.currentNode = null;
+    this.isExecuting = false;
+  }
+
   public registerDialog(tree: DialogTree): void {
     this.dialogs.set(tree.id, tree);
   }

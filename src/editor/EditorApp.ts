@@ -260,13 +260,15 @@ export class EditorApp {
   }
 
   private renderDialogOverlay(data: any): void {
-    const existing = this.container.querySelector('.dialog-box-overlay');
+    const parent = this.viewportElement || this.container;
+    const existing = parent.querySelector('.dialog-box-overlay');
     if (existing) existing.remove();
 
     const overlay = document.createElement('div');
     overlay.className = 'dialog-box-overlay';
 
     overlay.innerHTML = `
+      ${data.portraitUrl ? `<img src="${data.portraitUrl}" class="dialog-portrait" onError="this.style.display='none'" />` : ''}
       <div class="dialog-content">
         <div class="dialog-speaker">${data.speaker}</div>
         <div class="dialog-text">${data.text}</div>
@@ -295,7 +297,7 @@ export class EditorApp {
       DialogSystem.getInstance().endDialog();
     });
 
-    this.container.appendChild(overlay);
+    parent.appendChild(overlay);
   }
 
   private showNotification(text: string): void {
