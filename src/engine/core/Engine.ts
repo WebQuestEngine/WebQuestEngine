@@ -35,11 +35,35 @@ export class Engine {
   private dragInitialScale: number = 1;
   private dragInitialDist: number = 1;
 
+  // Polygon Drawing & Graphical Editing
+  private isDrawingPolygon = false;
+  private drawingPolygonTarget: { type: 'hotspot' | 'walkpath'; hIdx?: number } | null = null;
+  private drawingPoints: Vector2D[] = [];
+  private mouseWorldPos: Vector2D | null = null;
+
   constructor(container: HTMLElement) {
     this.containerElement = container;
     this.app = new PIXI.Application();
     this.camera = new Camera(container.clientWidth || 1280, container.clientHeight || 720);
     this.debugOverlay = new PIXI.Graphics();
+
+    window.addEventListener('keydown', (e) => {
+      if (this.isDrawingPolygon) {
+        if (e.key === 'Enter') {
+          if (this.drawingPoints.length >= 3) {
+            this.finishDrawingPolygon();
+          } else {
+            EventBus.getInstance().emit('ui:notify', '⚠️ Need at least 3 points to complete polygon.');
+          }
+        } else if (e.key === 'Escape') {
+          this.isDrawingPolygon = false;
+          this.drawingPolygonTarget = null;
+          this.drawingPoints = [];
+          this.renderDebugOverlay();
+          EventBus.getInstance().emit('ui:notify', '❌ Canceled polygon draw mode.');
+        }
+      }
+    });
   }
 
   public async init(project: ProjectData): Promise<void> {
@@ -150,6 +174,15 @@ export class Engine {
       if (this.currentScene) {
         await this.loadScene(this.currentScene.data);
       }
+    });
+
+    // Polygon drawing handlers
+    EventBus.getInstance().on('editor:start_draw_polygon', (payload: { type?: 'hotspot' | 'walkpath'; targetType?: 'hotspot' | 'walkpath'; hIdx?: number }) => {
+      this.isDrawingPolygon = true;
+      this.drawingPolygonTarget = { type: payload.targetType || payload.type || 'hotspot', hIdx: payload.hIdx };
+      this.drawingPoints = [];
+      EventBus.getInstance().emit('ui:notify', '✏️ DRAWING POLYGON MODE: Click canvas to place vertices. Click near 1st point or press Enter to complete.');
+      this.renderDebugOverlay();
     });
 
     // Camera zoom event handlers
@@ -321,6 +354,21 @@ export class Engine {
 
     const worldPt = this.getWorldPoint(e);
 
+    // If Drawing Polygon From Scratch
+    if (this.isDrawingPolygon) {
+      if (this.drawingPoints.length >= 3) {
+        const firstPt = this.drawingPoints[0];
+        if (Math.hypot(worldPt.x - firstPt.x, worldPt.y - firstPt.y) < 15) {
+          this.finishDrawingPolygon();
+          return;
+        }
+      }
+      this.drawingPoints.push({ x: Math.round(worldPt.x), y: Math.round(worldPt.y) });
+      this.updateDrawingPolygonTarget();
+      this.renderDebugOverlay();
+      return;
+    }
+
     // 1. Check selected layer corner handles for Aspect-Ratio Scaling
     if (this.selectedLayerId) {
       const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
@@ -403,6 +451,50 @@ export class Engine {
         EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
         this.renderDebugOverlay();
         return;
+      }
+    }
+
+    // Graphical Edge Insertion for selected Hotspot
+    if (this.selectedHotspotId && this.currentScene) {
+      const hsIdx = this.currentScene.data.hotspots.findIndex(h => h.id === this.selectedHotspotId);
+      if (hsIdx !== -1) {
+        const hs = this.currentScene.data.hotspots[hsIdx];
+        for (let i = 0; i < hs.points.length; i++) {
+          const ptA = hs.points[i];
+          const ptB = hs.points[(i + 1) % hs.points.length];
+          if (this.distanceToSegment(worldPt, ptA, ptB) < 10) {
+            hs.points.splice(i + 1, 0, { x: Math.round(worldPt.x), y: Math.round(worldPt.y) });
+            this.isDragging = true;
+            this.dragTarget = { type: 'hotspot_vertex', hIdx: hsIdx, index: i + 1 };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { x: Math.round(worldPt.x), y: Math.round(worldPt.y) };
+            EventBus.getInstance().emit('editor:project_updated');
+            EventBus.getInstance().emit('ui:notify', '➕ Inserted new vertex point on edge!');
+            this.renderDebugOverlay();
+            return;
+          }
+        }
+      }
+    }
+
+    // Graphical Edge Insertion for WalkPaths
+    if (this.currentScene && this.currentScene.data.walkPaths) {
+      for (const wp of this.currentScene.data.walkPaths) {
+        for (let i = 0; i < wp.points.length; i++) {
+          const ptA = wp.points[i];
+          const ptB = wp.points[(i + 1) % wp.points.length];
+          if (this.distanceToSegment(worldPt, ptA, ptB) < 10) {
+            wp.points.splice(i + 1, 0, { x: Math.round(worldPt.x), y: Math.round(worldPt.y) });
+            this.isDragging = true;
+            this.dragTarget = { type: 'walkpath_vertex', index: i + 1 };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { x: Math.round(worldPt.x), y: Math.round(worldPt.y) };
+            EventBus.getInstance().emit('editor:project_updated');
+            EventBus.getInstance().emit('ui:notify', '➕ Inserted new vertex point on WalkPath edge!');
+            this.renderDebugOverlay();
+            return;
+          }
+        }
       }
     }
 
@@ -649,7 +741,61 @@ export class Engine {
   }
 
   private handleCanvasRightClick(e: MouseEvent): void {
-    if (this.isEditorMode || !this.currentScene) return;
+    if (!this.currentScene) return;
+
+    if (this.isEditorMode) {
+      if (this.isDrawingPolygon) {
+        if (this.drawingPoints.length > 0) {
+          this.drawingPoints.pop();
+          this.updateDrawingPolygonTarget();
+          this.renderDebugOverlay();
+          EventBus.getInstance().emit('ui:notify', '↩️ Undid last placed vertex point.');
+        }
+        return;
+      }
+
+      const worldPoint = this.getWorldPoint(e);
+
+      // Check right-clicking a vertex point of selected hotspot
+      if (this.selectedHotspotId) {
+        const hsIdx = this.currentScene.data.hotspots.findIndex(h => h.id === this.selectedHotspotId);
+        if (hsIdx !== -1) {
+          const hs = this.currentScene.data.hotspots[hsIdx];
+          for (let i = 0; i < hs.points.length; i++) {
+            if (Math.hypot(worldPoint.x - hs.points[i].x, worldPoint.y - hs.points[i].y) < 14) {
+              if (hs.points.length > 3) {
+                hs.points.splice(i, 1);
+                EventBus.getInstance().emit('editor:project_updated');
+                EventBus.getInstance().emit('ui:notify', `🗑️ Deleted vertex point #${i + 1}`);
+                this.renderDebugOverlay();
+              } else {
+                EventBus.getInstance().emit('ui:notify', '⚠️ Polygon must have at least 3 vertices.');
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // Check right-clicking a walkpath vertex point
+      for (const wp of this.currentScene.data.walkPaths) {
+        for (let i = 0; i < wp.points.length; i++) {
+          if (Math.hypot(worldPoint.x - wp.points[i].x, worldPoint.y - wp.points[i].y) < 14) {
+            if (wp.points.length > 3) {
+              wp.points.splice(i, 1);
+              EventBus.getInstance().emit('editor:project_updated');
+              EventBus.getInstance().emit('ui:notify', `🗑️ Deleted WalkPath vertex #${i + 1}`);
+              this.renderDebugOverlay();
+            } else {
+              EventBus.getInstance().emit('ui:notify', '⚠️ WalkPath polygon must have at least 3 vertices.');
+            }
+            return;
+          }
+        }
+      }
+      return;
+    }
+
     const rect = this.app.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -666,6 +812,46 @@ export class Engine {
 
     UISystem.getInstance().setActiveVerb('look');
     this.handleCanvasClick(e);
+  }
+
+  private finishDrawingPolygon(): void {
+    if (!this.drawingPolygonTarget || !this.currentScene || this.drawingPoints.length < 3) return;
+
+    if (this.drawingPolygonTarget.type === 'walkpath') {
+      const wp = this.currentScene.data.walkPaths[0];
+      if (wp) wp.points = [...this.drawingPoints];
+    } else if (this.drawingPolygonTarget.type === 'hotspot' && this.drawingPolygonTarget.hIdx !== undefined) {
+      const hs = this.currentScene.data.hotspots[this.drawingPolygonTarget.hIdx];
+      if (hs) hs.points = [...this.drawingPoints];
+    }
+
+    const count = this.drawingPoints.length;
+    this.isDrawingPolygon = false;
+    this.drawingPolygonTarget = null;
+    this.drawingPoints = [];
+    EventBus.getInstance().emit('editor:project_updated');
+    EventBus.getInstance().emit('ui:notify', `✅ Completed polygon with ${count} vertices!`);
+    this.renderDebugOverlay();
+  }
+
+  private updateDrawingPolygonTarget(): void {
+    if (!this.drawingPolygonTarget || !this.currentScene) return;
+
+    if (this.drawingPolygonTarget.type === 'walkpath') {
+      const wp = this.currentScene.data.walkPaths[0];
+      if (wp) wp.points = [...this.drawingPoints];
+    } else if (this.drawingPolygonTarget.type === 'hotspot' && this.drawingPolygonTarget.hIdx !== undefined) {
+      const hs = this.currentScene.data.hotspots[this.drawingPolygonTarget.hIdx];
+      if (hs) hs.points = [...this.drawingPoints];
+    }
+  }
+
+  private distanceToSegment(p: Vector2D, v: Vector2D, w: Vector2D): number {
+    const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+    if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
   }
 
   private handleCanvasDrop(e: DragEvent): void {
@@ -723,6 +909,27 @@ export class Engine {
   private renderDebugOverlay(): void {
     this.debugOverlay.clear();
     if (!this.isEditorMode || !this.currentScene) return;
+
+    // Draw Polygon Being Drawn From Scratch
+    if (this.isDrawingPolygon && this.drawingPoints.length > 0) {
+      this.debugOverlay.poly(this.drawingPoints.flatMap(p => [p.x, p.y]));
+      this.debugOverlay.stroke({ color: 0xec4899, width: 3, alpha: 0.9 });
+      this.debugOverlay.fill({ color: 0xec4899, alpha: 0.25 });
+
+      for (let i = 0; i < this.drawingPoints.length; i++) {
+        const pt = this.drawingPoints[i];
+        this.debugOverlay.circle(pt.x, pt.y, i === 0 ? 9 : 6);
+        this.debugOverlay.fill({ color: i === 0 ? 0x22c55e : 0xf472b6 });
+        this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
+      }
+
+      if (this.mouseWorldPos) {
+        const lastPt = this.drawingPoints[this.drawingPoints.length - 1];
+        this.debugOverlay.moveTo(lastPt.x, lastPt.y);
+        this.debugOverlay.lineTo(this.mouseWorldPos.x, this.mouseWorldPos.y);
+        this.debugOverlay.stroke({ color: 0xf472b6, width: 2, alpha: 0.8 });
+      }
+    }
 
     // Draw WalkPaths
     for (const wp of this.currentScene.data.walkPaths) {

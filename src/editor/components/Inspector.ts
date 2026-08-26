@@ -331,7 +331,10 @@ export class Inspector {
       <div class="sidebar-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div class="sidebar-section-title" style="margin-bottom:0;">Walk Polygon Vertices (${wp.points.length})</div>
-          <button class="btn btn-primary" id="btn-add-wp-pt" style="font-size:0.7rem; padding:3px 6px;">+ Point</button>
+        </div>
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <button class="btn btn-primary" id="btn-draw-wp-scratch" style="flex:1; font-size:0.75rem; padding:4px 6px;">✏️ Draw From Scratch</button>
+          <button class="btn btn-primary" id="btn-add-wp-pt" style="font-size:0.75rem; padding:4px 6px;">+ Point</button>
         </div>
         ${wp.points.map((pt, i) => `
           <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
@@ -420,9 +423,12 @@ export class Inspector {
       </div>
 
       <div class="sidebar-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div class="sidebar-section-title" style="margin-bottom:0;">Polygon Vertices (${hs.points.length})</div>
-          <button class="btn btn-primary" id="btn-add-hs-pt" data-hidx="${hIdx}" style="font-size:0.7rem; padding:3px 6px;">+ Point</button>
+        </div>
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <button class="btn btn-primary btn-draw-hs-scratch" data-hidx="${hIdx}" style="flex:1; font-size:0.75rem; padding:4px 6px;">✏️ Draw From Scratch</button>
+          <button class="btn btn-primary" id="btn-add-hs-pt" data-hidx="${hIdx}" style="font-size:0.75rem; padding:4px 6px;">+ Point</button>
         </div>
         ${hs.points.map((pt, i) => `
           <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
@@ -1115,6 +1121,87 @@ export class Inspector {
       wpMinScale?.addEventListener('input', () => { wp.scaling.minScale = parseFloat(wpMinScale.value) || 0; emitUpdate(); });
       wpMaxScale?.addEventListener('input', () => { wp.scaling.maxScale = parseFloat(wpMaxScale.value) || 0; emitUpdate(); });
     }
+
+    // WalkPath polygon handlers
+    this.element.querySelector('#btn-draw-wp-scratch')?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:start_draw_polygon', { targetType: 'walkpath' });
+    });
+
+    this.element.querySelector('#btn-add-wp-pt')?.addEventListener('click', () => {
+      if (this.currentScene && this.currentScene.walkPaths[0]) {
+        const wp = this.currentScene.walkPaths[0];
+        const pts = wp.points;
+        if (pts.length >= 2) {
+          const last = pts[pts.length - 1];
+          const first = pts[0];
+          pts.push({ x: Math.round((last.x + first.x) / 2), y: Math.round((last.y + first.y) / 2) });
+        } else {
+          pts.push({ x: 500, y: 500 });
+        }
+        this.renderContent();
+        emitUpdate();
+      }
+    });
+
+    this.element.querySelectorAll('.btn-del-wp-pt').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        if (this.currentScene && this.currentScene.walkPaths[0]) {
+          const wp = this.currentScene.walkPaths[0];
+          if (wp.points.length > 3) {
+            wp.points.splice(idx, 1);
+            this.renderContent();
+            emitUpdate();
+          } else {
+            EventBus.getInstance().emit('ui:notify', '⚠️ WalkPath polygon must have at least 3 vertices.');
+          }
+        }
+      });
+    });
+
+    // Hotspot polygon handlers
+    this.element.querySelectorAll('.btn-draw-hs-scratch').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        EventBus.getInstance().emit('editor:start_draw_polygon', { targetType: 'hotspot', hIdx });
+      });
+    });
+
+    this.element.querySelectorAll('#btn-add-hs-pt').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        if (this.currentScene && this.currentScene.hotspots[hIdx]) {
+          const hs = this.currentScene.hotspots[hIdx];
+          const pts = hs.points;
+          if (pts.length >= 2) {
+            const last = pts[pts.length - 1];
+            const first = pts[0];
+            pts.push({ x: Math.round((last.x + first.x) / 2), y: Math.round((last.y + first.y) / 2) });
+          } else {
+            pts.push({ x: 500, y: 500 });
+          }
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-del-hs-pt').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        if (this.currentScene && this.currentScene.hotspots[hIdx]) {
+          const hs = this.currentScene.hotspots[hIdx];
+          if (hs.points.length > 3) {
+            hs.points.splice(idx, 1);
+            this.renderContent();
+            emitUpdate();
+          } else {
+            EventBus.getInstance().emit('ui:notify', '⚠️ Hotspot polygon must have at least 3 vertices.');
+          }
+        }
+      });
+    });
 
     // Single Hotspot / Object inputs
     this.element.querySelectorAll('.single-hs-name').forEach(input => {

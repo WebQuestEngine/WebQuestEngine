@@ -615,6 +615,10 @@ export class ProjectTreeView {
       itemsHTML += `
         <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Item</div>
       `;
+    } else if (type === 'walkpath') {
+      itemsHTML += `
+        <div class="tree-context-menu-item" data-action="draw-wp-scratch">✏️ Redraw WalkPath From Scratch</div>
+      `;
     }
 
     if (!itemsHTML) return;
@@ -636,6 +640,9 @@ export class ProjectTreeView {
         else if (action === 'add-char') this.addCharacter(sceneId);
         else if (action === 'add-item') this.addItem();
         else if (action === 'del-node') this.deleteNode(type, id, sceneId);
+        else if (action === 'draw-wp-scratch') {
+          EventBus.getInstance().emit('editor:start_draw_polygon', { targetType: 'walkpath' });
+        }
 
         this.closeContextMenu();
       });
