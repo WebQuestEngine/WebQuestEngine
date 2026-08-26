@@ -88,9 +88,20 @@ export class AssetManager {
   }
 
   public setTexture(key: string, texture: PIXI.Texture): void {
-    if (key) {
-      this.textures.set(key, texture);
+    this.textures.set(key, texture);
+  }
+
+  public async cacheDataUrl(url: string, dataUrl: string): Promise<PIXI.Texture> {
+    try {
+      const texture = await PIXI.Assets.load(dataUrl);
+      if (texture) {
+        this.textures.set(url, texture);
+        return texture;
+      }
+    } catch (e) {
+      console.warn('Failed to cache dataUrl for', url, e);
     }
+    return this.loadTexture(url);
   }
 
   public async registerFileTexture(key: string, file: File): Promise<PIXI.Texture> {

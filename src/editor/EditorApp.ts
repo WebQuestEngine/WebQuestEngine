@@ -235,6 +235,12 @@ export class EditorApp {
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
+      if (ctrlOrCmd && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        EventBus.getInstance().emit('editor:save_file');
+        return;
+      }
+
       if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
           // Redo: Ctrl+Shift+Z / Cmd+Shift+Z

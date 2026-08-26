@@ -33,12 +33,20 @@ export function getRelativeFilePath(file: File): string {
   return file.name;
 }
 
-export function handleFileInputChange(file: File, callback: (url: string) => void): void {
+export function handleFileInputChange(file: File, callback: (cleanUrl: string) => void): void {
   if (!file) return;
+  const relPath = getRelativeFilePath(file);
+  const cleanUrl = (relPath.startsWith('assets/') || relPath.startsWith('src/') || relPath.startsWith('http') || relPath.startsWith('/'))
+    ? relPath
+    : `assets/characters/${relPath}`;
+
   const reader = new FileReader();
-  reader.onload = (e) => {
-    const result = e.target?.result as string;
-    if (result) callback(result);
+  reader.onload = async (e) => {
+    const dataUrl = e.target?.result as string;
+    if (dataUrl) {
+      await AssetManager.getInstance().cacheDataUrl(cleanUrl, dataUrl);
+      callback(cleanUrl);
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -1432,6 +1440,7 @@ export class Inspector {
         const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.currentScene?.characters[cIdx]) {
           this.currentScene.characters[cIdx].spriteSheetUrl = normalizeImagePath((e.target as HTMLInputElement).value);
+          this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
           this.renderContent();
           emitUpdate();
         }
@@ -1446,6 +1455,7 @@ export class Inspector {
           handleFileInputChange(files[0], (dataUrl) => {
             if (this.currentScene?.characters[cIdx]) {
               this.currentScene.characters[cIdx].spriteSheetUrl = dataUrl;
+              this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
               this.renderContent();
               emitUpdate();
             }
@@ -2264,6 +2274,7 @@ export class Inspector {
     overlay.querySelector('#btn-picker-save')?.addEventListener('click', () => {
       saveCharacterGridConfig();
       char.animations[animKey] = rawFrames.length > 0 ? rawFrames : [0];
+      this.syncCharacterAcrossScenes(char);
       if (previewTimer) clearInterval(previewTimer);
       overlay.remove();
       this.renderContent();
@@ -2275,5 +2286,29 @@ export class Inspector {
       if (previewTimer) clearInterval(previewTimer);
       overlay.remove();
     });
+  }
+
+  private syncCharacterAcrossScenes(targetChar: CharacterData): void {
+    if (!this.project) return;
+    const charId = targetChar.id;
+    for (const scene of this.project.scenes) {
+      if (scene.characters) {
+        for (const c of scene.characters) {
+          if (c.id === charId) {
+            c.spriteSheetUrl = targetChar.spriteSheetUrl;
+            c.frameWidth = targetChar.frameWidth;
+            c.frameHeight = targetChar.frameHeight;
+            c.gridOffsetX = targetChar.gridOffsetX;
+            c.gridOffsetY = targetChar.gridOffsetY;
+            c.speed = targetChar.speed;
+            c.scale = targetChar.scale;
+            c.talkColor = targetChar.talkColor;
+            if (targetChar.animations) {
+              c.animations = JSON.parse(JSON.stringify(targetChar.animations));
+            }
+          }
+        }
+      }
+    }
   }
 }
