@@ -139,7 +139,7 @@
             }
           ],
           "scaling": {
-            "minY": 650,
+            "minY": 334,
             "maxY": 950,
             "minScale": 0.55,
             "maxScale": 1.25
@@ -456,8 +456,8 @@
             }
           ],
           "scaling": {
-            "minY": 700,
-            "maxY": 920,
+            "minY": 302,
+            "maxY": 1034,
             "minScale": 0.6,
             "maxScale": 1.2
           }

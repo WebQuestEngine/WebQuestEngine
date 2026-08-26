@@ -317,25 +317,32 @@ export class Inspector {
   }
 
   private getWalkPathHTML(scene: SceneData): string {
-    const wp = scene.walkPaths[0] || { scaling: { minY: 400, maxY: 1080, minScale: 0.6, maxScale: 1.2 }, points: [] };
+    const wp = scene.walkPaths[0] || { scaling: { minY: 400, maxY: 1080, minScale: 0.6, maxScale: 1.2, vanishX: scene.width / 2 }, points: [] };
     return `
       <div class="sidebar-section">
-        <div class="sidebar-section-title">Perspective Scaling</div>
+        <div class="sidebar-section-title">📐 2.5D Perspective Frustum & Floor Plane</div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+          Matches character movement & scaling to background depth perspective. Drag handles on canvas or edit values.
+        </div>
         <div class="form-group">
-          <label>Min Horizon Y (Distance)</label>
+          <label style="color:#06b6d4; font-weight:700;">🌅 Min Horizon Y (Distance)</label>
           <input type="number" class="form-input" id="wp-min-y" value="${wp.scaling.minY}" />
         </div>
         <div class="form-group">
-          <label>Max Horizon Y (Foreground)</label>
-          <input type="number" class="form-input" id="wp-max-y" value="${wp.scaling.maxY}" />
-        </div>
-        <div class="form-group">
-          <label>Min Scale Factor (at horizon)</label>
+          <label style="color:#06b6d4; font-weight:700;">Horizon Scale (minScale)</label>
           <input type="number" step="0.05" class="form-input" id="wp-min-scale" value="${wp.scaling.minScale}" />
         </div>
         <div class="form-group">
-          <label>Max Scale Factor (at foreground)</label>
+          <label style="color:#f59e0b; font-weight:700;">📐 Max Horizon Y (Foreground)</label>
+          <input type="number" class="form-input" id="wp-max-y" value="${wp.scaling.maxY}" />
+        </div>
+        <div class="form-group">
+          <label style="color:#f59e0b; font-weight:700;">Foreground Scale (maxScale)</label>
           <input type="number" step="0.05" class="form-input" id="wp-max-scale" value="${wp.scaling.maxScale}" />
+        </div>
+        <div class="form-group">
+          <label style="color:#38bdf8; font-weight:700;">🎯 Vanishing Point X (Center of Rays)</label>
+          <input type="number" class="form-input" id="wp-vanish-x" value="${wp.scaling.vanishX ?? Math.round(scene.width / 2)}" />
         </div>
       </div>
       <div class="sidebar-section">
@@ -1146,6 +1153,7 @@ export class Inspector {
     const wpMaxY = this.element.querySelector('#wp-max-y') as HTMLInputElement;
     const wpMinScale = this.element.querySelector('#wp-min-scale') as HTMLInputElement;
     const wpMaxScale = this.element.querySelector('#wp-max-scale') as HTMLInputElement;
+    const wpVanishX = this.element.querySelector('#wp-vanish-x') as HTMLInputElement;
 
     if (this.currentScene && this.currentScene.walkPaths[0]) {
       const wp = this.currentScene.walkPaths[0];
@@ -1153,6 +1161,7 @@ export class Inspector {
       wpMaxY?.addEventListener('input', () => { wp.scaling.maxY = parseFloat(wpMaxY.value) || 0; emitUpdate(); });
       wpMinScale?.addEventListener('input', () => { wp.scaling.minScale = parseFloat(wpMinScale.value) || 0; emitUpdate(); });
       wpMaxScale?.addEventListener('input', () => { wp.scaling.maxScale = parseFloat(wpMaxScale.value) || 0; emitUpdate(); });
+      wpVanishX?.addEventListener('input', () => { wp.scaling.vanishX = parseFloat(wpVanishX.value) || (this.currentScene?.width ? this.currentScene.width / 2 : 960); emitUpdate(); });
     }
 
     // WalkPath polygon handlers

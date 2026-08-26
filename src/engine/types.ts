@@ -102,6 +102,7 @@ export interface WalkPathData {
     maxY: number;
     minScale: number;
     maxScale: number;
+    vanishX?: number;
   };
   enabled: boolean;
 }

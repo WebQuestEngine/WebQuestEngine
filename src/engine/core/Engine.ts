@@ -29,7 +29,7 @@ export class Engine {
   private isScaling = false;
   private isPanning = false;
   private panStartScreen: Vector2D = { x: 0, y: 0 };
-  private dragTarget: { type: 'layer' | 'hotspot_vertex' | 'walkpath_vertex' | 'character' | 'hotspot_poly'; id?: string; index?: number; hIdx?: number } | null = null;
+  private dragTarget: { type: 'layer' | 'hotspot_vertex' | 'walkpath_vertex' | 'character' | 'hotspot_poly' | 'perspective_horizon' | 'perspective_foreground'; id?: string; index?: number; hIdx?: number } | null = null;
   private dragStartWorld: Vector2D = { x: 0, y: 0 };
   private dragInitialPos: Vector2D = { x: 0, y: 0 };
   private dragInitialScale: number = 1;
@@ -410,7 +410,28 @@ export class Engine {
       }
     }
 
-    // 2. Check WalkPath vertices
+    // 2. Check Perspective Horizon & Foreground Handles
+    const activeWp = this.currentScene.data.walkPaths[0];
+    if (activeWp && activeWp.scaling) {
+      const { minY, maxY, vanishX } = activeWp.scaling;
+      const vx = vanishX ?? (this.currentScene.data.width / 2);
+      if (Math.hypot(worldPt.x - vx, worldPt.y - minY) < 14) {
+        this.isDragging = true;
+        this.dragTarget = { type: 'perspective_horizon' };
+        this.dragStartWorld = worldPt;
+        this.dragInitialPos = { x: vx, y: minY };
+        return;
+      }
+      if (Math.hypot(worldPt.x - vx, worldPt.y - maxY) < 14) {
+        this.isDragging = true;
+        this.dragTarget = { type: 'perspective_foreground' };
+        this.dragStartWorld = worldPt;
+        this.dragInitialPos = { x: vx, y: maxY };
+        return;
+      }
+    }
+
+    // 3. Check WalkPath vertices
     for (const wp of this.currentScene.data.walkPaths) {
       for (let i = 0; i < wp.points.length; i++) {
         const pt = wp.points[i];
@@ -555,6 +576,18 @@ export class Engine {
             layerData.x = Math.round(this.dragInitialPos.x + dx);
             layerData.y = Math.round(this.dragInitialPos.y + dy);
           }
+        }
+      } else if (this.dragTarget.type === 'perspective_horizon') {
+        const wp = this.currentScene.data.walkPaths[0];
+        if (wp && wp.scaling) {
+          wp.scaling.minY = Math.round(worldPt.y);
+          EventBus.getInstance().emit('editor:project_updated');
+        }
+      } else if (this.dragTarget.type === 'perspective_foreground') {
+        const wp = this.currentScene.data.walkPaths[0];
+        if (wp && wp.scaling) {
+          wp.scaling.maxY = Math.round(worldPt.y);
+          EventBus.getInstance().emit('editor:project_updated');
         }
       } else if (this.dragTarget.type === 'walkpath_vertex' && this.dragTarget.index !== undefined) {
         const wp = this.currentScene.data.walkPaths[0];
@@ -952,6 +985,52 @@ export class Engine {
         this.debugOverlay.lineTo(this.mouseWorldPos.x, this.mouseWorldPos.y);
         this.debugOverlay.stroke({ color: 0xf472b6, width: 2, alpha: 0.8 });
       }
+    }
+
+    // Draw 2.5D Perspective Frustum & 3D Floor Grid Lines
+    const activeWp = this.currentScene.data.walkPaths[0];
+    if (activeWp && activeWp.scaling) {
+      const { minY, maxY, minScale, maxScale, vanishX } = activeWp.scaling;
+      const sceneW = this.currentScene.data.width || 1920;
+      const vx = vanishX ?? (sceneW / 2);
+
+      // 1. Horizon Line (minY) - Cyan
+      this.debugOverlay.moveTo(0, minY);
+      this.debugOverlay.lineTo(sceneW, minY);
+      this.debugOverlay.stroke({ color: 0x06b6d4, width: 2, alpha: 0.9 });
+
+      // 2. Foreground Line (maxY) - Gold
+      this.debugOverlay.moveTo(0, maxY);
+      this.debugOverlay.lineTo(sceneW, maxY);
+      this.debugOverlay.stroke({ color: 0xf59e0b, width: 2, alpha: 0.9 });
+
+      // 3. 3D Perspective Converging Rays to Vanishing Point (vx, minY)
+      const numRays = 8;
+      for (let i = 0; i <= numRays; i++) {
+        const rayX = (sceneW / numRays) * i;
+        this.debugOverlay.moveTo(rayX, maxY);
+        this.debugOverlay.lineTo(vx, minY);
+        this.debugOverlay.stroke({ color: 0x38bdf8, width: 1, alpha: 0.35 });
+      }
+
+      // 4. Horizontal Depth Floor Grid Lines (Perspective steps)
+      const depthSteps = 5;
+      for (let i = 1; i < depthSteps; i++) {
+        const t = i / depthSteps;
+        const depthY = minY + (maxY - minY) * Math.pow(t, 1.4);
+        this.debugOverlay.moveTo(0, depthY);
+        this.debugOverlay.lineTo(sceneW, depthY);
+        this.debugOverlay.stroke({ color: 0x38bdf8, width: 1, alpha: 0.25 });
+      }
+
+      // 5. Interactive Horizon & Foreground Drag Handles
+      this.debugOverlay.circle(vx, minY, 8);
+      this.debugOverlay.fill({ color: 0x06b6d4 });
+      this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
+
+      this.debugOverlay.circle(vx, maxY, 8);
+      this.debugOverlay.fill({ color: 0xf59e0b });
+      this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
     }
 
     // Draw WalkPaths
