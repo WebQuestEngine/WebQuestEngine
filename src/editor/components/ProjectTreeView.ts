@@ -229,14 +229,25 @@ export class ProjectTreeView {
 
         ${!isCollapsed ? `
           <div class="tree-children">
-            ${scene.layers.map(l => {
-      const lKey = `layer_${l.id}`;
-      return `
-                <div class="tree-item tree-node ${this.selectedNodeId === lKey ? 'selected' : ''}" data-nodeid="${lKey}" data-type="layer" data-id="${l.id}" data-sceneid="${scene.id}">
-                  <span>🖼️ ${l.name}</span>
+            ${scene.layers.map((l, lIdx) => {
+              const lKey = `layer_${l.id}`;
+              return `
+                <div class="tree-item tree-node layer-tree-node ${this.selectedNodeId === lKey ? 'selected' : ''}"
+                     draggable="true"
+                     data-nodeid="${lKey}"
+                     data-type="layer"
+                     data-id="${l.id}"
+                     data-sceneid="${scene.id}"
+                     data-idx="${lIdx}">
+                  <span style="flex:1;">🖼️ ${l.name}</span>
+                  <span class="tree-layer-actions">
+                    <button class="tree-action-btn btn-tree-layer-up" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Backwards">⬆️</button>
+                    <button class="tree-action-btn btn-tree-layer-down" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Forwards">⬇️</button>
+                    <button class="tree-action-btn btn-tree-layer-dup" data-sceneid="${scene.id}" data-id="${l.id}" title="Duplicate Layer">📋</button>
+                  </span>
                 </div>
               `;
-    }).join('')}
+            }).join('')}
           </div>
         ` : ''}
       </div>
@@ -510,6 +521,73 @@ export class ProjectTreeView {
     EventBus.getInstance().emit('editor:select_target', { type: 'scene', id: dupSc.id });
   }
 
+  public moveLayerUp(sceneId: string, layerId: string): void {
+    if (!this.project) return;
+    const sc = this.project.scenes.find(s => s.id === sceneId);
+    if (!sc) return;
+    const idx = sc.layers.findIndex(l => l.id === layerId);
+    if (idx > 0) {
+      const item = sc.layers[idx];
+      sc.layers.splice(idx, 1);
+      sc.layers.splice(idx - 1, 0, item);
+      sc.layers.forEach((l, i) => l.zIndex = i + 1);
+      this.renderContent();
+      EventBus.getInstance().emit('editor:project_updated');
+    }
+  }
+
+  public moveLayerDown(sceneId: string, layerId: string): void {
+    if (!this.project) return;
+    const sc = this.project.scenes.find(s => s.id === sceneId);
+    if (!sc) return;
+    const idx = sc.layers.findIndex(l => l.id === layerId);
+    if (idx < sc.layers.length - 1) {
+      const item = sc.layers[idx];
+      sc.layers.splice(idx, 1);
+      sc.layers.splice(idx + 1, 0, item);
+      sc.layers.forEach((l, i) => l.zIndex = i + 1);
+      this.renderContent();
+      EventBus.getInstance().emit('editor:project_updated');
+    }
+  }
+
+  public duplicateLayer(sceneId: string, layerId: string): void {
+    if (!this.project) return;
+    const sc = this.project.scenes.find(s => s.id === sceneId);
+    if (!sc) return;
+    const idx = sc.layers.findIndex(l => l.id === layerId);
+    if (idx !== -1) {
+      const orig = sc.layers[idx];
+      const copyId = `layer_${Date.now()}`;
+      const copy = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: copyId,
+        name: `${orig.name} (Copy)`,
+        x: (orig.x || 0) + 30,
+        y: (orig.y || 0) + 30,
+        zIndex: sc.layers.length + 1
+      };
+      sc.layers.splice(idx + 1, 0, copy);
+      sc.layers.forEach((l, i) => l.zIndex = i + 1);
+      this.selectedNodeId = `layer_${copyId}`;
+      this.renderContent();
+      EventBus.getInstance().emit('editor:select_layer', copyId);
+      EventBus.getInstance().emit('editor:select_target', { type: 'layer', sceneId: sc.id, id: copyId });
+      EventBus.getInstance().emit('editor:project_updated');
+    }
+  }
+
+  public reorderLayer(sceneId: string, fromIdx: number, toIdx: number): void {
+    if (!this.project) return;
+    const sc = this.project.scenes.find(s => s.id === sceneId);
+    if (!sc || fromIdx === toIdx) return;
+    const [item] = sc.layers.splice(fromIdx, 1);
+    sc.layers.splice(toIdx, 0, item);
+    sc.layers.forEach((l, i) => l.zIndex = i + 1);
+    this.renderContent();
+    EventBus.getInstance().emit('editor:project_updated');
+  }
+
   public deleteNode(type: string, id?: string, sceneId?: string): void {
     if (!this.project) return;
 
@@ -589,6 +667,10 @@ export class ProjectTreeView {
       `;
     } else if (type === 'layer') {
       itemsHTML += `
+        <div class="tree-context-menu-item" data-action="move-layer-up">⬆️ Move Backwards (Behind)</div>
+        <div class="tree-context-menu-item" data-action="move-layer-down">⬇️ Move Forwards (In Front)</div>
+        <div class="tree-context-menu-item" data-action="dup-layer">📋 Duplicate Layer</div>
+        <div class="tree-context-menu-divider"></div>
         <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Layer</div>
       `;
     } else if (type === 'objects_folder') {
@@ -640,6 +722,9 @@ export class ProjectTreeView {
         else if (action === 'add-char') this.addCharacter(sceneId);
         else if (action === 'add-item') this.addItem();
         else if (action === 'del-node') this.deleteNode(type, id, sceneId);
+        else if (action === 'move-layer-up' && id && sceneId) this.moveLayerUp(sceneId, id);
+        else if (action === 'move-layer-down' && id && sceneId) this.moveLayerDown(sceneId, id);
+        else if (action === 'dup-layer' && id && sceneId) this.duplicateLayer(sceneId, id);
         else if (action === 'draw-wp-scratch') {
           EventBus.getInstance().emit('editor:start_draw_polygon', { targetType: 'walkpath' });
         }
@@ -719,6 +804,65 @@ export class ProjectTreeView {
         }
 
         this.renderContent();
+      });
+    });
+
+    // Layer action buttons in Tree View
+    this.element.querySelectorAll('.btn-tree-layer-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ds = (e.currentTarget as HTMLElement).dataset;
+        if (ds.sceneid && ds.id) this.moveLayerUp(ds.sceneid, ds.id);
+      });
+    });
+
+    this.element.querySelectorAll('.btn-tree-layer-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ds = (e.currentTarget as HTMLElement).dataset;
+        if (ds.sceneid && ds.id) this.moveLayerDown(ds.sceneid, ds.id);
+      });
+    });
+
+    this.element.querySelectorAll('.btn-tree-layer-dup').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ds = (e.currentTarget as HTMLElement).dataset;
+        if (ds.sceneid && ds.id) this.duplicateLayer(ds.sceneid, ds.id);
+      });
+    });
+
+    // Layer HTML5 Drag and Drop Reordering
+    this.element.querySelectorAll('.layer-tree-node').forEach(node => {
+      node.addEventListener('dragstart', (e) => {
+        const ds = (e.currentTarget as HTMLElement).dataset;
+        const dragData = JSON.stringify({ type: 'layer', sceneId: ds.sceneid, idx: parseInt(ds.idx!) });
+        (e as DragEvent).dataTransfer?.setData('application/json', dragData);
+      });
+
+      node.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).classList.add('drag-over');
+      });
+
+      node.addEventListener('dragleave', (e) => {
+        (e.currentTarget as HTMLElement).classList.remove('drag-over');
+      });
+
+      node.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const targetEl = e.currentTarget as HTMLElement;
+        targetEl.classList.remove('drag-over');
+        const raw = (e as DragEvent).dataTransfer?.getData('application/json');
+        if (raw) {
+          try {
+            const dragData = JSON.parse(raw);
+            const toIdx = parseInt(targetEl.dataset.idx!);
+            if (dragData.type === 'layer' && dragData.sceneId === targetEl.dataset.sceneid) {
+              this.reorderLayer(dragData.sceneId, dragData.idx, toIdx);
+            }
+          } catch (err) {}
+        }
       });
     });
   }

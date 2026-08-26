@@ -94,6 +94,44 @@ export class Scene {
     }
   }
 
+  public async syncLayers(): Promise<void> {
+    this.data.layers.forEach((lData, idx) => {
+      if (lData.zIndex === undefined) lData.zIndex = idx + 1;
+    });
+
+    const validIds = new Set(this.data.layers.map(l => l.id));
+    for (let i = this.layers.length - 1; i >= 0; i--) {
+      const layer = this.layers[i];
+      if (!validIds.has(layer.data.id)) {
+        this.container.removeChild(layer.container);
+        this.layers.splice(i, 1);
+      }
+    }
+
+    for (const lData of this.data.layers) {
+      let existing = this.layers.find(l => l.data.id === lData.id);
+      if (!existing) {
+        existing = new Layer(lData);
+        await existing.init();
+        this.layers.push(existing);
+        this.container.addChild(existing.container);
+      } else {
+        existing.data = lData;
+      }
+    }
+
+    this.layers.sort((a, b) => (a.data.zIndex ?? 0) - (b.data.zIndex ?? 0));
+    this.layers.forEach((layer, idx) => {
+      layer.updateParallax(0, 0);
+      const childIdx = Math.min(idx, Math.max(0, this.container.children.length - 2));
+      this.container.setChildIndex(layer.container, childIdx);
+    });
+
+    if (this.container.children.includes(this.entityContainer)) {
+      this.container.setChildIndex(this.entityContainer, this.container.children.length - 1);
+    }
+  }
+
   public getWalkPath(): WalkPath | undefined {
     return this.walkPaths.find(wp => wp.data.enabled);
   }

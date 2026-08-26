@@ -749,11 +749,19 @@ export class Inspector {
           <label>Opacity (${Math.round(layer.opacity * 100)}%)</label>
           <input type="range" min="0" max="1" step="0.05" class="single-layer-opacity" data-idx="${lIdx}" value="${layer.opacity}" style="width:100%;" />
         </div>
+        <div class="form-group" style="margin-top:10px;">
+          <label style="font-weight:700;">Layer Ordering & Duplication (Layer ${lIdx + 1} of ${scene.layers.length})</label>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:4px;">
+            <button class="btn btn-layer-move-up" data-idx="${lIdx}" ${lIdx === 0 ? 'disabled' : ''} style="font-size:0.75rem;" title="Move Layer Backwards (Behind)">⬆️ Move Backwards</button>
+            <button class="btn btn-layer-move-down" data-idx="${lIdx}" ${lIdx === scene.layers.length - 1 ? 'disabled' : ''} style="font-size:0.75rem;" title="Move Layer Forwards (In Front)">⬇️ Move Forwards</button>
+            <button class="btn btn-primary btn-layer-duplicate" data-idx="${lIdx}" style="font-size:0.75rem;" title="Duplicate this Layer">📋 Duplicate Layer</button>
+            <button class="btn btn-del-layer" data-idx="${lIdx}" style="font-size:0.75rem; color:#ef4444;" title="Delete Layer">🗑️ Delete Layer</button>
+          </div>
+        </div>
         <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
           <button class="btn btn-toggle-vis" data-idx="${lIdx}" style="font-size:0.75rem;">
             ${layer.visible ? '👁️ Visible' : '🙈 Hidden'}
           </button>
-          <button class="btn btn-del-layer" data-idx="${lIdx}" style="font-size:0.75rem; color:#ef4444;">🗑️ Delete Layer</button>
         </div>
       </div>
     `;
@@ -1406,6 +1414,58 @@ export class Inspector {
         const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.currentScene?.layers[lIdx]) {
           this.currentScene.layers[lIdx].visible = !this.currentScene.layers[lIdx].visible;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-layer-move-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        if (this.currentScene && lIdx > 0) {
+          const item = this.currentScene.layers[lIdx];
+          this.currentScene.layers.splice(lIdx, 1);
+          this.currentScene.layers.splice(lIdx - 1, 0, item);
+          this.currentScene.layers.forEach((l, i) => l.zIndex = i + 1);
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-layer-move-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        if (this.currentScene && lIdx < this.currentScene.layers.length - 1) {
+          const item = this.currentScene.layers[lIdx];
+          this.currentScene.layers.splice(lIdx, 1);
+          this.currentScene.layers.splice(lIdx + 1, 0, item);
+          this.currentScene.layers.forEach((l, i) => l.zIndex = i + 1);
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-layer-duplicate').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        if (this.currentScene?.layers[lIdx]) {
+          const orig = this.currentScene.layers[lIdx];
+          const copyId = `layer_${Date.now()}`;
+          const copy: LayerData = {
+            ...JSON.parse(JSON.stringify(orig)),
+            id: copyId,
+            name: `${orig.name} (Copy)`,
+            x: (orig.x || 0) + 30,
+            y: (orig.y || 0) + 30,
+            zIndex: this.currentScene.layers.length + 1
+          };
+          this.currentScene.layers.splice(lIdx + 1, 0, copy);
+          this.currentScene.layers.forEach((l, i) => l.zIndex = i + 1);
+          this.selectedTarget = { type: 'layer', id: copyId };
+          EventBus.getInstance().emit('editor:select_layer', copyId);
           this.renderContent();
           emitUpdate();
         }

@@ -188,7 +188,8 @@ export class Engine {
     // Project updated handler
     EventBus.getInstance().on('editor:project_updated', async () => {
       if (this.currentScene) {
-        await this.loadScene(this.currentScene.data);
+        await this.currentScene.syncLayers();
+        this.renderDebugOverlay();
       }
     });
 
@@ -425,14 +426,16 @@ export class Engine {
     }
 
     // 1. Check selected layer corner handles for Aspect-Ratio Scaling
-    if (this.selectedLayerId) {
+    if (this.selectedLayerId && this.currentScene) {
       const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
       const layerObj = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
       if (layerData && layerObj && layerObj.sprite) {
         const lx = layerData.x || 0;
         const ly = layerData.y || 0;
-        const lw = (layerObj.sprite.width || 1920) * (layerData.scaleX ?? 1);
-        const lh = (layerObj.sprite.height || 1080) * (layerData.scaleY ?? 1);
+        const baseW = (layerObj.sprite.texture && layerObj.sprite.texture.width > 1) ? layerObj.sprite.texture.width : 1920;
+        const baseH = (layerObj.sprite.texture && layerObj.sprite.texture.height > 1) ? layerObj.sprite.texture.height : 1080;
+        const lw = baseW * (layerData.scaleX ?? 1);
+        const lh = baseH * (layerData.scaleY ?? 1);
 
         // Corner handles
         const handles = [
@@ -589,6 +592,36 @@ export class Engine {
       this.renderDebugOverlay();
       return;
     }
+
+    // 5. Check Layers (Clicking background layer on canvas to select/move)
+    if (this.currentScene && this.currentScene.data.layers) {
+      const sortedLayers = [...this.currentScene.data.layers].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
+      for (const lData of sortedLayers) {
+        const lObj = this.currentScene.layers.find(l => l.data.id === lData.id);
+        if (lObj && lObj.sprite) {
+          const lx = lData.x || 0;
+          const ly = lData.y || 0;
+          const baseW = (lObj.sprite.texture && lObj.sprite.texture.width > 1) ? lObj.sprite.texture.width : 1920;
+          const baseH = (lObj.sprite.texture && lObj.sprite.texture.height > 1) ? lObj.sprite.texture.height : 1080;
+          const lw = baseW * (lData.scaleX ?? 1);
+          const lh = baseH * (lData.scaleY ?? 1);
+
+          if (worldPt.x >= lx && worldPt.x <= lx + lw && worldPt.y >= ly && worldPt.y <= ly + lh) {
+            this.selectedLayerId = lData.id;
+            this.selectedHotspotId = null;
+            this.selectedCharacterId = null;
+            this.isDragging = true;
+            this.dragTarget = { type: 'layer', id: lData.id };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { x: lx, y: ly };
+            EventBus.getInstance().emit('editor:select_layer', lData.id);
+            EventBus.getInstance().emit('editor:element_selected', { type: 'layer', id: lData.id });
+            this.renderDebugOverlay();
+            return;
+          }
+        }
+      }
+    }
   }
 
   private handleMouseMove(e: MouseEvent): void {
@@ -617,20 +650,25 @@ export class Engine {
 
         if (layerData && layerObj) {
           if (this.isScaling && layerObj.sprite) {
-            // Keep Aspect Ratio: scaleX === scaleY
             const lx = layerData.x || 0;
             const ly = layerData.y || 0;
-            const lw = (layerObj.sprite.width || 1920) * (layerData.scaleX ?? 1);
-            const lh = (layerObj.sprite.height || 1080) * (layerData.scaleY ?? 1);
+            const baseW = (layerObj.sprite.texture && layerObj.sprite.texture.width > 1) ? layerObj.sprite.texture.width : 1920;
+            const baseH = (layerObj.sprite.texture && layerObj.sprite.texture.height > 1) ? layerObj.sprite.texture.height : 1080;
+            const lw = baseW * (layerData.scaleX ?? 1);
+            const lh = baseH * (layerData.scaleY ?? 1);
             const currentDist = Math.hypot(worldPt.x - (lx + lw / 2), worldPt.y - (ly + lh / 2));
 
             const aspectScale = Math.max(0.05, Math.round((this.dragInitialScale * (currentDist / (this.dragInitialDist || 1))) * 100) / 100);
             layerData.scaleX = aspectScale;
-            layerData.scaleY = aspectScale; // Strictly preserve aspect ratio!
+            layerData.scaleY = aspectScale;
           } else {
             layerData.x = Math.round(this.dragInitialPos.x + dx);
             layerData.y = Math.round(this.dragInitialPos.y + dy);
           }
+
+          layerObj.updateParallax(this.camera.position.x, this.camera.position.y);
+          EventBus.getInstance().emit('editor:project_updated');
+          this.renderDebugOverlay();
         }
       } else if (this.dragTarget.type === 'perspective_horizon') {
         const wp = this.currentScene.data.walkPaths[0];
@@ -1183,8 +1221,10 @@ export class Engine {
       if (selectedLayer && selectedLayer.sprite) {
         const lx = selectedLayer.data.x || 0;
         const ly = selectedLayer.data.y || 0;
-        const lw = (selectedLayer.sprite.width || 1920) * (selectedLayer.data.scaleX ?? 1);
-        const lh = (selectedLayer.sprite.height || 1080) * (selectedLayer.data.scaleY ?? 1);
+        const baseW = (selectedLayer.sprite.texture && selectedLayer.sprite.texture.width > 1) ? selectedLayer.sprite.texture.width : 1920;
+        const baseH = (selectedLayer.sprite.texture && selectedLayer.sprite.texture.height > 1) ? selectedLayer.sprite.texture.height : 1080;
+        const lw = baseW * (selectedLayer.data.scaleX ?? 1);
+        const lh = baseH * (selectedLayer.data.scaleY ?? 1);
 
         this.debugOverlay.rect(lx, ly, lw, lh);
         this.debugOverlay.stroke({ color: 0xa855f7, width: 3, alpha: 0.9 });
