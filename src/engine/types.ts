@@ -25,6 +25,16 @@ export interface InventoryItemData {
   combineWith?: Record<string, { resultItemId?: string; message?: string; triggerFlag?: string }>;
 }
 
+export type Direction8Way = 'down' | 'down_right' | 'right' | 'up_right' | 'up' | 'up_left' | 'left' | 'down_left';
+
+export type AnimFrameRef = number | CharacterAnimFrame;
+
+export interface AnimationClipConfig {
+  frames: AnimFrameRef[];
+  fps?: number;
+  loop?: boolean;
+}
+
 export interface HotspotAction {
   verb: VerbType;
   text?: string;
@@ -38,6 +48,8 @@ export interface HotspotAction {
   requiredFlag?: string;
   notFlag?: string;
   customScript?: string;
+  playAnimation?: string;
+  faceDirection?: Direction8Way;
 }
 
 export interface HotspotData {
@@ -69,21 +81,16 @@ export interface CharacterData {
   spriteSheetUrl: string;
   frameWidth: number;
   frameHeight: number;
+  gridOffsetX?: number;
+  gridOffsetY?: number;
   position: Vector2D;
   speed: number;
   scale: number;
   talkColor: string;
   cursor?: string;
   actions?: HotspotAction[];
-  animations: {
-    idleDown: number[];
-    idleSide: number[];
-    idleUp: number[];
-    walkDown: number[];
-    walkSide: number[];
-    walkUp: number[];
-    talk: number[];
-  };
+  currentHoldingItemId?: string;
+  animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
 }
 
 export interface WalkPathData {

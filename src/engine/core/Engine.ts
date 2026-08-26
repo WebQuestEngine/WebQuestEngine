@@ -683,10 +683,11 @@ export class Engine {
       if (targetHotspot) {
         const action = targetHotspot.getActionForItemId(selectedItem.id) || targetHotspot.getBestAction('use', selectedItem.id);
         if (action) {
+          const targetCenter = targetHotspot.getCenter();
           if (!this.isEditorMode && player) {
-            player.walkTo(targetHotspot.getCenter(), walkPath, () => this.executeAction(action));
+            player.walkTo(targetCenter, walkPath, () => this.executeAction(action, targetCenter));
           } else {
-            this.executeAction(action);
+            this.executeAction(action, targetCenter);
           }
         } else {
           EventBus.getInstance().emit('ui:notify', `That doesn't seem to work with ${targetHotspot.data.name}.`);
@@ -712,9 +713,9 @@ export class Engine {
       const action = charNPC.getBestAction(activeVerb);
       if (action) {
         if (!this.isEditorMode && player) {
-          player.walkTo(charNPC.position, walkPath, () => this.executeAction(action));
+          player.walkTo(charNPC.position, walkPath, () => this.executeAction(action, charNPC.position));
         } else {
-          this.executeAction(action);
+          this.executeAction(action, charNPC.position);
         }
         return;
       }
@@ -726,12 +727,13 @@ export class Engine {
 
     if (hotspot) {
       const action = hotspot.getBestAction(activeVerb);
+      const targetCenter = hotspot.getCenter();
       if (!this.isEditorMode && player) {
-        player.walkTo(hotspot.getCenter(), walkPath, () => {
-          if (action) this.executeAction(action);
+        player.walkTo(targetCenter, walkPath, () => {
+          if (action) this.executeAction(action, targetCenter);
         });
       } else if (action) {
-        this.executeAction(action);
+        this.executeAction(action, targetCenter);
       }
     } else {
       if (!this.isEditorMode && player) {
@@ -883,10 +885,31 @@ export class Engine {
     UISystem.getInstance().setActiveVerb('walk');
   }
 
-  private executeAction(action: any): void {
+  private executeAction(action: any, targetPos?: Vector2D): void {
     if (action.requiredFlag && !StoryGraphSystem.getInstance().getFlag(action.requiredFlag)) {
       EventBus.getInstance().emit('ui:notify', `You cannot do that right now.`);
       return;
+    }
+
+    const player = this.currentScene?.playerCharacter;
+
+    if (player) {
+      if (targetPos) {
+        player.faceTarget(targetPos);
+      }
+      if (action.faceDirection) {
+        player.direction8Way = action.faceDirection;
+        player.isFacingLeft = action.faceDirection === 'left' || action.faceDirection === 'up_left' || action.faceDirection === 'down_left';
+      }
+      if (action.playAnimation) {
+        player.playCustomAnimation(action.playAnimation);
+      } else if (action.verb === 'pick_up') {
+        player.playCustomAnimation('pick_up', 1200);
+      } else if (action.verb === 'talk') {
+        player.talk();
+      } else if (action.verb === 'use' && action.requireItemId) {
+        player.holdItem(action.requireItemId);
+      }
     }
 
     if (action.text) {
