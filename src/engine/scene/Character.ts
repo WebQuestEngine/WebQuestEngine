@@ -27,7 +27,7 @@ export class Character extends MovableElement {
   public direction8Way: Direction8Way = 'down';
   public isFacingLeft = false;
 
-  private path: Vector2D[] = [];
+  public path: Vector2D[] = [];
   private currentPathIndex = 0;
   private animFrame = 0;
   private animTimer = 0;
@@ -75,13 +75,13 @@ export class Character extends MovableElement {
 
   public walkTo(target: Vector2D, walkPath?: WalkPath, onComplete?: () => void): void {
     const start = { x: this.container.x, y: this.container.y };
-    let destination = target;
 
-    if (walkPath) {
-      destination = walkPath.clampToWalkable(target);
+    if (walkPath && walkPath.data.enabled && walkPath.data.points && walkPath.data.points.length >= 3) {
+      this.path = walkPath.findPath(start, target);
+    } else {
+      this.path = [target];
     }
 
-    this.path = [destination];
     this.currentPathIndex = 0;
     this.state = 'walking';
     this.currentCustomAnimKey = null;
@@ -90,7 +90,10 @@ export class Character extends MovableElement {
       this.customAnimTimer = null;
     }
     this.onWalkCompleteCallback = onComplete || null;
-    this.faceTarget(destination);
+
+    if (this.path.length > 0) {
+      this.faceTarget(this.path[0]);
+    }
   }
 
   public talk(onComplete?: () => void): void {
@@ -153,6 +156,8 @@ export class Character extends MovableElement {
             this.onWalkCompleteCallback = null;
             cb();
           }
+        } else {
+          this.faceTarget(this.path[this.currentPathIndex]);
         }
       } else {
         const step = this.data.speed * delta * 60;

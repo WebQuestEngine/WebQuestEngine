@@ -84,7 +84,8 @@
           "x": 0,
           "y": 0,
           "scaleX": 1,
-          "scaleY": 1
+          "scaleY": 1,
+          "locked": true
         },
         {
           "id": "l_mountains",
@@ -98,7 +99,8 @@
           "x": -369,
           "y": 330,
           "scaleX": 0.49,
-          "scaleY": 0.49
+          "scaleY": 0.49,
+          "locked": true
         },
         {
           "id": "layer_1787745552612",
@@ -112,7 +114,8 @@
           "x": 356,
           "y": 357,
           "scaleX": 0.49,
-          "scaleY": 0.49
+          "scaleY": 0.49,
+          "locked": true
         },
         {
           "id": "layer_1787745574335",
@@ -126,7 +129,8 @@
           "x": 999,
           "y": 369,
           "scaleX": 0.49,
-          "scaleY": 0.49
+          "scaleY": 0.49,
+          "locked": true
         },
         {
           "id": "layer_1787746846849",
@@ -140,7 +144,8 @@
           "x": -107,
           "y": 648,
           "scaleX": 0.36,
-          "scaleY": 0.36
+          "scaleY": 0.36,
+          "locked": true
         },
         {
           "id": "layer_1787746887266",
@@ -154,7 +159,8 @@
           "x": 292,
           "y": 648,
           "scaleX": 0.4,
-          "scaleY": 0.4
+          "scaleY": 0.4,
+          "locked": true
         },
         {
           "id": "layer_1787746996420",
@@ -168,7 +174,8 @@
           "x": 668,
           "y": 626,
           "scaleX": 0.4,
-          "scaleY": 0.4
+          "scaleY": 0.4,
+          "locked": true
         },
         {
           "id": "layer_1787746936864",
@@ -182,7 +189,8 @@
           "x": 1038,
           "y": 647,
           "scaleX": 0.4,
-          "scaleY": 0.4
+          "scaleY": 0.4,
+          "locked": true
         },
         {
           "id": "layer_1787746978996",
@@ -196,7 +204,8 @@
           "x": 1426,
           "y": 648,
           "scaleX": 0.4,
-          "scaleY": 0.4
+          "scaleY": 0.4,
+          "locked": true
         },
         {
           "id": "l_bg",
@@ -210,7 +219,8 @@
           "x": 204,
           "y": -76,
           "scaleX": 0.63,
-          "scaleY": 0.63
+          "scaleY": 0.63,
+          "locked": true
         }
       ],
       "walkPaths": [
@@ -350,7 +360,8 @@
               "setFlag": "labUnlocked",
               "text": "You turn the Brass Key in the lock! The oak door unlocks and opens."
             }
-          ]
+          ],
+          "locked": true
         },
         {
           "id": "hs_shrub",
@@ -429,7 +440,8 @@
               "requiredFlag": "hasKey",
               "text": "You search the shrub again, but there is nothing else inside."
             }
-          ]
+          ],
+          "locked": true
         },
         {
           "id": "hs_1787742580648",
@@ -499,7 +511,8 @@
               "verb": "interact",
               "text": "I can't reach it."
             }
-          ]
+          ],
+          "locked": true
         },
         {
           "id": "hs_1787747213125",
@@ -593,7 +606,8 @@
               "verb": "look",
               "text": "That's a big castle. I need to get inside."
             }
-          ]
+          ],
+          "locked": true
         }
       ],
       "characters": [
