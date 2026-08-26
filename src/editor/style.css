@@ -290,6 +290,49 @@ body {
   color: var(--accent-gold);
 }
 
+/* Tree Context Menu */
+.tree-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #0f172a;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+}
+
+.tree-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-main);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tree-context-menu-item:hover {
+  background: var(--accent-purple);
+  color: #ffffff;
+}
+
+.tree-context-menu-item.danger:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.tree-context-menu-divider {
+  height: 1px;
+  background: var(--panel-border);
+  margin: 4px 0;
+}
+
 /* Sidebar Inspector */
 .editor-sidebar {
   width: 340px;
