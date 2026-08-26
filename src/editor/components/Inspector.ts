@@ -1,6 +1,7 @@
 import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, InventoryItemData, ChapterData, HotspotAction, AnimFrameRef } from '../../engine/types';
 import { AssetManager } from '../../engine/core/AssetManager';
 import { EventBus } from '../../engine/core/EventBus';
+import { VisualSpawnPickerModal } from './VisualSpawnPickerModal';
 
 export interface SelectionTarget {
   type: 'project' | 'chapter' | 'scene' | 'walkpath' | 'layer' | 'hotspot' | 'character' | 'item';
@@ -163,6 +164,13 @@ export class Inspector {
       this.activeSubTab = 'properties';
       this.renderContent();
     });
+
+    EventBus.getInstance().on('editor:project_updated', () => {
+      if (document.activeElement && this.element.contains(document.activeElement)) {
+        return;
+      }
+      this.renderContent();
+    });
   }
 
   public setProject(project: ProjectData, currentScene?: SceneData): void {
@@ -314,19 +322,7 @@ export class Inspector {
       contentHTML = this.getProjectHTML();
     }
 
-    if (this.isTargetLocked()) {
-      // Keep lock banner active while disabling property fields underneath
-      const bannerMatch = contentHTML.match(/(<div class="inspector-lock-banner"[\s\S]*?<\/div>)/);
-      if (bannerMatch) {
-        const bannerHTML = bannerMatch[1];
-        const restHTML = contentHTML.replace(bannerMatch[1], '');
-        container.innerHTML = `${bannerHTML}<fieldset disabled style="border:none; padding:0; margin:0;">${restHTML}</fieldset>`;
-      } else {
-        container.innerHTML = `<fieldset disabled style="border:none; padding:0; margin:0;">${contentHTML}</fieldset>`;
-      }
-    } else {
-      container.innerHTML = contentHTML;
-    }
+    container.innerHTML = contentHTML;
 
     this.attachEvents();
   }
@@ -665,14 +661,15 @@ export class Inspector {
               ` : ''}
             </div>
 
-            <!-- CONDITION Section: True/False toggle button + Flag name input (empty = ALWAYS) -->
+            <!-- CONDITION Section: Flag Name FIRST + "is" + Toggle Button -->
             <div class="flow-group">
-              <span class="flow-group-title">🔀 IF CONDITION (LEAVE FLAG EMPTY FOR ALWAYS)</span>
+              <span class="flow-group-title">🔀 IF CONDITION (LEAVE EMPTY FOR ALWAYS)</span>
               <div style="display:flex; align-items:center; gap:6px;">
-                <button class="btn act-cond-toggle ${act.notFlag ? 'mode-false' : 'mode-true'}" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" title="Click to toggle between IF TRUE and IF FALSE">
+                <input type="text" class="form-input act-flag-input" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.requiredFlag || act.notFlag || ''}" placeholder="Flag Name (e.g. labUnlocked)" style="flex:1; font-size:0.75rem;" />
+                <span class="act-is-label" style="font-size:0.75rem; font-weight:700; color:${(act.requiredFlag || act.notFlag) ? 'var(--text-main)' : 'var(--text-muted)'}; opacity:${(act.requiredFlag || act.notFlag) ? '1' : '0.4'};">is</span>
+                <button class="btn act-cond-toggle ${act.notFlag ? 'mode-false' : 'mode-true'}" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" ${(act.requiredFlag || act.notFlag) ? '' : 'disabled'} style="font-size:0.7rem; padding:4px 8px; opacity:${(act.requiredFlag || act.notFlag) ? '1' : '0.4'}; pointer-events:${(act.requiredFlag || act.notFlag) ? 'auto' : 'none'};" title="Click to toggle between IF TRUE and IF FALSE">
                   ${act.notFlag ? '❌ FALSE' : '✅ TRUE'}
                 </button>
-                <input type="text" class="form-input act-flag-input" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.requiredFlag || act.notFlag || ''}" placeholder="Flag Name (e.g. player:hasKey)" style="flex:1; font-size:0.75rem;" />
               </div>
             </div>
 
@@ -710,6 +707,27 @@ export class Inspector {
                   <input type="text" class="form-input act-dialog-id" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.dialogId || ''}" placeholder="e.g. dlg_eldrin" style="font-size:0.75rem;" />
                 </div>
               </div>
+
+              ${act.targetSceneId ? `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:4px;">
+                  <div>
+                    <label style="font-size:0.65rem; color:#38bdf8;">📍 Target Spawn X</label>
+                    <input type="number" class="form-input act-target-spawn-x" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.targetSpawnPoint?.x ?? 300}" style="font-size:0.75rem;" />
+                  </div>
+                  <div>
+                    <label style="font-size:0.65rem; color:#38bdf8;">📍 Target Spawn Y</label>
+                    <input type="number" class="form-input act-target-spawn-y" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.targetSpawnPoint?.y ?? 750}" style="font-size:0.75rem;" />
+                  </div>
+                </div>
+                <div style="display:flex; gap:6px; margin-bottom:6px;">
+                  <button class="btn btn-gold btn-pick-spawn-canvas" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="flex:1; font-size:0.68rem; padding:3px 6px;">
+                    🎯 Pick on Canvas
+                  </button>
+                  <button class="btn btn-primary btn-copy-target-player-pos" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="flex:1; font-size:0.68rem; padding:3px 6px;">
+                    👤 Use Character Pos
+                  </button>
+                </div>
+              ` : ''}
 
               <!-- Direct Shortcuts -->
               <div style="display:flex; gap:6px; margin-top:8px;">
@@ -1140,11 +1158,17 @@ export class Inspector {
         const aIdx = parseInt(targetEl.dataset.aidx!);
         const isChar = targetEl.dataset.ischar === 'true';
 
+        const container = targetEl.closest('.flow-group');
+        const isLabel = container?.querySelector('.act-is-label') as HTMLElement;
+        const toggleBtn = container?.querySelector('.act-cond-toggle') as HTMLButtonElement;
+
         const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
         if (actions && actions[aIdx]) {
-          const val = targetEl.value.trim() || undefined;
+          const val = targetEl.value.trim();
+          const hasVal = val.length > 0;
           const isFalseMode = actions[aIdx].notFlag !== undefined;
-          if (!val) {
+
+          if (!hasVal) {
             actions[aIdx].requiredFlag = undefined;
             actions[aIdx].notFlag = undefined;
           } else if (isFalseMode) {
@@ -1154,6 +1178,17 @@ export class Inspector {
             actions[aIdx].requiredFlag = val;
             actions[aIdx].notFlag = undefined;
           }
+
+          if (isLabel) {
+            isLabel.style.color = hasVal ? 'var(--text-main)' : 'var(--text-muted)';
+            isLabel.style.opacity = hasVal ? '1' : '0.4';
+          }
+          if (toggleBtn) {
+            toggleBtn.disabled = !hasVal;
+            toggleBtn.style.opacity = hasVal ? '1' : '0.4';
+            toggleBtn.style.pointerEvents = hasVal ? 'auto' : 'none';
+          }
+
           emitUpdate();
         }
       });
@@ -1198,7 +1233,6 @@ export class Inspector {
 
         const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
         if (actions && actions[aIdx]) {
-          actions[aIdx].targetSceneId = targetEl.value;
           this.renderContent();
           emitUpdate();
         }
@@ -1751,6 +1785,70 @@ export class Inspector {
         if (actions && actions[aIdx]) {
           actions[aIdx].playAnimation = targetEl.value.trim() || undefined;
           emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-pick-spawn-canvas').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.currentTarget as HTMLElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx] && this.project) {
+          const targetSceneId = actions[aIdx].targetSceneId;
+          const targetScene = (targetSceneId && this.project.scenes.find(s => s.id === targetSceneId)) || this.currentScene || this.project.scenes[0];
+
+          if (targetScene) {
+            const initialSpawn = actions[aIdx].targetSpawnPoint || { x: 300, y: 750 };
+            new VisualSpawnPickerModal(
+              this.project,
+              targetScene,
+              initialSpawn,
+              (result) => {
+                if (!actions[aIdx].targetSpawnPoint) actions[aIdx].targetSpawnPoint = { x: result.x, y: result.y };
+                actions[aIdx].targetSpawnPoint!.x = result.x;
+                actions[aIdx].targetSpawnPoint!.y = result.y;
+
+                // Also update target scene's player character default scale if adjusted
+                const targetPlayer = targetScene.characters?.find(c => c.id === 'player');
+                if (targetPlayer && result.scale !== undefined) {
+                  targetPlayer.scale = result.scale;
+                }
+
+                this.renderContent();
+                EventBus.getInstance().emit('editor:project_updated');
+                EventBus.getInstance().emit('ui:notify', `📍 Target Spawn Point set to (${result.x}, ${result.y}) in '${targetScene.name}'!`);
+              },
+              () => {
+                EventBus.getInstance().emit('ui:notify', '❌ Spawn point selection cancelled.');
+              }
+            );
+          }
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-copy-target-player-pos').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.currentTarget as HTMLElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx] && actions[aIdx].targetSceneId && this.project) {
+          const targetScene = this.project.scenes.find(s => s.id === actions[aIdx].targetSceneId);
+          if (targetScene) {
+            const playerChar = targetScene.characters?.find(c => c.id === 'player');
+            const spawnPos = playerChar?.position || targetScene.playerSpawn || { x: 300, y: 750 };
+            actions[aIdx].targetSpawnPoint = { x: Math.round(spawnPos.x), y: Math.round(spawnPos.y) };
+            this.renderContent();
+            EventBus.getInstance().emit('editor:project_updated');
+            EventBus.getInstance().emit('ui:notify', `👤 Spawn Point copied from target scene character position: (${Math.round(spawnPos.x)}, ${Math.round(spawnPos.y)})`);
+          }
         }
       });
     });

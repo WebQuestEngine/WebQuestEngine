@@ -22,7 +22,8 @@ export class Engine {
 
   public selectedLayerId: string | null = null;
   public selectedHotspotId: string | null = null;
-  public selectedCharacterId: string | null = null;
+  private selectedCharacterId: string | null = null;
+  private activeSpawnPickerCallback: ((pt: Vector2D, cancelled?: boolean) => void) | null = null;
 
   // WYSIWYG Drag & Scale State
   private isDragging = false;
@@ -338,7 +339,7 @@ export class Engine {
     this.currentScene = new Scene(sceneData);
     await this.currentScene.init(this.camera);
 
-    if (spawnPoint && this.currentScene.playerCharacter) {
+    if (!this.isEditorMode && spawnPoint && this.currentScene.playerCharacter) {
       this.currentScene.playerCharacter.container.x = spawnPoint.x;
       this.currentScene.playerCharacter.container.y = spawnPoint.y;
     }
@@ -424,6 +425,15 @@ export class Engine {
     }
 
     const worldPt = this.getWorldPoint(e);
+
+    // If active spawn point picker mode is active
+    if (this.activeSpawnPickerCallback) {
+      const cb = this.activeSpawnPickerCallback;
+      this.activeSpawnPickerCallback = null;
+      this.app.canvas.style.cursor = 'default';
+      cb(worldPt);
+      return;
+    }
 
     // If Drawing Polygon From Scratch
     if (this.isDrawingPolygon) {
@@ -513,23 +523,25 @@ export class Engine {
     }
 
     // 2. Check Perspective Horizon & Foreground Handles
-    const activeWp = this.currentScene.data.walkPaths[0];
-    if (activeWp && activeWp.scaling) {
-      const { minY, maxY, vanishX } = activeWp.scaling;
-      const vx = vanishX ?? (this.currentScene.data.width / 2);
-      if (Math.hypot(worldPt.x - vx, worldPt.y - minY) < 14) {
-        this.isDragging = true;
-        this.dragTarget = { type: 'perspective_horizon' };
-        this.dragStartWorld = worldPt;
-        this.dragInitialPos = { x: vx, y: minY };
-        return;
-      }
-      if (Math.hypot(worldPt.x - vx, worldPt.y - maxY) < 14) {
-        this.isDragging = true;
-        this.dragTarget = { type: 'perspective_foreground' };
-        this.dragStartWorld = worldPt;
-        this.dragInitialPos = { x: vx, y: maxY };
-        return;
+    if (!this.isElementLocked('walkpath')) {
+      const activeWp = this.currentScene.data.walkPaths[0];
+      if (activeWp && activeWp.scaling) {
+        const { minY, maxY, vanishX } = activeWp.scaling;
+        const vx = vanishX ?? (this.currentScene.data.width / 2);
+        if (Math.hypot(worldPt.x - vx, worldPt.y - minY) < 14) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'perspective_horizon' };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { x: vx, y: minY };
+          return;
+        }
+        if (Math.hypot(worldPt.x - vx, worldPt.y - maxY) < 14) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'perspective_foreground' };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { x: vx, y: maxY };
+          return;
+        }
       }
     }
 
@@ -610,7 +622,7 @@ export class Engine {
     }
 
     // Graphical Edge Insertion for WalkPaths
-    if (this.currentScene && this.currentScene.data.walkPaths) {
+    if (this.currentScene && !this.isElementLocked('walkpath') && this.currentScene.data.walkPaths) {
       for (const wp of this.currentScene.data.walkPaths) {
         for (let i = 0; i < wp.points.length; i++) {
           const ptA = wp.points[i];
@@ -631,7 +643,7 @@ export class Engine {
     }
 
     // 4. Check Characters / NPCs
-    const char = this.currentScene.findCharacterAt(worldPt);
+    const char = this.currentScene.findCharacterAt(worldPt, true);
     if (char) {
       const isLocked = this.isElementLocked('character', char.data.id);
       if (!isLocked) {
@@ -731,18 +743,21 @@ export class Engine {
           this.renderDebugOverlay();
         }
       } else if (this.dragTarget.type === 'perspective_horizon') {
+        if (this.isElementLocked('walkpath')) return;
         const wp = this.currentScene.data.walkPaths[0];
         if (wp && wp.scaling) {
           wp.scaling.minY = Math.round(worldPt.y);
           EventBus.getInstance().emit('editor:project_updated');
         }
       } else if (this.dragTarget.type === 'perspective_foreground') {
+        if (this.isElementLocked('walkpath')) return;
         const wp = this.currentScene.data.walkPaths[0];
         if (wp && wp.scaling) {
           wp.scaling.maxY = Math.round(worldPt.y);
           EventBus.getInstance().emit('editor:project_updated');
         }
       } else if (this.dragTarget.type === 'walkpath_vertex' && this.dragTarget.index !== undefined) {
+        if (this.isElementLocked('walkpath')) return;
         const wp = this.currentScene.data.walkPaths[0];
         if (wp && wp.points[this.dragTarget.index]) {
           wp.points[this.dragTarget.index].x = worldPt.x;
@@ -800,6 +815,7 @@ export class Engine {
             charData.position.y = Math.round(this.dragInitialPos.y + dy);
             charObj.container.x = charData.position.x;
             charObj.container.y = charData.position.y;
+            EventBus.getInstance().emit('editor:project_updated');
           }
         }
       }
@@ -989,6 +1005,15 @@ export class Engine {
     if (!this.currentScene) return;
 
     if (this.isEditorMode) {
+      if (this.activeSpawnPickerCallback) {
+        const cb = this.activeSpawnPickerCallback;
+        this.activeSpawnPickerCallback = null;
+        this.app.canvas.style.cursor = 'default';
+        cb({ x: 0, y: 0 }, true);
+        EventBus.getInstance().emit('ui:notify', '❌ Spawn point selection cancelled.');
+        return;
+      }
+
       if (this.isDrawingPolygon) {
         if (this.drawingPoints.length > 0) {
           this.drawingPoints.pop();
@@ -1361,6 +1386,11 @@ export class Engine {
         }
       }
     }
+  }
+
+  public startPickSpawnPoint(callback: (pt: Vector2D, cancelled?: boolean) => void): void {
+    this.activeSpawnPickerCallback = callback;
+    this.app.canvas.style.cursor = 'crosshair';
   }
 
   public isElementLocked(type: string, id?: string): boolean {

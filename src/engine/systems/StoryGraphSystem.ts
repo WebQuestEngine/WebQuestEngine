@@ -72,9 +72,12 @@ export class StoryGraphSystem {
       this.currentScene = targetScene;
       if (storyNode) this.currentStoryNode = storyNode;
 
+      const playerCharInTarget = targetScene.characters?.find(c => c.id === 'player');
+      const defaultSpawn = playerCharInTarget?.position || targetScene.playerSpawn;
+
       EventBus.getInstance().emit('scene:change', {
         scene: targetScene,
-        spawnPoint: spawnPoint || targetScene.playerSpawn
+        spawnPoint: spawnPoint || defaultSpawn
       });
     }
   }

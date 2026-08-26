@@ -23,7 +23,8 @@
       "id": "ch_1",
       "title": "Chapter 1: The Gates of Eldoria",
       "description": "Find a way inside the Alchemist’s stronghold.",
-      "startStoryNodeId": "sn_gates"
+      "startStoryNodeId": "sn_gates",
+      "locked": false
     },
     {
       "id": "ch_2",
@@ -338,8 +339,8 @@
               "requiredFlag": "labUnlocked",
               "targetSceneId": "scene_lab",
               "targetSpawnPoint": {
-                "x": 300,
-                "y": 800
+                "x": 1450,
+                "y": 600
               },
               "text": "You open the unlocked oak door and step into the laboratory."
             },
@@ -354,8 +355,8 @@
               "notFlag": "labUnlocked",
               "targetSceneId": "scene_lab",
               "targetSpawnPoint": {
-                "x": 300,
-                "y": 800
+                "x": 1398,
+                "y": 643
               },
               "setFlag": "labUnlocked",
               "text": "You turn the Brass Key in the lock! The oak door unlocks and opens."
@@ -618,8 +619,8 @@
           "frameWidth": 86,
           "frameHeight": 156,
           "position": {
-            "x": 300,
-            "y": 750
+            "x": 133,
+            "y": 809
           },
           "speed": 4,
           "scale": 1,
@@ -755,7 +756,7 @@
         {
           "id": "l_lab_bg",
           "name": "Laboratory Room",
-          "imageUrl": "procedural:lab_background",
+          "imageUrl": "assets/c1s2/room.png",
           "parallaxX": 1,
           "parallaxY": 1,
           "zIndex": 1,
@@ -764,7 +765,8 @@
           "x": 0,
           "y": 0,
           "scaleX": 1,
-          "scaleY": 1
+          "scaleY": 1,
+          "locked": true
         }
       ],
       "walkPaths": [
@@ -774,20 +776,48 @@
           "enabled": true,
           "points": [
             {
-              "x": 150,
-              "y": 920
+              "x": 963,
+              "y": 898
             },
             {
-              "x": 300,
-              "y": 700
+              "x": 520,
+              "y": 919
             },
             {
-              "x": 1600,
-              "y": 700
+              "x": 113,
+              "y": 763
             },
             {
-              "x": 1750,
-              "y": 920
+              "x": 509,
+              "y": 580
+            },
+            {
+              "x": 573,
+              "y": 596
+            },
+            {
+              "x": 629,
+              "y": 733
+            },
+            {
+              "x": 738,
+              "y": 783
+            },
+            {
+              "x": 874,
+              "y": 748
+            },
+            {
+              "x": 926,
+              "y": 638
+            },
+            {
+              "x": 1349,
+              "y": 604
+            },
+            {
+              "x": 1507,
+              "y": 664
             }
           ],
           "scaling": {
@@ -795,7 +825,8 @@
             "maxY": 1034,
             "minScale": 0.6,
             "maxScale": 1.2
-          }
+          },
+          "locked": false
         }
       ],
       "hotspots": [
@@ -804,29 +835,45 @@
           "name": "Bubbling Cauldron",
           "cursor": "interact",
           "enabled": true,
-          "imageUrl": "cauldron.png",
+          "imageUrl": "assets/c1s2/cauldron.png",
           "position": {
-            "x": 1181,
-            "y": 718
+            "x": 757.125,
+            "y": 591.625
           },
-          "scaleX": 0.4,
-          "scaleY": 0.4,
+          "scaleX": 0.3,
+          "scaleY": 0.3,
           "points": [
             {
-              "x": 1081,
-              "y": 643
+              "x": 637,
+              "y": 514
             },
             {
-              "x": 1281,
-              "y": 643
+              "x": 716,
+              "y": 485
             },
             {
-              "x": 1281,
-              "y": 793
+              "x": 829,
+              "y": 502
             },
             {
-              "x": 1081,
-              "y": 793
+              "x": 858,
+              "y": 539
+            },
+            {
+              "x": 829,
+              "y": 652
+            },
+            {
+              "x": 847,
+              "y": 681
+            },
+            {
+              "x": 712,
+              "y": 708
+            },
+            {
+              "x": 629,
+              "y": 652
             }
           ],
           "actions": [
@@ -847,7 +894,8 @@
               "setFlag": "brewedPotion",
               "text": "You drop the Glowing Crystal into the bubbling cauldron. Pure golden light flashes as you brew the Elixir of Wisdom!"
             }
-          ]
+          ],
+          "locked": false
         },
         {
           "id": "hs_exit_door",
@@ -856,20 +904,28 @@
           "enabled": true,
           "points": [
             {
-              "x": 150,
-              "y": 680
+              "x": 1358,
+              "y": 219
             },
             {
-              "x": 320,
-              "y": 680
+              "x": 1438,
+              "y": 148
             },
             {
-              "x": 320,
-              "y": 900
+              "x": 1517,
+              "y": 166
             },
             {
-              "x": 150,
-              "y": 900
+              "x": 1547,
+              "y": 223
+            },
+            {
+              "x": 1540,
+              "y": 657
+            },
+            {
+              "x": 1348,
+              "y": 597
             }
           ],
           "actions": [
@@ -882,7 +938,8 @@
               },
               "text": "You step back out into the courtyard."
             }
-          ]
+          ],
+          "locked": true
         }
       ],
       "characters": [
@@ -893,11 +950,11 @@
           "frameWidth": 86,
           "frameHeight": 156,
           "position": {
-            "x": 300,
-            "y": 800
+            "x": 1398,
+            "y": 643
           },
           "speed": 4,
-          "scale": 1,
+          "scale": 2.47,
           "talkColor": "#fef08a",
           "animations": {
             "idleDown": [
@@ -1018,15 +1075,15 @@
         {
           "id": "npc_eldrin",
           "name": "Master Eldrin",
-          "spriteSheetUrl": "procedural_eldrin",
-          "frameWidth": 64,
-          "frameHeight": 96,
+          "spriteSheetUrl": "assets/characters/master_eldrin.png",
+          "frameWidth": 298,
+          "frameHeight": 282,
           "position": {
-            "x": 900,
-            "y": 700
+            "x": 416,
+            "y": 679
           },
           "speed": 0,
-          "scale": 1,
+          "scale": 0.8,
           "talkColor": "#60a5fa",
           "cursor": "talk",
           "actions": [
@@ -1045,7 +1102,12 @@
           ],
           "animations": {
             "idleDown": [
-              0
+              {
+                "x": 616,
+                "y": 35,
+                "w": 298,
+                "h": 564
+              }
             ],
             "idleSide": [
               4
@@ -1077,9 +1139,12 @@
               14,
               15
             ]
-          }
+          },
+          "gridOffsetX": -278,
+          "gridOffsetY": 35
         }
-      ]
+      ],
+      "locked": false
     }
   ],
   "items": [

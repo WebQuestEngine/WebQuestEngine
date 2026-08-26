@@ -1004,8 +1004,12 @@ export class ProjectTreeView {
           EventBus.getInstance().emit('editor:select_target', { type: 'hotspot', sceneId, id });
         } else if (type === 'character' && id) {
           const activeScene = (window as any).engine?.currentScene;
-          const targetSceneId = (activeScene && activeScene.data.characters.some((c: CharacterData) => c.id === id)) ? activeScene.data.id : sceneId;
-          if (targetSceneId) EventBus.getInstance().emit('editor:select_scene', targetSceneId);
+          const existsInActive = activeScene && activeScene.data.characters.some((c: CharacterData) => c.id === id);
+          const targetSceneId = existsInActive ? activeScene.data.id : sceneId;
+
+          if (targetSceneId && (!activeScene || activeScene.data.id !== targetSceneId)) {
+            EventBus.getInstance().emit('editor:select_scene', targetSceneId);
+          }
           EventBus.getInstance().emit('editor:select_character', id);
           EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId: targetSceneId, id });
         } else if (type === 'item' && id) {

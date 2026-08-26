@@ -63,6 +63,9 @@ export class Character extends MovableElement {
   public async init(): Promise<void> {
     const assetManager = AssetManager.getInstance();
     this.textureSheet = await assetManager.loadTexture(this.data.spriteSheetUrl);
+    this.container.x = this.data.position.x;
+    this.container.y = this.data.position.y;
+    this.container.scale.set(this.data.scale || 1);
     this.updateSpriteFrame();
   }
 

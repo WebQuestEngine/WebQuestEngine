@@ -140,9 +140,9 @@ export class Scene {
     return this.hotspots.find(hs => hs.containsPoint(point));
   }
 
-  public findCharacterAt(point: Vector2D): Character | undefined {
+  public findCharacterAt(point: Vector2D, includePlayer = false): Character | undefined {
     for (const char of this.characters.values()) {
-      if (char.data.id === 'player') continue;
+      if (char.data.id === 'player' && !includePlayer) continue;
       const cx = char.container.x;
       const cy = char.container.y;
       const hw = (char.data.frameWidth * char.data.scale) / 2;
