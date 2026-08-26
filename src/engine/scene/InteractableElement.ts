@@ -60,7 +60,8 @@ export class InteractableElement extends GraphicalElement {
   public getActionForVerb(verb: VerbType): HotspotAction | undefined {
     const storySystem = StoryGraphSystem.getInstance();
     return this.actions.find(a => {
-      if (a.verb !== verb) return false;
+      if (a.requireItemId) return false;
+      if (a.verb !== verb && verb !== 'interact' && a.verb !== 'interact' && !a.targetSceneId) return false;
       if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
       if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
       return true;

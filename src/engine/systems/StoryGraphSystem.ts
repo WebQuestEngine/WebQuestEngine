@@ -84,10 +84,11 @@ export class StoryGraphSystem {
 
   public setFlag(flag: string, value = true): void {
     this.flags.set(flag, value);
-    // Also set bare flag name if scoped
     if (flag.includes(':')) {
       const bare = flag.split(':')[1];
       this.flags.set(bare, value);
+    } else {
+      this.flags.set(`quest:${flag}`, value);
     }
     EventBus.getInstance().emit('flag:changed', { flag, value });
   }
@@ -96,10 +97,15 @@ export class StoryGraphSystem {
     if (!flag) return false;
     if (this.flags.has(flag)) return this.flags.get(flag)!;
 
-    // Scoped fallback
     if (flag.includes(':')) {
       const bare = flag.split(':')[1];
       if (this.flags.has(bare)) return this.flags.get(bare)!;
+    } else {
+      for (const [key, val] of this.flags.entries()) {
+        if (key.endsWith(':' + flag) && val) {
+          return true;
+        }
+      }
     }
     return false;
   }

@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js';
 import { InteractableElement } from './InteractableElement';
 import { Vector2D, HotspotData, VerbType, HotspotAction } from '../types';
 import { AssetManager } from '../core/AssetManager';
+import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 
 export class Hotspot extends InteractableElement {
   public data: HotspotData;
@@ -65,11 +66,14 @@ export class Hotspot extends InteractableElement {
   }
 
   public getActionForItemId(itemId: string): HotspotAction | undefined {
-    return this.data.actions.find(a => a.requireItemId === itemId && this.isActionValid(a));
+    return this.data.actions.find(a => a.requireItemId === itemId && this.isActionValid(a, itemId));
   }
 
-  private isActionValid(action: HotspotAction): boolean {
-    const storySystem = (window as any).StoryGraphSystem?.getInstance ? (window as any).StoryGraphSystem.getInstance() : null;
+  private isActionValid(action: HotspotAction, selectedItemId?: string | null): boolean {
+    if (action.requireItemId && selectedItemId !== undefined && action.requireItemId !== selectedItemId) {
+      return false;
+    }
+    const storySystem = StoryGraphSystem.getInstance();
     if (storySystem) {
       if (action.requiredFlag && !storySystem.getFlag(action.requiredFlag)) return false;
       if (action.notFlag && storySystem.getFlag(action.notFlag)) return false;
@@ -86,11 +90,10 @@ export class Hotspot extends InteractableElement {
     const verbAction = this.getActionForVerb(activeVerb);
     if (verbAction) return verbAction;
 
-    const validActions = this.data.actions.filter(a => this.isActionValid(a));
+    const validActions = this.data.actions.filter(a => this.isActionValid(a, selectedItemId));
     return validActions.find(a => a.verb === 'interact') ||
-           validActions.find(a => a.verb === 'pick_up') ||
+           validActions.find(a => a.verb === 'look') ||
            validActions.find(a => a.verb === 'talk') ||
-           validActions.find(a => a.verb === 'use') ||
            validActions[0];
   }
 
