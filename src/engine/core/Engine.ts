@@ -483,6 +483,35 @@ export class Engine {
       }
     }
 
+    // 1b. Check selected character corner handles for Aspect-Ratio Scaling
+    if (this.selectedCharacterId && this.currentScene && !this.isElementLocked('character', this.selectedCharacterId)) {
+      const charObj = this.currentScene.characters.get(this.selectedCharacterId);
+      if (charObj) {
+        const cx = charObj.container.x;
+        const cy = charObj.container.y;
+        const hw = (charObj.data.frameWidth * charObj.data.scale) / 2;
+        const hh = charObj.data.frameHeight * charObj.data.scale;
+        const handles = [
+          { x: cx - hw, y: cy - hh },
+          { x: cx + hw, y: cy - hh },
+          { x: cx + hw, y: cy },
+          { x: cx - hw, y: cy }
+        ];
+
+        for (const h of handles) {
+          if (Math.hypot(worldPt.x - h.x, worldPt.y - h.y) < 14) {
+            this.isScaling = true;
+            this.dragTarget = { type: 'character', id: charObj.data.id };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { x: cx, y: cy };
+            this.dragInitialScale = charObj.data.scale;
+            this.dragInitialDist = Math.hypot(worldPt.x - cx, worldPt.y - (cy - hh / 2));
+            return;
+          }
+        }
+      }
+    }
+
     // 2. Check Perspective Horizon & Foreground Handles
     const activeWp = this.currentScene.data.walkPaths[0];
     if (activeWp && activeWp.scaling) {
@@ -755,10 +784,23 @@ export class Engine {
         const charData = this.currentScene.data.characters.find(c => c.id === this.dragTarget!.id);
         const charObj = this.currentScene.characters.get(this.dragTarget!.id);
         if (charData && charObj) {
-          charData.position.x = Math.round(this.dragInitialPos.x + dx);
-          charData.position.y = Math.round(this.dragInitialPos.y + dy);
-          charObj.container.x = charData.position.x;
-          charObj.container.y = charData.position.y;
+          if (this.isScaling) {
+            const cx = charData.position.x;
+            const cy = charData.position.y;
+            const hh = (charData.frameHeight * this.dragInitialScale) / 2;
+            const currentDist = Math.hypot(worldPt.x - cx, worldPt.y - (cy - hh));
+            const scaleFactor = currentDist / (this.dragInitialDist || 1);
+            const newScale = Math.max(0.1, Math.min(5, Math.round(this.dragInitialScale * scaleFactor * 100) / 100));
+            charData.scale = newScale;
+            charObj.data.scale = newScale;
+            charObj.container.scale.set(newScale);
+            EventBus.getInstance().emit('editor:project_updated');
+          } else {
+            charData.position.x = Math.round(this.dragInitialPos.x + dx);
+            charData.position.y = Math.round(this.dragInitialPos.y + dy);
+            charObj.container.x = charData.position.x;
+            charObj.container.y = charData.position.y;
+          }
         }
       }
 
@@ -1263,7 +1305,7 @@ export class Engine {
       }
     }
 
-    // Draw Selected Character Highlight
+    // Draw Selected Character Highlight & Scale Handles
     if (this.selectedCharacterId && this.currentScene) {
       const charObj = this.currentScene.characters.get(this.selectedCharacterId);
       if (charObj) {
@@ -1273,6 +1315,20 @@ export class Engine {
         const hh = charObj.data.frameHeight * charObj.data.scale;
         this.debugOverlay.rect(cx - hw, cy - hh, hw * 2, hh);
         this.debugOverlay.stroke({ color: 0x8b5cf6, width: 3, alpha: 0.9 });
+        this.debugOverlay.fill({ color: 0x8b5cf6, alpha: 0.12 });
+
+        const handles = [
+          { x: cx - hw, y: cy - hh },
+          { x: cx + hw, y: cy - hh },
+          { x: cx + hw, y: cy },
+          { x: cx - hw, y: cy }
+        ];
+
+        for (const h of handles) {
+          this.debugOverlay.rect(h.x - 7, h.y - 7, 14, 14);
+          this.debugOverlay.fill({ color: 0xc084fc });
+          this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
+        }
       }
     }
 

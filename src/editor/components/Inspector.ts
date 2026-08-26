@@ -1595,19 +1595,88 @@ export class Inspector {
       });
     });
 
-    this.element.querySelectorAll('.char-file-input').forEach(input => {
-      input.addEventListener('change', (e) => {
+    this.element.querySelectorAll('.char-pos-x').forEach(input => {
+      input.addEventListener('input', (e) => {
         const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
-        const files = (e.target as HTMLInputElement).files;
-        if (files && files[0] && this.currentScene?.characters[cIdx]) {
-          handleFileInputChange(files[0], (dataUrl) => {
-            if (this.currentScene?.characters[cIdx]) {
-              this.currentScene.characters[cIdx].spriteSheetUrl = dataUrl;
-              this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
-              this.renderContent();
-              emitUpdate();
-            }
-          });
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          const newX = isNaN(val) ? 0 : val;
+          this.currentScene.characters[cIdx].position.x = newX;
+          const charObj = (window as any).engine?.currentScene?.characters.get(this.currentScene.characters[cIdx].id);
+          if (charObj) {
+            charObj.data.position.x = newX;
+            charObj.container.x = newX;
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-pos-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          const newY = isNaN(val) ? 0 : val;
+          this.currentScene.characters[cIdx].position.y = newY;
+          const charObj = (window as any).engine?.currentScene?.characters.get(this.currentScene.characters[cIdx].id);
+          if (charObj) {
+            charObj.data.position.y = newY;
+            charObj.container.y = newY;
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-scale').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          const newScale = isNaN(val) ? 1 : val;
+          this.currentScene.characters[cIdx].scale = newScale;
+          const charObj = (window as any).engine?.currentScene?.characters.get(this.currentScene.characters[cIdx].id);
+          if (charObj) {
+            charObj.data.scale = newScale;
+            charObj.container.scale.set(newScale);
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-speed').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          this.currentScene.characters[cIdx].speed = isNaN(val) ? 4 : val;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-fw').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseInt((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          this.currentScene.characters[cIdx].frameWidth = isNaN(val) ? 64 : val;
+          this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-fh').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseInt((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          this.currentScene.characters[cIdx].frameHeight = isNaN(val) ? 64 : val;
+          this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
+          emitUpdate();
         }
       });
     });
@@ -2512,7 +2581,6 @@ export class Inspector {
             c.gridOffsetX = targetChar.gridOffsetX;
             c.gridOffsetY = targetChar.gridOffsetY;
             c.speed = targetChar.speed;
-            c.scale = targetChar.scale;
             c.talkColor = targetChar.talkColor;
             if (targetChar.animations) {
               c.animations = JSON.parse(JSON.stringify(targetChar.animations));

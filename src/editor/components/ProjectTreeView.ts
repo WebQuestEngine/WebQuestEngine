@@ -1,4 +1,4 @@
-import { ProjectData, SceneData } from '../../engine/types';
+import { ProjectData, SceneData, CharacterData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
 
 export interface SelectionTarget {
@@ -493,8 +493,19 @@ export class ProjectTreeView {
 
     const seenCharIds = new Set<string>();
     const allChars: { id: string; name: string; sceneId: string }[] = [];
+
+    const currentScene = (window as any).engine?.currentScene;
+    if (currentScene) {
+      currentScene.data.characters.forEach((c: CharacterData) => {
+        if (!seenCharIds.has(c.id)) {
+          seenCharIds.add(c.id);
+          allChars.push({ id: c.id, name: c.name, sceneId: currentScene.data.id });
+        }
+      });
+    }
+
     this.project.scenes.forEach(sc => {
-      sc.characters.forEach(c => {
+      sc.characters.forEach((c: CharacterData) => {
         if (!seenCharIds.has(c.id)) {
           seenCharIds.add(c.id);
           allChars.push({ id: c.id, name: c.name, sceneId: sc.id });
@@ -992,9 +1003,11 @@ export class ProjectTreeView {
           EventBus.getInstance().emit('editor:select_hotspot', id);
           EventBus.getInstance().emit('editor:select_target', { type: 'hotspot', sceneId, id });
         } else if (type === 'character' && id) {
-          if (sceneId) EventBus.getInstance().emit('editor:select_scene', sceneId);
+          const activeScene = (window as any).engine?.currentScene;
+          const targetSceneId = (activeScene && activeScene.data.characters.some((c: CharacterData) => c.id === id)) ? activeScene.data.id : sceneId;
+          if (targetSceneId) EventBus.getInstance().emit('editor:select_scene', targetSceneId);
           EventBus.getInstance().emit('editor:select_character', id);
-          EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId, id });
+          EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId: targetSceneId, id });
         } else if (type === 'item' && id) {
           EventBus.getInstance().emit('editor:select_item', id);
           EventBus.getInstance().emit('editor:select_target', { type: 'item', id });
