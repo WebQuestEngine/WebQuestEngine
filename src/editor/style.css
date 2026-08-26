@@ -306,6 +306,29 @@ body {
   background: rgba(251, 191, 36, 0.2) !important;
 }
 
+.tree-lock-btn {
+  font-size: 0.75rem;
+  opacity: 0.35;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+
+.tree-item:hover .tree-lock-btn,
+.tree-lock-btn.locked {
+  opacity: 1;
+}
+
+.tree-lock-btn.locked {
+  color: #f59e0b;
+}
+
+.tree-lock-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .tree-toggler {
   font-size: 0.65rem;
   width: 14px;

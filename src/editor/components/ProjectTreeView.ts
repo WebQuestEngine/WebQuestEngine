@@ -73,6 +73,12 @@ export class ProjectTreeView {
     EventBus.getInstance().on('editor:project_updated', () => {
       this.renderContent();
     });
+
+    EventBus.getInstance().on('editor:toggle_lock', (target: { type: string; id?: string; sceneId?: string }) => {
+      if (target) {
+        this.toggleLock(target.type, target.id, target.sceneId);
+      }
+    });
   }
 
   public setProject(project: ProjectData): void {
@@ -130,6 +136,196 @@ export class ProjectTreeView {
     });
   }
 
+  public isNodeLocked(type: string, id?: string, sceneId?: string): boolean {
+    if (!this.project) return false;
+
+    if (type === 'chapter' && id) {
+      const ch = this.project.chapters.find(c => c.id === id);
+      return !!ch?.locked;
+    }
+
+    if (type === 'scene' && id) {
+      const sc = this.project.scenes.find(s => s.id === id);
+      if (sc?.locked) return true;
+      const ch = this.project.chapters[0];
+      return !!ch?.locked;
+    }
+
+    if (type === 'background_folder' && sceneId) {
+      const sc = this.project.scenes.find(s => s.id === sceneId);
+      if (sc?.locked) return true;
+      return sc?.layers.length ? sc.layers.every(l => l.locked) : false;
+    }
+
+    if (type === 'objects_folder' && sceneId) {
+      const sc = this.project.scenes.find(s => s.id === sceneId);
+      if (sc?.locked) return true;
+      return sc?.hotspots.length ? sc.hotspots.every(h => h.locked) : false;
+    }
+
+    if (type === 'characters_folder') {
+      const sc = sceneId ? this.project.scenes.find(s => s.id === sceneId) : this.project.scenes[0];
+      if (sc?.locked) return true;
+      return sc?.characters.length ? sc.characters.every(c => c.locked) : false;
+    }
+
+    if (type === 'layer' && id && sceneId) {
+      const sc = this.project.scenes.find(s => s.id === sceneId);
+      if (sc?.locked) return true;
+      const l = sc?.layers.find(x => x.id === id);
+      return !!l?.locked;
+    }
+
+    if (type === 'hotspot' && id && sceneId) {
+      const sc = this.project.scenes.find(s => s.id === sceneId);
+      if (sc?.locked) return true;
+      const h = sc?.hotspots.find(x => x.id === id);
+      return !!h?.locked;
+    }
+
+    if (type === 'character' && id) {
+      const sc = sceneId ? this.project.scenes.find(s => s.id === sceneId) : this.project.scenes[0];
+      if (sc?.locked) return true;
+      const c = sc?.characters.find(x => x.id === id);
+      return !!c?.locked;
+    }
+
+    if (type === 'walkpath' && sceneId) {
+      const sc = this.project.scenes.find(s => s.id === sceneId);
+      if (sc?.locked) return true;
+      const wp = sc?.walkPaths[0];
+      return !!wp?.locked;
+    }
+
+    return false;
+  }
+
+  private renderLockBtn(type: string, id?: string, sceneId?: string): string {
+    const locked = this.isNodeLocked(type, id, sceneId);
+    return `
+      <span class="tree-lock-btn ${locked ? 'locked' : ''}"
+            data-locktype="${type}"
+            data-lockid="${id || ''}"
+            data-locksceneid="${sceneId || ''}"
+            title="${locked ? 'Locked (Click to Unlock)' : 'Unlocked (Click to Lock)'}">
+        ${locked ? '🔒' : '🔓'}
+      </span>
+    `;
+  }
+
+  public toggleLock(type: string, id?: string, sceneId?: string): void {
+    if (!this.project) return;
+    const currentlyLocked = this.isNodeLocked(type, id, sceneId);
+    const newLock = !currentlyLocked;
+
+    if (newLock) {
+      // Locking a parent -> Automatically locks everything inside it!
+      if (type === 'chapter' && id) {
+        const ch = this.project.chapters.find(c => c.id === id);
+        if (ch) ch.locked = true;
+        this.project.scenes.forEach(sc => {
+          sc.locked = true;
+          sc.layers.forEach(l => l.locked = true);
+          sc.hotspots.forEach(h => h.locked = true);
+          sc.characters.forEach(c => c.locked = true);
+          sc.walkPaths.forEach(wp => wp.locked = true);
+        });
+      } else if (type === 'scene' && id) {
+        const sc = this.project.scenes.find(s => s.id === id);
+        if (sc) {
+          sc.locked = true;
+          sc.layers.forEach(l => l.locked = true);
+          sc.hotspots.forEach(h => h.locked = true);
+          sc.characters.forEach(c => c.locked = true);
+          sc.walkPaths.forEach(wp => wp.locked = true);
+        }
+      } else if (type === 'background_folder' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        if (sc) sc.layers.forEach(l => l.locked = true);
+      } else if (type === 'objects_folder' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        if (sc) sc.hotspots.forEach(h => h.locked = true);
+      } else if (type === 'characters_folder') {
+        this.project.scenes.forEach(sc => sc.characters.forEach(c => c.locked = true));
+      } else if (type === 'layer' && id && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const l = sc?.layers.find(x => x.id === id);
+        if (l) l.locked = true;
+      } else if (type === 'hotspot' && id && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const h = sc?.hotspots.find(x => x.id === id);
+        if (h) h.locked = true;
+      } else if (type === 'character' && id) {
+        this.project.scenes.forEach(sc => {
+          const c = sc.characters.find(x => x.id === id);
+          if (c) c.locked = true;
+        });
+      } else if (type === 'walkpath' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const wp = sc?.walkPaths[0];
+        if (wp) wp.locked = true;
+      }
+    } else {
+      // Unlocking a child -> Automatically unlocks all parents up the tree hierarchy!
+      if (type === 'layer' && id && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const l = sc?.layers.find(x => x.id === id);
+        if (l) l.locked = false;
+        if (sc) sc.locked = false;
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'hotspot' && id && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const h = sc?.hotspots.find(x => x.id === id);
+        if (h) h.locked = false;
+        if (sc) sc.locked = false;
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'character' && id) {
+        this.project.scenes.forEach(sc => {
+          const c = sc.characters.find(x => x.id === id);
+          if (c) c.locked = false;
+          sc.locked = false;
+        });
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'walkpath' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        const wp = sc?.walkPaths[0];
+        if (wp) wp.locked = false;
+        if (sc) sc.locked = false;
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'background_folder' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        if (sc) {
+          sc.layers.forEach(l => l.locked = false);
+          sc.locked = false;
+        }
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'objects_folder' && sceneId) {
+        const sc = this.project.scenes.find(s => s.id === sceneId);
+        if (sc) {
+          sc.hotspots.forEach(h => h.locked = false);
+          sc.locked = false;
+        }
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'characters_folder') {
+        this.project.scenes.forEach(sc => {
+          sc.characters.forEach(c => c.locked = false);
+          sc.locked = false;
+        });
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'scene' && id) {
+        const sc = this.project.scenes.find(s => s.id === id);
+        if (sc) sc.locked = false;
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'chapter' && id) {
+        const ch = this.project.chapters.find(c => c.id === id);
+        if (ch) ch.locked = false;
+      }
+    }
+
+    this.renderContent();
+    EventBus.getInstance().emit('editor:project_updated');
+  }
+
   private renderContent(): void {
     const container = this.element.querySelector('#tree-root-container');
     if (!container || !this.project) return;
@@ -144,7 +340,8 @@ export class ProjectTreeView {
         <div class="tree-group">
           <div class="tree-item ${this.selectedNodeId === chKey ? 'selected' : ''}" data-nodeid="${chKey}" data-type="chapter" data-id="${ch.id}">
             <span class="tree-toggler" data-key="${chKey}">${isChCollapsed ? '▶' : '▼'}</span>
-            <span>📖 ${ch.title}</span>
+            <span style="flex:1;">📖 ${ch.title}</span>
+            ${this.renderLockBtn('chapter', ch.id)}
           </div>
 
           ${!isChCollapsed ? `
@@ -189,7 +386,8 @@ export class ProjectTreeView {
                 <div class="tree-group tree-node">
                   <div class="tree-item ${this.selectedNodeId === scKey ? 'selected' : ''}" data-nodeid="${scKey}" data-type="scene" data-id="${sc.id}">
                     <span class="tree-toggler" data-key="${scKey}">${isScCollapsed ? '▶' : '▼'}</span>
-                    <span>🎬 ${sc.name}</span>
+                    <span style="flex:1;">🎬 ${sc.name}</span>
+                    ${this.renderLockBtn('scene', sc.id)}
                   </div>
 
                   ${!isScCollapsed ? `
@@ -202,7 +400,8 @@ export class ProjectTreeView {
 
                       <!-- 3. WalkPath Polygon Node -->
                       <div class="tree-item tree-node ${this.selectedNodeId === wpKey ? 'selected' : ''}" data-nodeid="${wpKey}" data-type="walkpath" data-sceneid="${sc.id}">
-                        <span>🚶 WalkPath Polygon</span>
+                        <span style="flex:1;">🚶 WalkPath Polygon</span>
+                        ${this.renderLockBtn('walkpath', undefined, sc.id)}
                       </div>
                     </div>
                   ` : ''}
@@ -224,7 +423,8 @@ export class ProjectTreeView {
       <div class="tree-group tree-node">
         <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="background_folder" data-sceneid="${scene.id}">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span>📂 Layers (${scene.layers.length})</span>
+          <span style="flex:1;">📂 Layers (${scene.layers.length})</span>
+          ${this.renderLockBtn('background_folder', undefined, scene.id)}
         </div>
 
         ${!isCollapsed ? `
@@ -240,6 +440,7 @@ export class ProjectTreeView {
                      data-sceneid="${scene.id}"
                      data-idx="${lIdx}">
                   <span style="flex:1;">🖼️ ${l.name}</span>
+                  ${this.renderLockBtn('layer', l.id, scene.id)}
                   <span class="tree-layer-actions">
                     <button class="tree-action-btn btn-tree-layer-up" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Backwards">⬆️</button>
                     <button class="tree-action-btn btn-tree-layer-down" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Forwards">⬇️</button>
@@ -263,7 +464,8 @@ export class ProjectTreeView {
       <div class="tree-group tree-node">
         <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="objects_folder" data-sceneid="${scene.id}">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span>📂 Objects (${scene.hotspots.length})</span>
+          <span style="flex:1;">📂 Objects (${scene.hotspots.length})</span>
+          ${this.renderLockBtn('objects_folder', undefined, scene.id)}
         </div>
 
         ${!isCollapsed ? `
@@ -272,7 +474,8 @@ export class ProjectTreeView {
       const hsKey = `hotspot_${hs.id}`;
       return `
                 <div class="tree-item tree-node ${this.selectedNodeId === hsKey ? 'selected' : ''}" data-nodeid="${hsKey}" data-type="hotspot" data-id="${hs.id}" data-sceneid="${scene.id}">
-                  <span>🎯 ${hs.name}</span>
+                  <span style="flex:1;">🎯 ${hs.name}</span>
+                  ${this.renderLockBtn('hotspot', hs.id, scene.id)}
                 </div>
               `;
     }).join('')}
@@ -303,7 +506,8 @@ export class ProjectTreeView {
       <div class="tree-group tree-node">
         <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="characters_folder">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span>📂 Characters (${allChars.length})</span>
+          <span style="flex:1;">📂 Characters (${allChars.length})</span>
+          ${this.renderLockBtn('characters_folder', undefined, chapterId)}
         </div>
 
         ${!isCollapsed ? `
@@ -312,7 +516,8 @@ export class ProjectTreeView {
       const cKey = `character_${c.id}`;
       return `
                 <div class="tree-item tree-node ${this.selectedNodeId === cKey ? 'selected' : ''}" data-nodeid="${cKey}" data-type="character" data-id="${c.id}" data-sceneid="${c.sceneId}">
-                  <span>👤 ${c.name}</span>
+                  <span style="flex:1;">👤 ${c.name}</span>
+                  ${this.renderLockBtn('character', c.id, c.sceneId)}
                 </div>
               `;
     }).join('')}
@@ -804,6 +1009,17 @@ export class ProjectTreeView {
         }
 
         this.renderContent();
+      });
+    });
+
+    // Lock toggle button listener
+    this.element.querySelectorAll('.tree-lock-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ds = (e.currentTarget as HTMLElement).dataset;
+        if (ds.locktype) {
+          this.toggleLock(ds.locktype, ds.lockid || undefined, ds.locksceneid || undefined);
+        }
       });
     });
 

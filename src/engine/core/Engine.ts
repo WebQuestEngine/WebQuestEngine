@@ -195,8 +195,19 @@ export class Engine {
 
     // Polygon drawing handlers
     EventBus.getInstance().on('editor:start_draw_polygon', (payload: { type?: 'hotspot' | 'walkpath'; targetType?: 'hotspot' | 'walkpath'; hIdx?: number }) => {
+      const targetType = payload.targetType || payload.type || 'hotspot';
+      let hsId: string | undefined;
+      if (targetType === 'hotspot' && payload.hIdx !== undefined && this.currentScene) {
+        hsId = this.currentScene.data.hotspots[payload.hIdx]?.id;
+      } else if (targetType === 'hotspot' && this.selectedHotspotId) {
+        hsId = this.selectedHotspotId;
+      }
+      if (this.isElementLocked(targetType, hsId)) {
+        EventBus.getInstance().emit('ui:notify', '🔒 Cannot edit polygon: Element is locked!');
+        return;
+      }
       this.isDrawingPolygon = true;
-      this.drawingPolygonTarget = { type: payload.targetType || payload.type || 'hotspot', hIdx: payload.hIdx };
+      this.drawingPolygonTarget = { type: targetType, hIdx: payload.hIdx };
       this.drawingPoints = [];
       EventBus.getInstance().emit('ui:notify', '✏️ DRAWING POLYGON MODE: Click canvas to place vertices. Click near 1st point or press Enter to complete.');
       this.renderDebugOverlay();
@@ -352,6 +363,10 @@ export class Engine {
       this.camera.update();
       this.currentScene.update(delta, this.camera);
 
+      if (this.currentScene.playerCharacter?.state === 'walking') {
+        this.renderDebugOverlay();
+      }
+
       const sceneWidth = this.currentScene.data.width || 1920;
       const sceneHeight = this.currentScene.data.height || 1080;
 
@@ -429,7 +444,7 @@ export class Engine {
     if (this.selectedLayerId && this.currentScene) {
       const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
       const layerObj = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
-      if (layerData && layerObj && layerObj.sprite) {
+      if (layerData && !this.isElementLocked('layer', layerData.id) && layerObj && layerObj.sprite) {
         const lx = layerData.x || 0;
         const ly = layerData.y || 0;
         const baseW = (layerObj.sprite.texture && layerObj.sprite.texture.width > 1) ? layerObj.sprite.texture.width : 1920;
@@ -490,15 +505,17 @@ export class Engine {
     }
 
     // 3. Check WalkPath vertices
-    for (const wp of this.currentScene.data.walkPaths) {
-      for (let i = 0; i < wp.points.length; i++) {
-        const pt = wp.points[i];
-        if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
-          this.isDragging = true;
-          this.dragTarget = { type: 'walkpath_vertex', index: i };
-          this.dragStartWorld = worldPt;
-          this.dragInitialPos = { ...pt };
-          return;
+    if (!this.isElementLocked('walkpath')) {
+      for (const wp of this.currentScene.data.walkPaths) {
+        for (let i = 0; i < wp.points.length; i++) {
+          const pt = wp.points[i];
+          if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
+            this.isDragging = true;
+            this.dragTarget = { type: 'walkpath_vertex', index: i };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { ...pt };
+            return;
+          }
         }
       }
     }
@@ -506,26 +523,33 @@ export class Engine {
     // 3. Check Hotspot vertices and Hotspot Area
     for (let hIdx = 0; hIdx < this.currentScene.data.hotspots.length; hIdx++) {
       const hs = this.currentScene.data.hotspots[hIdx];
-      for (let i = 0; i < hs.points.length; i++) {
-        const pt = hs.points[i];
-        if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
-          this.isDragging = true;
-          this.dragTarget = { type: 'hotspot_vertex', hIdx, index: i };
-          this.dragStartWorld = worldPt;
-          this.dragInitialPos = { ...pt };
-          return;
+      const isHsLocked = this.isElementLocked('hotspot', hs.id);
+      if (!isHsLocked) {
+        for (let i = 0; i < hs.points.length; i++) {
+          const pt = hs.points[i];
+          if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12) {
+            this.isDragging = true;
+            this.dragTarget = { type: 'hotspot_vertex', hIdx, index: i };
+            this.dragStartWorld = worldPt;
+            this.dragInitialPos = { ...pt };
+            return;
+          }
         }
       }
 
       const hsObj = this.currentScene.hotspots[hIdx];
       if (hsObj && hsObj.containsPointInEditor(worldPt)) {
-        this.isDragging = true;
+        const isLocked = this.isElementLocked('hotspot', hs.id);
+        if (isLocked) continue; // Do not select locked hotspot from canvas click
+
         this.selectedHotspotId = hs.id;
         this.selectedLayerId = null;
         this.selectedCharacterId = null;
+        this.isDragging = true;
         this.dragTarget = { type: 'hotspot_poly', hIdx };
         this.dragStartWorld = worldPt;
         this.dragInitialPos = { x: worldPt.x, y: worldPt.y };
+
         EventBus.getInstance().emit('editor:select_hotspot', hs.id);
         EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
         this.renderDebugOverlay();
@@ -534,7 +558,7 @@ export class Engine {
     }
 
     // Graphical Edge Insertion for selected Hotspot
-    if (this.selectedHotspotId && this.currentScene) {
+    if (this.selectedHotspotId && !this.isElementLocked('hotspot', this.selectedHotspotId) && this.currentScene) {
       const hsIdx = this.currentScene.data.hotspots.findIndex(h => h.id === this.selectedHotspotId);
       if (hsIdx !== -1) {
         const hs = this.currentScene.data.hotspots[hsIdx];
@@ -580,17 +604,20 @@ export class Engine {
     // 4. Check Characters / NPCs
     const char = this.currentScene.findCharacterAt(worldPt);
     if (char) {
-      this.isDragging = true;
-      this.selectedCharacterId = char.data.id;
-      this.selectedHotspotId = null;
-      this.selectedLayerId = null;
-      this.dragTarget = { type: 'character', id: char.data.id };
-      this.dragStartWorld = worldPt;
-      this.dragInitialPos = { x: char.container.x, y: char.container.y };
-      EventBus.getInstance().emit('editor:select_character', char.data.id);
-      EventBus.getInstance().emit('editor:element_selected', { type: 'character', id: char.data.id });
-      this.renderDebugOverlay();
-      return;
+      const isLocked = this.isElementLocked('character', char.data.id);
+      if (!isLocked) {
+        this.selectedCharacterId = char.data.id;
+        this.selectedHotspotId = null;
+        this.selectedLayerId = null;
+        this.isDragging = true;
+        this.dragTarget = { type: 'character', id: char.data.id };
+        this.dragStartWorld = worldPt;
+        this.dragInitialPos = { x: char.container.x, y: char.container.y };
+        EventBus.getInstance().emit('editor:select_character', char.data.id);
+        EventBus.getInstance().emit('editor:element_selected', { type: 'character', id: char.data.id });
+        this.renderDebugOverlay();
+        return;
+      }
     }
 
     // 5. Check Layers (Clicking background layer on canvas to select/move)
@@ -607,6 +634,9 @@ export class Engine {
           const lh = baseH * (lData.scaleY ?? 1);
 
           if (worldPt.x >= lx && worldPt.x <= lx + lw && worldPt.y >= ly && worldPt.y <= ly + lh) {
+            const isLocked = this.isElementLocked('layer', lData.id);
+            if (isLocked) continue; // Do not select locked layer from canvas click
+
             this.selectedLayerId = lData.id;
             this.selectedHotspotId = null;
             this.selectedCharacterId = null;
@@ -614,6 +644,7 @@ export class Engine {
             this.dragTarget = { type: 'layer', id: lData.id };
             this.dragStartWorld = worldPt;
             this.dragInitialPos = { x: lx, y: ly };
+
             EventBus.getInstance().emit('editor:select_layer', lData.id);
             EventBus.getInstance().emit('editor:element_selected', { type: 'layer', id: lData.id });
             this.renderDebugOverlay();
@@ -1244,6 +1275,61 @@ export class Engine {
         }
       }
     }
+
+    // Draw Character Calculated Walk Route (Glowing Cyan Line & Waypoints)
+    if (this.currentScene && this.currentScene.playerCharacter) {
+      const playerChar = this.currentScene.playerCharacter;
+      const path = playerChar.path;
+      if (path && path.length > 0) {
+        const startPt = { x: playerChar.container.x, y: playerChar.container.y };
+        const routePts = [startPt, ...path];
+
+        // Draw Thick Glowing Cyan Route Line
+        this.debugOverlay.moveTo(routePts[0].x, routePts[0].y);
+        for (let i = 1; i < routePts.length; i++) {
+          this.debugOverlay.lineTo(routePts[i].x, routePts[i].y);
+        }
+        this.debugOverlay.stroke({ color: 0x06b6d4, width: 5, alpha: 0.95 });
+
+        // Draw Waypoint Circles
+        for (let i = 0; i < routePts.length; i++) {
+          const pt = routePts[i];
+          const isStart = i === 0;
+          const isEnd = i === routePts.length - 1;
+
+          this.debugOverlay.circle(pt.x, pt.y, isEnd ? 8 : (isStart ? 6 : 5));
+          this.debugOverlay.fill({ color: isEnd ? 0x22c55e : (isStart ? 0x3b82f6 : 0x06b6d4) });
+          this.debugOverlay.stroke({ color: 0xffffff, width: 2 });
+        }
+      }
+    }
+  }
+
+  public isElementLocked(type: string, id?: string): boolean {
+    if (!this.project || !this.currentScene) return false;
+    const scene = this.currentScene.data;
+
+    // Check parent scene lock
+    if (scene.locked) return true;
+
+    // Check parent chapter lock
+    const ch = this.project.chapters[0];
+    if (ch && ch.locked) return true;
+
+    if (type === 'layer' && id) {
+      const l = scene.layers.find(x => x.id === id);
+      return !!l?.locked;
+    } else if (type === 'hotspot' && id) {
+      const h = scene.hotspots.find(x => x.id === id);
+      return !!h?.locked;
+    } else if (type === 'character' && id) {
+      const c = scene.characters.find(x => x.id === id);
+      return !!c?.locked;
+    } else if (type === 'walkpath') {
+      const wp = scene.walkPaths?.[0];
+      return !!wp?.locked;
+    }
+    return false;
   }
 
   private showNotification(text: string): void {

@@ -66,6 +66,7 @@ export interface HotspotData {
   scaleX?: number;
   scaleY?: number;
   visible?: boolean;
+  locked?: boolean;
 }
 
 export interface CharacterAnimFrame {
@@ -91,6 +92,7 @@ export interface CharacterData {
   actions?: HotspotAction[];
   currentHoldingItemId?: string;
   animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
+  locked?: boolean;
 }
 
 export interface WalkPathData {
@@ -105,6 +107,7 @@ export interface WalkPathData {
     vanishX?: number;
   };
   enabled: boolean;
+  locked?: boolean;
 }
 
 export interface LayerData {
@@ -120,6 +123,7 @@ export interface LayerData {
   y?: number;
   scaleX?: number;
   scaleY?: number;
+  locked?: boolean;
 }
 
 export interface SceneData {
@@ -133,6 +137,7 @@ export interface SceneData {
   characters: CharacterData[];
   playerSpawn: Vector2D;
   backgroundMusicUrl?: string;
+  locked?: boolean;
 }
 
 export interface DialogChoice {
@@ -181,6 +186,7 @@ export interface ChapterData {
   title: string;
   description: string;
   startStoryNodeId: string;
+  locked?: boolean;
 }
 
 export interface ProjectData {

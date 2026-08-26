@@ -194,22 +194,52 @@ export class Inspector {
     `;
   }
 
+  private isTargetLocked(): boolean {
+    const target = this.selectedTarget;
+    if (!target) return false;
+
+    const scene = target.sceneId ? this.project?.scenes.find(s => s.id === target.sceneId) : this.currentScene;
+    if (this.project?.chapters[0]?.locked || scene?.locked) return true;
+
+    if (target.type === 'chapter' && target.id) {
+      return !!this.project?.chapters.find(c => c.id === target.id)?.locked;
+    }
+    if (target.type === 'scene' && target.id) {
+      return !!this.project?.scenes.find(s => s.id === target.id)?.locked;
+    }
+    if (target.type === 'layer' && target.id) {
+      return !!scene?.layers.find(l => l.id === target.id)?.locked;
+    }
+    if (target.type === 'hotspot' && target.id) {
+      return !!scene?.hotspots.find(h => h.id === target.id)?.locked;
+    }
+    if (target.type === 'character' && target.id) {
+      return !!scene?.characters.find(c => c.id === target.id)?.locked;
+    }
+    if (target.type === 'walkpath') {
+      return !!scene?.walkPaths[0]?.locked;
+    }
+    return false;
+  }
+
   private renderContent(): void {
-    const header = this.element.querySelector('#inspector-header');
     const container = this.element.querySelector('#inspector-content');
+    const header = this.element.querySelector('#inspector-header');
     if (!container || !this.project) return;
 
     const target = this.selectedTarget || (this.currentScene ? { type: 'scene', id: this.currentScene.id } : { type: 'project' });
 
+    let contentHTML = '';
+
     if (target.type === 'scene') {
       const scene = this.project.scenes.find(s => s.id === (target.id || this.currentScene?.id)) || this.currentScene || this.project.scenes[0];
       if (header) header.innerHTML = `<span>🎬 Scene Properties: <b>${scene.name}</b></span>`;
-      container.innerHTML = this.getSceneHTML(scene);
+      contentHTML = this.getSceneHTML(scene);
     } else if (target.type === 'walkpath') {
       const sceneId = target.sceneId || this.currentScene?.id || this.project.scenes[0].id;
       const scene = this.project.scenes.find(s => s.id === sceneId) || this.project.scenes[0];
       if (header) header.innerHTML = `<span>🚶 WalkPath Polygon: <b>${scene.name}</b></span>`;
-      container.innerHTML = this.getWalkPathHTML(scene);
+      contentHTML = this.getWalkPathHTML(scene);
     } else if (target.type === 'hotspot') {
       let foundHs: HotspotData | undefined;
       let foundScene: SceneData | undefined;
@@ -225,9 +255,9 @@ export class Inspector {
 
       if (foundHs && foundScene) {
         if (header) header.innerHTML = `<span>🎯 Object / Hotspot: <b>${foundHs.name}</b></span>`;
-        container.innerHTML = this.getHotspotHTML(foundScene, foundHs);
+        contentHTML = this.getHotspotHTML(foundScene, foundHs);
       } else {
-        container.innerHTML = '<div class="sidebar-section">Hotspot not found.</div>';
+        contentHTML = '<div class="sidebar-section">Hotspot not found.</div>';
       }
     } else if (target.type === 'layer') {
       let foundLayer: LayerData | undefined;
@@ -244,9 +274,9 @@ export class Inspector {
 
       if (foundLayer && foundScene) {
         if (header) header.innerHTML = `<span>🖼️ Parallax Layer: <b>${foundLayer.name}</b></span>`;
-        container.innerHTML = this.getLayerHTML(foundScene, foundLayer);
+        contentHTML = this.getLayerHTML(foundScene, foundLayer);
       } else {
-        container.innerHTML = '<div class="sidebar-section">Layer not found.</div>';
+        contentHTML = '<div class="sidebar-section">Layer not found.</div>';
       }
     } else if (target.type === 'character') {
       let foundChar: CharacterData | undefined;
@@ -263,33 +293,79 @@ export class Inspector {
 
       if (foundChar && foundScene) {
         if (header) header.innerHTML = `<span>👤 Character: <b>${foundChar.name}</b></span>`;
-        container.innerHTML = this.getCharacterHTML(foundScene, foundChar);
+        contentHTML = this.getCharacterHTML(foundScene, foundChar);
       } else {
-        container.innerHTML = '<div class="sidebar-section">Character not found.</div>';
+        contentHTML = '<div class="sidebar-section">Character not found.</div>';
       }
     } else if (target.type === 'item') {
       const item = this.project.items.find(i => i.id === target.id);
       if (item) {
         if (header) header.innerHTML = `<span>🎒 Quest Item: <b>${item.name}</b></span>`;
-        container.innerHTML = this.getItemHTML(item);
+        contentHTML = this.getItemHTML(item);
       } else {
-        container.innerHTML = '<div class="sidebar-section">Item not found.</div>';
+        contentHTML = '<div class="sidebar-section">Item not found.</div>';
       }
     } else if (target.type === 'chapter') {
       const ch = this.project.chapters.find(c => c.id === target.id) || this.project.chapters[0];
       if (header) header.innerHTML = `<span>📖 Chapter: <b>${ch.title}</b></span>`;
-      container.innerHTML = this.getChapterHTML(ch);
+      contentHTML = this.getChapterHTML(ch);
     } else {
       if (header) header.innerHTML = `<span>⚙️ Project Configuration</span>`;
-      container.innerHTML = this.getProjectHTML();
+      contentHTML = this.getProjectHTML();
+    }
+
+    if (this.isTargetLocked()) {
+      // Keep lock banner active while disabling property fields underneath
+      const bannerMatch = contentHTML.match(/(<div class="inspector-lock-banner"[\s\S]*?<\/div>)/);
+      if (bannerMatch) {
+        const bannerHTML = bannerMatch[1];
+        const restHTML = contentHTML.replace(bannerMatch[1], '');
+        container.innerHTML = `${bannerHTML}<fieldset disabled style="border:none; padding:0; margin:0;">${restHTML}</fieldset>`;
+      } else {
+        container.innerHTML = `<fieldset disabled style="border:none; padding:0; margin:0;">${contentHTML}</fieldset>`;
+      }
+    } else {
+      container.innerHTML = contentHTML;
     }
 
     this.attachEvents();
   }
 
+  private renderInspectorLockHeader(type: string, id?: string, sceneId?: string): string {
+    const scene = sceneId ? this.project?.scenes.find(s => s.id === sceneId) : this.currentScene;
+    let locked = false;
+
+    if (type === 'chapter' && id) {
+      locked = !!this.project?.chapters.find(c => c.id === id)?.locked;
+    } else if (type === 'scene' && id) {
+      const sc = this.project?.scenes.find(s => s.id === id);
+      locked = !!sc?.locked || !!this.project?.chapters[0]?.locked;
+    } else if (type === 'layer' && id) {
+      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.layers.find(l => l.id === id)?.locked;
+    } else if (type === 'hotspot' && id) {
+      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.hotspots.find(h => h.id === id)?.locked;
+    } else if (type === 'character' && id) {
+      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.characters.find(c => c.id === id)?.locked;
+    } else if (type === 'walkpath') {
+      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.walkPaths[0]?.locked;
+    }
+
+    return `
+      <div class="inspector-lock-banner" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:8px 12px; background:${locked ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)'}; border:1px solid ${locked ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255, 255, 255, 0.1)'}; border-radius:6px;">
+        <span style="font-weight:600; font-size:0.82rem; color:${locked ? '#f59e0b' : 'var(--text-main)'}; display:flex; align-items:center; gap:6px;">
+          ${locked ? '🔒 Element is Locked (Read-Only)' : '🔓 Element is Editable'}
+        </span>
+        <button class="btn ${locked ? 'btn-secondary' : 'btn-primary'}" id="btn-toggle-inspector-lock" data-type="${type}" data-id="${id || ''}" data-sceneid="${sceneId || scene?.id || ''}" style="font-size:0.75rem; padding:4px 8px;">
+          ${locked ? '🔓 Unlock' : '🔒 Lock'}
+        </button>
+      </div>
+    `;
+  }
+
   private getSceneHTML(scene: SceneData): string {
     const bgUrl = scene.layers[0]?.imageUrl || '';
     return `
+      ${this.renderInspectorLockHeader('scene', scene.id)}
       <div class="sidebar-section">
         <div class="form-group">
           <label>Scene Name</label>
@@ -327,6 +403,7 @@ export class Inspector {
   private getWalkPathHTML(scene: SceneData): string {
     const wp = scene.walkPaths[0] || { scaling: { minY: 400, maxY: 1080, minScale: 0.6, maxScale: 1.2, vanishX: scene.width / 2 }, points: [] };
     return `
+      ${this.renderInspectorLockHeader('walkpath', undefined, scene.id)}
       <div class="sidebar-section">
         <div class="sidebar-section-title">📐 2.5D Perspective Frustum & Floor Plane</div>
         <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
@@ -804,6 +881,7 @@ export class Inspector {
   private getChapterHTML(ch: ChapterData): string {
     const idx = this.project?.chapters.indexOf(ch) ?? 0;
     return `
+      ${this.renderInspectorLockHeader('chapter', ch.id)}
       <div class="sidebar-section">
         <div class="form-group">
           <label>Chapter Title</label>
@@ -850,6 +928,16 @@ export class Inspector {
     const emitUpdate = () => {
       EventBus.getInstance().emit('editor:project_updated');
     };
+
+    this.element.querySelector('#btn-toggle-inspector-lock')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget as HTMLElement;
+      const type = btn.dataset.type;
+      const id = btn.dataset.id;
+      const sceneId = btn.dataset.sceneid;
+      if (type) {
+        EventBus.getInstance().emit('editor:toggle_lock', { type, id: id || undefined, sceneId: sceneId || undefined });
+      }
+    });
 
     // Sub-tabs switching
     this.element.querySelectorAll('.inspector-subtab-btn').forEach(btn => {
