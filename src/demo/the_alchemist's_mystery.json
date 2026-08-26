@@ -276,6 +276,76 @@
               "text": "You search the shrub again, but there is nothing else inside."
             }
           ]
+        },
+        {
+          "id": "hs_1787742580648",
+          "name": "sun",
+          "cursor": "interact",
+          "enabled": true,
+          "points": [
+            {
+              "x": 1416,
+              "y": 142
+            },
+            {
+              "x": 1460,
+              "y": 164
+            },
+            {
+              "x": 1490,
+              "y": 195
+            },
+            {
+              "x": 1504,
+              "y": 251
+            },
+            {
+              "x": 1491,
+              "y": 296
+            },
+            {
+              "x": 1471,
+              "y": 328
+            },
+            {
+              "x": 1431,
+              "y": 349
+            },
+            {
+              "x": 1373,
+              "y": 349
+            },
+            {
+              "x": 1327,
+              "y": 328
+            },
+            {
+              "x": 1300,
+              "y": 281
+            },
+            {
+              "x": 1300,
+              "y": 220
+            },
+            {
+              "x": 1323,
+              "y": 170
+            },
+            {
+              "x": 1368,
+              "y": 146
+            }
+          ],
+          "actions": [
+            {
+              "verb": "look",
+              "text": "That's a big sun."
+            },
+            {
+              "verb": "interact",
+              "text": "I can't reach it."
+            }
+          ]
         }
       ],
       "characters": [
@@ -405,7 +475,8 @@
             ]
           },
           "gridOffsetX": 67,
-          "gridOffsetY": 0
+          "gridOffsetY": 0,
+          "currentHoldingItemId": "item_key"
         }
       ]
     },
@@ -679,7 +750,8 @@
             ]
           },
           "gridOffsetX": 67,
-          "gridOffsetY": 0
+          "gridOffsetY": 0,
+          "currentHoldingItemId": "item_crystal"
         },
         {
           "id": "npc_eldrin",
