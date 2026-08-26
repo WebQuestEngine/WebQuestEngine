@@ -215,29 +215,41 @@
           "name": "Mysterious Shrub",
           "cursor": "interact",
           "enabled": true,
-          "imageUrl": "procedural:shrub",
+          "imageUrl": "assets/c1s1/shrub.png",
           "position": {
-            "x": 1355,
-            "y": 770
+            "x": 1310.4285714285713,
+            "y": 766.1428571428571
           },
-          "scaleX": 1,
-          "scaleY": 1,
+          "scaleX": 0.15,
+          "scaleY": 0.15,
           "points": [
             {
-              "x": 1280,
-              "y": 720
+              "x": 1236,
+              "y": 735
             },
             {
-              "x": 1430,
-              "y": 720
+              "x": 1311,
+              "y": 673
             },
             {
-              "x": 1430,
-              "y": 820
+              "x": 1362,
+              "y": 694
             },
             {
-              "x": 1280,
-              "y": 820
+              "x": 1398,
+              "y": 754
+            },
+            {
+              "x": 1380,
+              "y": 843
+            },
+            {
+              "x": 1268,
+              "y": 854
+            },
+            {
+              "x": 1218,
+              "y": 810
             }
           ],
           "actions": [

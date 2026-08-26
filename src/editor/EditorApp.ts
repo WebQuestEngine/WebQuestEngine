@@ -161,9 +161,20 @@ export class EditorApp {
     EventBus.getInstance().on('editor:save_file', async () => {
       const jsonStr = ProjectSerializer.serialize(this.project);
       const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
-      const success = await FileAccessAdapter.saveLocalProjectFile(jsonStr, filename);
+      const success = await FileAccessAdapter.saveProjectFile(jsonStr, filename);
       if (success) {
-        this.showNotification(`Saved project to local disk successfully.`);
+        const activeName = FileAccessAdapter.getActiveFilename() || filename;
+        this.showNotification(`💾 Saved project to "${activeName}" successfully.`);
+      }
+    });
+
+    EventBus.getInstance().on('editor:save_file_as', async () => {
+      const jsonStr = ProjectSerializer.serialize(this.project);
+      const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
+      const success = await FileAccessAdapter.saveProjectFileAs(jsonStr, filename);
+      if (success) {
+        const activeName = FileAccessAdapter.getActiveFilename() || filename;
+        this.showNotification(`💾 Saved project as "${activeName}" successfully.`);
       }
     });
 
@@ -237,7 +248,11 @@ export class EditorApp {
 
       if (ctrlOrCmd && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        EventBus.getInstance().emit('editor:save_file');
+        if (e.shiftKey) {
+          EventBus.getInstance().emit('editor:save_file_as');
+        } else {
+          EventBus.getInstance().emit('editor:save_file');
+        }
         return;
       }
 

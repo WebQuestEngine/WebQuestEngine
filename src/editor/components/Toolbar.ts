@@ -28,7 +28,8 @@ export class Toolbar {
         <button class="btn" id="btn-redo" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>↪️ Redo</button>
         <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
         <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open</button>
-        <button class="btn" id="btn-save-file" title="Save Project JSON to Local Disk (HTML5 File Access API)">💾 Save</button>
+        <button class="btn" id="btn-save-file" title="Save Project JSON (Ctrl+S or Shift+Click for Save As)">💾 Save</button>
+        <button class="btn" id="btn-save-as-file" title="Save Project JSON As... (Ctrl+Shift+S)">💾 Save As...</button>
       </div>
 
       <div class="toolbar-group">
@@ -90,8 +91,17 @@ export class Toolbar {
       EventBus.getInstance().emit('editor:open_file');
     });
 
-    this.element.querySelector('#btn-save-file')?.addEventListener('click', () => {
-      EventBus.getInstance().emit('editor:save_file');
+    this.element.querySelector('#btn-save-file')?.addEventListener('click', (e: Event) => {
+      const mouseEv = e as MouseEvent;
+      if (mouseEv.shiftKey) {
+        EventBus.getInstance().emit('editor:save_file_as');
+      } else {
+        EventBus.getInstance().emit('editor:save_file');
+      }
+    });
+
+    this.element.querySelector('#btn-save-as-file')?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:save_file_as');
     });
 
     this.element.querySelector('#select-ui-preset')?.addEventListener('change', (e) => {
