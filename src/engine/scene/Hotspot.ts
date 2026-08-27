@@ -99,8 +99,10 @@ export class Hotspot extends InteractableElement {
       if (itemAction) return itemAction;
     }
 
-    const verbAction = this.getActionForVerb(activeVerb);
-    if (verbAction) return verbAction;
+    if (activeVerb && activeVerb !== 'walk') {
+      const verbAction = this.getActionForVerb(activeVerb);
+      if (verbAction) return verbAction;
+    }
 
     const validActions = this.data.actions.filter(a => this.isActionValid(a, selectedItemId));
     const nonLookAction = validActions.find(a => a.verb !== 'look');

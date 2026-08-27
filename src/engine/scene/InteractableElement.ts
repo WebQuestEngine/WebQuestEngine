@@ -66,11 +66,15 @@ export class InteractableElement extends GraphicalElement {
 
       const actVerb = a.verb === 'use' ? 'interact' : a.verb;
 
-      // Scene transition actions (doors/exits) should only trigger on interact/use/walk
+      // Scene transition actions (doors/exits) trigger on interact/use/walk
       if (a.targetSceneId) {
         if (effectiveVerb !== 'interact' && effectiveVerb !== 'walk') return false;
       } else {
-        if (actVerb !== effectiveVerb && actVerb !== 'interact' && effectiveVerb !== 'interact') return false;
+        if (effectiveVerb === 'interact') {
+          if (actVerb !== 'interact') return false;
+        } else {
+          if (actVerb !== effectiveVerb) return false;
+        }
       }
 
       if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
