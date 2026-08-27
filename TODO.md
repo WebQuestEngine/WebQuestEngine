@@ -4,11 +4,12 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 
 ---
 
-## 🎨 1. Fix Inventory Appearance
+## 🎨 1. Fix Appearance
 - [ ] **UI Preset Styling**: Refine inventory bar styling and layout across all UI presets (`LucasArts 9-verbs`, `Sierra top bar`, `Context Coin`, `Direct Cursor`).
 - [ ] **Item Grid & Slots**: Improve item slot border padding, hover highlights, item selection indicators, and item count tooltips.
 - [ ] **Item Drag & Combine Visuals**: Add visual feedback when dragging an item onto another inventory item or hot-bar slot.
 - [ ] **Custom graphics for tools and inventory**: Add custom graphics for tools and inventory slots
+- [ ] **Dialog box custom graphics**: Add custom graphics for dialog boxes
 
 ---
 
