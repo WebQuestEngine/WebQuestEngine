@@ -51,12 +51,68 @@ export class DialogSystem {
   }
 
   public presentNode(getFlagState?: (flag: string) => boolean): void {
-    if (!this.currentNode) {
+    if (!this.currentNode || !this.currentTree) {
       this.endDialog();
       return;
     }
 
-    // Process flag changes or item rewards attached to node
+    // 1. Evaluate per-node flag testing conditions (optional)
+    if (this.currentNode.requiredFlag && getFlagState && !getFlagState(this.currentNode.requiredFlag)) {
+      if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+        this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+        this.presentNode(getFlagState);
+        return;
+      }
+      this.endDialog();
+      return;
+    }
+    if (this.currentNode.notFlag && getFlagState && getFlagState(this.currentNode.notFlag)) {
+      if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+        this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+        this.presentNode(getFlagState);
+        return;
+      }
+      this.endDialog();
+      return;
+    }
+
+    // 2. Router Node Processing (Invisible logic router: selects first matching condition & auto-starts conversation)
+    if (this.currentNode.isRouterNode) {
+      if (this.currentNode.setFlag) {
+        EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
+      }
+      if (this.currentNode.giveItem) {
+        EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
+      }
+
+      let matchingTargetNodeId: string | null = null;
+      if (this.currentNode.choices && this.currentNode.choices.length > 0) {
+        for (const choice of this.currentNode.choices) {
+          let valid = true;
+          if (choice.requiredFlag && getFlagState && !getFlagState(choice.requiredFlag)) valid = false;
+          if (choice.notFlag && getFlagState && getFlagState(choice.notFlag)) valid = false;
+          if (valid) {
+            matchingTargetNodeId = choice.nextNodeId;
+            break;
+          }
+        }
+      }
+
+      if (!matchingTargetNodeId && this.currentNode.nextNodeId) {
+        matchingTargetNodeId = this.currentNode.nextNodeId;
+      }
+
+      if (matchingTargetNodeId && this.currentTree.nodes[matchingTargetNodeId]) {
+        this.currentNode = this.currentTree.nodes[matchingTargetNodeId];
+        this.presentNode(getFlagState);
+        return;
+      }
+
+      this.endDialog();
+      return;
+    }
+
+    // 3. Regular Speech Node Processing
     if (this.currentNode.setFlag) {
       EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
     }

@@ -1217,9 +1217,11 @@
           ],
           "voiceAudioUrl": "assets/c1s2/audio/ah sir ronald you have managed.mp3",
           "position": {
-            "x": 162,
-            "y": 121
-          }
+            "x": 450,
+            "y": 10
+          },
+          "isRouterNode": false,
+          "setFlag": "eldrin:firstTime"
         },
         "node_2": {
           "id": "node_2",
@@ -1236,8 +1238,8 @@
           ],
           "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3",
           "position": {
-            "x": 827,
-            "y": 10
+            "x": 1080,
+            "y": 265
           }
         },
         "node_3": {
@@ -1247,8 +1249,8 @@
           "nextNodeId": "node_end",
           "voiceAudioUrl": "assets/c1s2/audio/feel free to inspect the room but do not touch the explosive compunds.mp3",
           "position": {
-            "x": 853,
-            "y": 492
+            "x": 1076,
+            "y": 910
           }
         },
         "node_end": {
@@ -1257,9 +1259,56 @@
           "text": "May wisdom guide your quest.",
           "voiceAudioUrl": "assets/c1s2/audio/may wisdom guide your quest.mp3",
           "position": {
-            "x": 1616,
-            "y": 488
+            "x": 1643.4654585483781,
+            "y": 640.7769555750594
           }
+        },
+        "router_5": {
+          "id": "router_5",
+          "speaker": "Router",
+          "text": "",
+          "isRouterNode": true,
+          "choices": [
+            {
+              "id": "branch_1",
+              "text": "If Has Flag...",
+              "nextNodeId": "node_1",
+              "notFlag": "eldrin:firstTime"
+            },
+            {
+              "id": "branch_2",
+              "text": "Otherwise Fallback...",
+              "nextNodeId": "node_6"
+            }
+          ],
+          "position": {
+            "x": 10,
+            "y": 55
+          }
+        },
+        "node_6": {
+          "id": "node_6",
+          "speaker": "Master Eldrin",
+          "text": "Yes, Sir Ronald?",
+          "position": {
+            "x": 483,
+            "y": 719
+          },
+          "choices": [
+            {
+              "id": "branch_1",
+              "text": "Remind me what I should do now?",
+              "nextNodeId": "node_2",
+              "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3"
+            },
+            {
+              "id": "branch_2",
+              "text": "Just exploring your impressive alchemy setup.",
+              "nextNodeId": "node_3",
+              "voiceAudioUrl": "assets/c1s2/audio/Just exploring your impressive alchemy setup.mp3"
+            }
+          ],
+          "voiceAudioUrl": "assets/c1s2/audio/Yes, Sir Ronald.mp3"
         }
       }
     }

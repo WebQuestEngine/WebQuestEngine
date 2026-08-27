@@ -177,6 +177,7 @@ export interface DialogNode {
   giveItem?: string;
   position?: Vector2D;
   isChoiceInteractive?: boolean;
+  isRouterNode?: boolean;
 }
 
 export interface DialogTree {

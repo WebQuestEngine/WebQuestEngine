@@ -241,15 +241,19 @@ export class EditorApp {
         return;
       }
 
-      // Don't trigger undo/redo if typing inside text input or textarea
-      const targetTag = (e.target as HTMLElement)?.tagName;
-      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
-
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
+      // Global Ctrl+S / Cmd+S save shortcut (works everywhere regardless of focused element)
       if (ctrlOrCmd && e.key.toLowerCase() === 's') {
         e.preventDefault();
+        e.stopPropagation();
+
+        // Commit active input value if currently focused on an input element
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+
         if (e.shiftKey) {
           EventBus.getInstance().emit('editor:save_file_as');
         } else {
@@ -257,6 +261,10 @@ export class EditorApp {
         }
         return;
       }
+
+      // Don't trigger undo/redo if typing inside text input or textarea
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
 
       if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
@@ -273,7 +281,7 @@ export class EditorApp {
         e.preventDefault();
         EventBus.getInstance().emit('editor:redo');
       }
-    });
+    }, true);
   }
 
   private renderDialogOverlay(data: any): void {
