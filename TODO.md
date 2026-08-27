@@ -57,3 +57,32 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ## ⚡ 8. Global Events & Triggers
 - [ ] **Global Event Listeners**: Add project-level event triggers (`onGameStart`, `onChapterStart`, `onFlagChange`, `onItemCollected`, `onTimerExpire`).
 - [ ] **Global Event Actions**: Support executing script actions, dialogue triggers, music playback, or scene transitions from global events without requiring a hotspot click.
+
+---
+
+## 🎵 9. Audio System
+- [ ] **Background Music per Scene**: Support background music audio files per scene (`backgroundMusicUrl`) with smooth fading between scene transitions.
+- [ ] **Recorded Dialogues / Voiceover Support**: Add voiceover audio file fields to dialogue nodes (`voiceAudioUrl`) with automatic subtitle duration sync.
+- [ ] **Custom Action Sound Effects**: Support custom sound effect triggers on actions (`sfxUrl`) for door opening, item pickup, brewing potions, and inventory interactions.
+
+---
+
+## ⚙️ 10. Settings Dialog & Volume Controls
+- [ ] **Audio Volume Sliders**: Add interactive volume controls for Master Volume, Music Volume, Sound Effects (SFX) Volume, and Voiceover Volume.
+- [ ] **In-Game Settings Modal**: Create an accessible settings dialog accessible during gameplay and from the main menu.
+- [ ] **Display & Gameplay Preferences**: Support subtitle text speed sliders, fullscreen mode toggle, and UI scaling options.
+
+---
+
+## 🏠 11. Main Menu / Home Page System
+- [ ] **Main Menu Screen**: Add a customizable game Title / Home Page screen shown when launching published games.
+- [ ] **Game Actions**: Include `Start New Game`, `Continue Game` (auto-load latest save), and multi-slot `Save / Load Game` management.
+- [ ] **Settings & Custom Screens**: Include direct access to the Settings Panel, plus support for custom buttons/modal screens such as `Credits`, `Controls`, and `Quit Game`.
+
+---
+
+## 🏆 12. Achievements System
+- [ ] **Achievement Definitions**: Support defining achievements in project data (`id`, `title`, `description`, `iconUrl`, `isSecret`, `isUnlocked`).
+- [ ] **Action & Script Unlock Triggers**: Allow unlocking achievements via hotspot actions, dialogue completion, item combinations, or story flags (`unlockAchievement('first_potion')`).
+- [ ] **In-Game Toast Notifications**: Display an animated toast notification banner when an achievement is unlocked during gameplay.
+- [ ] **Achievements Screen / Modal**: Accessible achievements menu displaying progress, icons, unlock timestamps, and secret achievement placeholders.
