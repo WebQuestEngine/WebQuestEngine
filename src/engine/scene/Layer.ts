@@ -32,11 +32,14 @@ export class Layer extends GraphicalElement {
     const scaleX = this.data.scaleX ?? 1;
     const scaleY = this.data.scaleY ?? 1;
 
-    this.container.x = offsetX - cameraX * (this.data.parallaxX ?? 1);
-    this.container.y = offsetY - cameraY * (this.data.parallaxY ?? 1);
+    const pX = this.data.parallaxX ?? 0;
+    const pY = this.data.parallaxY ?? 0;
+
+    this.container.x = offsetX - cameraX * pX;
+    this.container.y = offsetY - cameraY * pY;
     this.container.scale.set(scaleX, scaleY);
-    this.container.alpha = this.data.opacity;
-    this.container.visible = this.data.visible;
+    this.container.alpha = this.data.opacity ?? 1;
+    this.container.visible = this.data.visible ?? true;
   }
 
   private createProceduralLayerTexture(type: string): PIXI.Texture {

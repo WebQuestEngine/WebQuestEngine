@@ -44,16 +44,14 @@ export class EditorApp {
 
   public async init(): Promise<void> {
     this.container.innerHTML = `
-      <div class="editor-layout">
-        <div id="toolbar-slot"></div>
-        <div class="editor-workspace">
-          <div id="tree-slot"></div>
-          <div id="viewport-slot" class="editor-viewport">
-            <div id="canvas-container" style="width:100%; height:100%;"></div>
-            <div id="zoom-widget-slot"></div>
-          </div>
-          <div id="inspector-slot"></div>
+      <div id="toolbar-slot"></div>
+      <div class="editor-main-layout">
+        <div id="tree-slot"></div>
+        <div id="viewport-slot" class="editor-viewport-container">
+          <div id="canvas-container" class="editor-canvas-wrapper"></div>
+          <div id="zoom-widget-slot"></div>
         </div>
+        <div id="inspector-slot"></div>
       </div>
       <div id="story-graph-slot"></div>
       <div id="dialog-editor-slot"></div>

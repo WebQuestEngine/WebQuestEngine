@@ -53,18 +53,27 @@ export class Camera {
   public update(): void {
     if (!this.target) return;
 
-    // In play mode: track target position
-    const desiredX = this.target.x - this.viewport.width / 2;
-    const desiredY = this.target.y - this.viewport.height / 2;
+    // Viewport bounds in standard world coordinates (1920x1080)
+    const baseW = 1920;
+    const baseH = 1080;
+    const maxScrollX = Math.max(0, (this.bounds.width || baseW) - baseW);
+    const maxScrollY = Math.max(0, (this.bounds.height || baseH) - baseH);
 
-    const maxX = Math.max(0, this.bounds.width - this.viewport.width);
-    const maxY = Math.max(0, this.bounds.height - this.viewport.height);
+    if (maxScrollX > 0) {
+      const desiredX = this.target.x - baseW / 2;
+      const clampedX = Math.max(0, Math.min(maxScrollX, desiredX));
+      this.position.x += (clampedX - this.position.x) * this.lerpSpeed;
+    } else {
+      this.position.x = 0;
+    }
 
-    const clampedX = Math.max(0, Math.min(maxX, desiredX));
-    const clampedY = Math.max(0, Math.min(maxY, desiredY));
-
-    this.position.x += (clampedX - this.position.x) * this.lerpSpeed;
-    this.position.y += (clampedY - this.position.y) * this.lerpSpeed;
+    if (maxScrollY > 0) {
+      const desiredY = this.target.y - baseH / 2;
+      const clampedY = Math.max(0, Math.min(maxScrollY, desiredY));
+      this.position.y += (clampedY - this.position.y) * this.lerpSpeed;
+    } else {
+      this.position.y = 0;
+    }
   }
 
   public getParallaxOffset(parallaxX: number, parallaxY: number): Vector2D {

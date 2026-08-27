@@ -51,6 +51,7 @@ export class RuntimeContext {
     this.audio.setPlayMode(false);
     this.dialog.endDialog();
     this.inventory.clear();
+    this.ui.destroy();
     this.eventBus.clear();
   }
 }

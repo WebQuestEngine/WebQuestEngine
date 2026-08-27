@@ -431,4 +431,17 @@ export class UISystem {
       titleEl.textContent = '';
     }
   }
+
+  public destroy(): void {
+    if (this.containerElement) {
+      const overlays = this.containerElement.querySelectorAll('.quest-ui-overlay, .speech-subtitle-box, .ui-subtitle-bar');
+      overlays.forEach(el => el.remove());
+      this.containerElement = null;
+    }
+    if (this.cursorFollowerElement) {
+      this.cursorFollowerElement.remove();
+      this.cursorFollowerElement = null;
+      document.body.classList.remove('custom-cursor-active');
+    }
+  }
 }

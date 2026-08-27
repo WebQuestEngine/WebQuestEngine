@@ -21,6 +21,8 @@ export class EditorCanvas {
   private activeSpawnPickerCallback: ((pt: Vector2D) => void) | null = null;
   private activeWalkPathPointIndex: number | null = null;
   private isDraggingPoint = false;
+  private isPanning = false;
+  private panStartScreen: Vector2D = { x: 0, y: 0 };
   private mouseWorldPos: Vector2D | null = null;
 
   constructor(containerElement: HTMLElement, project: ProjectData) {
@@ -43,6 +45,9 @@ export class EditorCanvas {
       resolution: window.devicePixelRatio || 1
     });
 
+    this.app.canvas.style.display = 'block';
+    this.app.canvas.style.width = '100%';
+    this.app.canvas.style.height = '100%';
     this.containerElement.appendChild(this.app.canvas);
 
     this.setupInputListeners();
@@ -65,6 +70,7 @@ export class EditorCanvas {
     canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     canvas.addEventListener('mouseup', () => this.handleMouseUp());
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -73,6 +79,20 @@ export class EditorCanvas {
       EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
       this.renderDebugOverlay();
     }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        (window as any).__isSpacePressed = true;
+        this.app.canvas.style.cursor = 'grab';
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        (window as any).__isSpacePressed = false;
+        this.app.canvas.style.cursor = 'default';
+      }
+    });
   }
 
   private setupEventHandlers(): void {
@@ -99,6 +119,30 @@ export class EditorCanvas {
       this.activeSpawnPickerCallback = callback;
       this.app.canvas.style.cursor = 'crosshair';
     });
+
+    EventBus.getInstance().on('camera:zoom_in', () => {
+      this.camera.zoomBy(1.2);
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_out', () => {
+      this.camera.zoomBy(0.8);
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_reset', () => {
+      this.camera.resetZoom();
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
+
+    EventBus.getInstance().on('camera:zoom_fit', () => {
+      this.camera.fitToViewport();
+      EventBus.getInstance().emit('camera:zoom_changed', { zoom: this.camera.zoom });
+      this.renderDebugOverlay();
+    });
   }
 
   public async loadScene(sceneData: SceneData): Promise<void> {
@@ -111,12 +155,13 @@ export class EditorCanvas {
     this.currentScene = new Scene(sceneData);
     await this.currentScene.init(this.camera);
 
-    // Freeze actors on static frame with NO animation in Editor Mode
+    const activeWalkPath = this.currentScene.getWalkPath();
+    // Freeze actors on static frame with NO animation in Editor Mode, but respecting scale and position
     for (const char of this.currentScene.characters.values()) {
-      char.freezeFrame();
+      char.freezeFrame(activeWalkPath);
     }
     if (this.currentScene.playerCharacter) {
-      this.currentScene.playerCharacter.freezeFrame();
+      this.currentScene.playerCharacter.freezeFrame(activeWalkPath);
     }
 
     this.camera.follow(null);
@@ -129,14 +174,47 @@ export class EditorCanvas {
 
   public update(): void {
     if (!this.currentScene) return;
+
     this.camera.viewport = {
-      width: this.containerElement.clientWidth || 1280,
-      height: this.containerElement.clientHeight || 720
+      width: this.containerElement.clientWidth || window.innerWidth,
+      height: this.containerElement.clientHeight || window.innerHeight
     };
     this.camera.update();
+
+    const activeWalkPath = this.currentScene.getWalkPath();
+    for (const char of this.currentScene.characters.values()) {
+      char.freezeFrame(activeWalkPath);
+    }
+    if (this.currentScene.playerCharacter) {
+      this.currentScene.playerCharacter.freezeFrame(activeWalkPath);
+    }
+    for (const hs of this.currentScene.hotspots) {
+      hs.update();
+    }
+    for (const layer of this.currentScene.layers) {
+      layer.updateParallax(0, 0);
+    }
+
+    const sceneWidth = this.currentScene.data.width || 1920;
+    const sceneHeight = this.currentScene.data.height || 1080;
+
+    const viewCenterX = this.camera.viewport.width / 2;
+    const viewCenterY = this.camera.viewport.height / 2;
+
+    this.currentScene.container.scale.set(this.camera.zoom, this.camera.zoom);
+    this.currentScene.container.pivot.set(sceneWidth / 2, sceneHeight / 2);
+    this.currentScene.container.x = viewCenterX + this.camera.panOffset.x;
+    this.currentScene.container.y = viewCenterY + this.camera.panOffset.y;
   }
 
   private handleMouseDown(e: MouseEvent): void {
+    // Panning on Middle-click (1), Right-click (2), or Left-click with Alt/Space/Shift
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && (e.altKey || e.shiftKey || (window as any).__isSpacePressed))) {
+      this.isPanning = true;
+      this.panStartScreen = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const worldPt = this.getWorldPoint(e);
 
     // Spawn point visual picker mode
@@ -194,6 +272,15 @@ export class EditorCanvas {
   }
 
   private handleMouseMove(e: MouseEvent): void {
+    if (this.isPanning) {
+      const dx = e.clientX - this.panStartScreen.x;
+      const dy = e.clientY - this.panStartScreen.y;
+      this.camera.pan(dx, dy);
+      this.panStartScreen = { x: e.clientX, y: e.clientY };
+      this.renderDebugOverlay();
+      return;
+    }
+
     this.mouseWorldPos = this.getWorldPoint(e);
 
     if (this.isDraggingPoint && this.activeWalkPathPointIndex !== null && this.currentScene) {
@@ -212,6 +299,9 @@ export class EditorCanvas {
   }
 
   private handleMouseUp(): void {
+    if (this.isPanning) {
+      this.isPanning = false;
+    }
     if (this.isDraggingPoint) {
       this.isDraggingPoint = false;
       this.activeWalkPathPointIndex = null;
@@ -306,10 +396,20 @@ export class EditorCanvas {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
-    return {
-      x: (screenX - this.camera.panOffset.x) / this.camera.zoom + this.camera.position.x,
-      y: (screenY - this.camera.panOffset.y) / this.camera.zoom + this.camera.position.y
-    };
+    if (!this.currentScene) return { x: 0, y: 0 };
+
+    const sceneWidth = this.currentScene.data.width || 1920;
+    const sceneHeight = this.currentScene.data.height || 1080;
+
+    const viewCenterX = (this.containerElement.clientWidth || window.innerWidth) / 2;
+    const viewCenterY = (this.containerElement.clientHeight || window.innerHeight) / 2;
+
+    const sceneCenterX = sceneWidth / 2;
+    const sceneCenterY = sceneHeight / 2;
+
+    const worldX = Math.round(sceneCenterX + (screenX - (viewCenterX + this.camera.panOffset.x)) / this.camera.zoom);
+    const worldY = Math.round(sceneCenterY + (screenY - (viewCenterY + this.camera.panOffset.y)) / this.camera.zoom);
+    return { x: worldX, y: worldY };
   }
 
   public setProject(project: ProjectData): void {

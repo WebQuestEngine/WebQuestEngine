@@ -297,9 +297,18 @@ export class Character extends MovableElement {
     });
   }
 
-  public freezeFrame(): void {
+  public freezeFrame(walkPath?: WalkPath): void {
     this.state = 'idle';
     this.animFrame = 0;
+    this.container.x = this.data.position.x;
+    this.container.y = this.data.position.y;
+    if (walkPath) {
+      const calculatedScale = walkPath.getScaleAt(this.container.y);
+      const finalScale = calculatedScale * (this.data.scale || 1);
+      this.container.scale.set(this.isFacingLeft ? -finalScale : finalScale, finalScale);
+    } else {
+      this.container.scale.set(this.isFacingLeft ? -(this.data.scale || 1) : (this.data.scale || 1), this.data.scale || 1);
+    }
     this.updateSpriteFrame();
   }
 

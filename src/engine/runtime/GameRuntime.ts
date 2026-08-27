@@ -30,13 +30,16 @@ export class GameRuntime {
     await this.app.init({
       width: this.containerElement.clientWidth || 1280,
       height: this.containerElement.clientHeight || 720,
-      backgroundColor: 0x0a0a0f,
+      backgroundColor: 0x000000,
       resizeTo: this.containerElement,
       antialias: true,
       autoDensity: true,
       resolution: window.devicePixelRatio || 1
     });
 
+    this.app.canvas.style.display = 'block';
+    this.app.canvas.style.width = '100%';
+    this.app.canvas.style.height = '100%';
     this.containerElement.appendChild(this.app.canvas);
 
     this.setupEventHandlers();
@@ -133,6 +136,7 @@ export class GameRuntime {
     }
 
     this.app.stage.addChild(this.currentScene.container);
+    this.currentScene.container.addChild(this.viewportMask);
 
     // Play scene BGM
     if (sceneData.backgroundMusicUrl) {
@@ -178,11 +182,39 @@ export class GameRuntime {
     if (!this.currentScene) return;
 
     this.camera.viewport = {
-      width: this.containerElement.clientWidth || 1280,
-      height: this.containerElement.clientHeight || 720
+      width: this.containerElement.clientWidth || window.innerWidth,
+      height: this.containerElement.clientHeight || window.innerHeight
     };
     this.camera.update();
     this.currentScene.update(delta, this.camera);
+
+    const vp = this.context.project.viewportSettings || { width: 1920, height: 1080, x: 0, y: 0 };
+    const vpW = vp.width || 1920;
+    const vpH = vp.height || 1080;
+    const vpX = vp.x ?? 0;
+    const vpY = vp.y ?? 0;
+
+    // Hard-clip to Viewport Rectangle & Stretch/Fit Screen Window
+    this.viewportMask.visible = true;
+    this.viewportMask.clear();
+    this.viewportMask.rect(vpX, vpY, vpW, vpH);
+    this.viewportMask.fill({ color: 0xffffff });
+    this.currentScene.container.mask = this.viewportMask;
+
+    const viewW = this.camera.viewport.width;
+    const viewH = this.camera.viewport.height;
+
+    const scaleX = viewW / vpW;
+    const scaleY = viewH / vpH;
+    const playScale = Math.min(scaleX, scaleY);
+
+    const offsetX = (viewW - vpW * playScale) / 2;
+    const offsetY = (viewH - vpH * playScale) / 2;
+
+    this.currentScene.container.scale.set(playScale, playScale);
+    this.currentScene.container.pivot.set(vpX, vpY);
+    this.currentScene.container.x = offsetX;
+    this.currentScene.container.y = offsetY;
   }
 
   private handleCanvasClick(e: MouseEvent): void {
@@ -361,9 +393,25 @@ export class GameRuntime {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
+    const vp = this.context.project.viewportSettings || { width: 1920, height: 1080, x: 0, y: 0 };
+    const vpW = vp.width || 1920;
+    const vpH = vp.height || 1080;
+    const vpX = vp.x ?? 0;
+    const vpY = vp.y ?? 0;
+
+    const viewW = this.camera.viewport.width;
+    const viewH = this.camera.viewport.height;
+
+    const scaleX = viewW / vpW;
+    const scaleY = viewH / vpH;
+    const playScale = Math.min(scaleX, scaleY);
+
+    const offsetX = (viewW - vpW * playScale) / 2;
+    const offsetY = (viewH - vpH * playScale) / 2;
+
     return {
-      x: (screenX - this.camera.panOffset.x) / this.camera.zoom + this.camera.position.x,
-      y: (screenY - this.camera.panOffset.y) / this.camera.zoom + this.camera.position.y
+      x: Math.round(vpX + (screenX - offsetX) / playScale),
+      y: Math.round(vpY + (screenY - offsetY) / playScale)
     };
   }
 
