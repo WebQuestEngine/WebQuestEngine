@@ -120,7 +120,11 @@ export class Engine {
         if (this.currentScene?.playerCharacter) {
           this.camera.follow(this.currentScene.playerCharacter.container);
         }
+        if (this.currentScene?.data.backgroundMusicUrl) {
+          AudioSystem.getInstance().playMusic(this.currentScene.data.backgroundMusicUrl);
+        }
       } else {
+        AudioSystem.getInstance().stopMusic(500);
         this.viewportMask.visible = false;
         if (this.currentScene?.container) {
           this.currentScene.container.mask = null;

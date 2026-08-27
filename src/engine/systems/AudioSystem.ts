@@ -23,6 +23,21 @@ export class AudioSystem {
     EventBus.getInstance().on('audio:play_sfx', (payload: { url?: string; type?: 'click' | 'item' | 'door' | 'pickup' }) => {
       this.playSFX(payload.url, payload.type);
     });
+
+    const unlock = () => {
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume();
+      }
+      if (this.currentMusicAudio && this.currentMusicAudio.paused && this.currentMusicUrl) {
+        const targetVol = this.config.masterVolume * this.config.musicVolume;
+        this.currentMusicAudio.play().then(() => {
+          if (this.currentMusicAudio) this.currentMusicAudio.volume = targetVol;
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener('click', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+    window.addEventListener('pointerdown', unlock, { passive: true });
   }
 
   public static getInstance(): AudioSystem {

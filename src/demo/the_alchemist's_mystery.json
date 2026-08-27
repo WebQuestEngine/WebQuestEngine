@@ -83,6 +83,7 @@
     {
       "id": "scene_gates",
       "name": "Castle Gates",
+      "backgroundMusicUrl": "assets/audio/bgm.mp3",
       "width": 1920,
       "height": 1080,
       "playerSpawn": {
@@ -758,7 +759,8 @@
           "gridOffsetY": 0,
           "currentHoldingItemId": "item_key"
         }
-      ]
+      ],
+      "backgroundMusicUrl": "assets/audio/bgm.mp3"
     },
     {
       "id": "scene_lab",
