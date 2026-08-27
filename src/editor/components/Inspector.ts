@@ -503,6 +503,10 @@ export class Inspector {
             <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
             <input type="number" step="0.05" class="form-input single-hs-scale-y" data-hidx="${hIdx}" value="${hs.scaleY ?? 1}" />
           </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Base Y)</label>
+            <input type="number" class="form-input single-hs-depth-y" data-hidx="${hIdx}" value="${hs.depthY ?? ''}" placeholder="Auto (Base Y)" />
+          </div>
         </div>
         <div class="form-group" style="margin-top:8px;">
           <label>Cursor Context</label>
@@ -603,6 +607,10 @@ export class Inspector {
           <div>
             <label style="font-size:0.65rem; color:var(--text-muted);">Frame Height</label>
             <input type="number" class="form-input char-fh" data-idx="${cIdx}" value="${char.frameHeight}" />
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet Y)</label>
+            <input type="number" class="form-input char-depth-y" data-idx="${cIdx}" value="${char.depthY ?? ''}" placeholder="Auto (Feet Y)" />
           </div>
         </div>
       </div>
@@ -1473,6 +1481,17 @@ export class Inspector {
       });
     });
 
+    this.element.querySelectorAll('.single-hs-depth-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.hotspots[hIdx]) {
+          this.currentScene.hotspots[hIdx].depthY = isNaN(val) ? undefined : val;
+          emitUpdate();
+        }
+      });
+    });
+
     this.element.querySelectorAll('.single-hs-cursor').forEach(input => {
       input.addEventListener('input', (e) => {
         const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
@@ -1709,6 +1728,18 @@ export class Inspector {
         const val = parseInt((e.target as HTMLInputElement).value);
         if (this.currentScene?.characters[cIdx]) {
           this.currentScene.characters[cIdx].frameHeight = isNaN(val) ? 64 : val;
+          this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-depth-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const val = parseFloat((e.target as HTMLInputElement).value);
+        if (this.currentScene?.characters[cIdx]) {
+          this.currentScene.characters[cIdx].depthY = isNaN(val) ? undefined : val;
           this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
           emitUpdate();
         }

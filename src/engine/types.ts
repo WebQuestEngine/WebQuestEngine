@@ -67,6 +67,7 @@ export interface HotspotData {
   scaleY?: number;
   visible?: boolean;
   locked?: boolean;
+  depthY?: number;
 }
 
 export interface CharacterAnimFrame {
@@ -93,6 +94,7 @@ export interface CharacterData {
   currentHoldingItemId?: string;
   animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
   locked?: boolean;
+  depthY?: number;
 }
 
 export interface WalkPathData {

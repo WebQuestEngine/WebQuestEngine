@@ -166,7 +166,11 @@ export class Scene {
       hs.update();
     }
 
-    this.entityContainer.children.sort((a, b) => a.y - b.y);
+    this.entityContainer.children.sort((a, b) => {
+      const depthA = (a as any).depthY !== undefined ? (a as any).depthY : a.y;
+      const depthB = (b as any).depthY !== undefined ? (b as any).depthY : b.y;
+      return depthA - depthB;
+    });
 
     for (const layer of this.layers) {
       layer.updateParallax(camera.position.x, camera.position.y);

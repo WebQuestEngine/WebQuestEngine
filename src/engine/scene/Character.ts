@@ -192,6 +192,13 @@ export class Character extends MovableElement {
       this.animFrame++;
       this.updateSpriteFrame();
     }
+
+    (this.container as any).depthY = this.getDepthY();
+  }
+
+  public getDepthY(): number {
+    if (this.data.depthY !== undefined) return this.data.depthY;
+    return this.container.y;
   }
 
   private resolveAnimFrames(animEntry: AnimFrameRef[] | AnimationClipConfig | undefined): AnimFrameRef[] {

@@ -47,6 +47,14 @@ export class Hotspot extends InteractableElement {
     }
   }
 
+  public getDepthY(): number {
+    if (this.data.depthY !== undefined) return this.data.depthY;
+    if (this.points && this.points.length > 0) {
+      return Math.max(...this.points.map(p => p.y));
+    }
+    return this.position.y;
+  }
+
   public override update(_delta?: number): void {
     const center = this.getCenter();
     const pos = this.data.position || center;
@@ -61,6 +69,8 @@ export class Hotspot extends InteractableElement {
     this.enabled = this.data.enabled;
     this.requiredFlag = this.data.requiredFlag;
     this.notFlag = this.data.notFlag;
+
+    (this.container as any).depthY = this.getDepthY();
 
     super.update(_delta);
   }
