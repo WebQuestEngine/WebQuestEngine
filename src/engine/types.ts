@@ -57,6 +57,7 @@ export interface HotspotAction {
   customScript?: string;
   playAnimation?: string;
   faceDirection?: Direction8Way;
+  sfxUrl?: string;
 }
 
 export interface HotspotData {
@@ -166,6 +167,7 @@ export interface DialogNode {
   speaker: string;
   text: string;
   portraitUrl?: string;
+  voiceAudioUrl?: string;
   choices?: DialogChoice[];
   nextNodeId?: string;
   requiredFlag?: string;
@@ -211,12 +213,20 @@ export interface ViewportSettings {
   showBoundsInEditor?: boolean;
 }
 
+export interface AudioConfig {
+  masterVolume: number;
+  musicVolume: number;
+  sfxVolume: number;
+  voiceVolume: number;
+}
+
 export interface ProjectData {
   version: string;
   title: string;
   author: string;
   assetBasePath?: string;
   uiConfig: UIConfig;
+  audioConfig?: AudioConfig;
   viewportSettings?: ViewportSettings;
   chapters: ChapterData[];
   storyNodes: StoryNodeData[];

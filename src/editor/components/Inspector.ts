@@ -381,6 +381,16 @@ export class Inspector {
           </div>
         </div>
         <div class="form-group">
+          <label>🎵 Background Music Path / Upload</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" class="form-input" id="sc-bgm-url" value="${scene.backgroundMusicUrl || ''}" placeholder="e.g. assets/audio/town.mp3" style="flex:1;" />
+            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose BGM File">
+              📁
+              <input type="file" id="sc-bgm-file" accept="audio/*" style="display:none;" />
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
           <label>Base Asset Folder</label>
           <input type="text" class="form-input" id="base-folder-input" value="${this.project?.assetBasePath || ''}" placeholder="e.g. src/demo or assets" />
         </div>
@@ -699,6 +709,11 @@ export class Inspector {
               <div style="margin-bottom:6px;">
                 <label style="font-size:0.65rem; color:var(--text-muted);">🎭 Play Custom Animation Override</label>
                 <input type="text" class="form-input act-play-anim" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.playAnimation || ''}" placeholder="e.g. pick_up, gesture, hold_key" style="font-size:0.75rem;" />
+              </div>
+
+              <div style="margin-bottom:6px;">
+                <label style="font-size:0.65rem; color:var(--text-muted);">🔊 Sound Effect (SFX URL)</label>
+                <input type="text" class="form-input act-sfx-url" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.sfxUrl || ''}" placeholder="e.g. assets/audio/door_open.mp3" style="font-size:0.75rem;" />
               </div>
 
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
@@ -1114,6 +1129,33 @@ export class Inspector {
       });
     }
 
+    const scBgmUrl = this.element.querySelector('#sc-bgm-url') as HTMLInputElement;
+    if (scBgmUrl && this.currentScene) {
+      scBgmUrl.addEventListener('input', () => {
+        const val = scBgmUrl.value.trim();
+        this.currentScene!.backgroundMusicUrl = val || undefined;
+        emitUpdate();
+      });
+    }
+
+    const scBgmFile = this.element.querySelector('#sc-bgm-file') as HTMLInputElement;
+    if (scBgmFile && this.currentScene) {
+      scBgmFile.addEventListener('change', (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) {
+          let relPath = file.name;
+          if ((file as any).path) {
+            relPath = normalizeImagePath((file as any).path);
+          } else {
+            relPath = `assets/audio/${file.name}`;
+          }
+          this.currentScene!.backgroundMusicUrl = relPath;
+          if (scBgmUrl) scBgmUrl.value = relPath;
+          emitUpdate();
+        }
+      });
+    }
+
     const baseFolderInput = this.element.querySelector('#base-folder-input') as HTMLInputElement;
     if (baseFolderInput && this.project) {
       baseFolderInput.addEventListener('input', () => {
@@ -1273,6 +1315,21 @@ export class Inspector {
             act.requiredFlag = undefined;
           }
           this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-sfx-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && actions[aIdx]) {
+          actions[aIdx].sfxUrl = targetEl.value.trim() || undefined;
           emitUpdate();
         }
       });

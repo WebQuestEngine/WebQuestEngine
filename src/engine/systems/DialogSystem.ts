@@ -1,5 +1,6 @@
 import { DialogTree, DialogNode, DialogChoice } from '../types';
 import { EventBus } from '../core/EventBus';
+import { AudioSystem } from './AudioSystem';
 
 export class DialogSystem {
   private static instance: DialogSystem;
@@ -18,6 +19,7 @@ export class DialogSystem {
   }
 
   public clear(): void {
+    AudioSystem.getInstance().stopVoice();
     this.dialogs.clear();
     this.currentTree = null;
     this.currentNode = null;
@@ -68,6 +70,12 @@ export class DialogSystem {
       });
     }
 
+    if (this.currentNode.voiceAudioUrl) {
+      AudioSystem.getInstance().playVoice(this.currentNode.voiceAudioUrl);
+    } else {
+      AudioSystem.getInstance().stopVoice();
+    }
+
     EventBus.getInstance().emit('dialog:node', {
       speaker: this.currentNode.speaker,
       text: this.currentNode.text,
@@ -109,6 +117,7 @@ export class DialogSystem {
   }
 
   public endDialog(): void {
+    AudioSystem.getInstance().stopVoice();
     this.isExecuting = false;
     this.currentTree = null;
     this.currentNode = null;

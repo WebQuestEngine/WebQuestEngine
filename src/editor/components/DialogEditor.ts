@@ -124,7 +124,11 @@ export class DialogEditor {
                 <textarea class="form-input node-text" data-nodeid="${node.id}" style="width:100%; height:50px; font-size:0.85rem;">${node.text}</textarea>
               </div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px;">
+              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
+                <div>
+                  <label style="font-size:0.65rem; color:var(--text-muted);">🎙️ Voiceover Audio (URL)</label>
+                  <input type="text" class="form-input node-voice-url" data-nodeid="${node.id}" value="${node.voiceAudioUrl || ''}" placeholder="e.g. assets/audio/voice1.mp3" style="font-size:0.75rem;" />
+                </div>
                 <div>
                   <label style="font-size:0.65rem; color:var(--text-muted);">🚩 Set Story Flag On Node Start</label>
                   <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlag || ''}" placeholder="e.g. eldrin:talkedOnce" style="font-size:0.75rem;" />
@@ -213,6 +217,16 @@ export class DialogEditor {
         const nodeId = (e.target as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nodeId]) {
           tree.nodes[nodeId].text = (e.target as HTMLTextAreaElement).value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-voice-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nodeId = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nodeId]) {
+          tree.nodes[nodeId].voiceAudioUrl = (e.target as HTMLInputElement).value.trim() || undefined;
           emitUpdate();
         }
       });

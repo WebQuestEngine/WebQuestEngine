@@ -6,6 +6,7 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { DialogSystem } from '../systems/DialogSystem';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { UISystem } from '../systems/UISystem';
+import { AudioSystem } from '../systems/AudioSystem';
 import { EventBus } from './EventBus';
 
 export class Engine {
@@ -88,6 +89,9 @@ export class Engine {
     }
 
     UISystem.getInstance().init(this.containerElement, project.uiConfig);
+    if (project.audioConfig) {
+      AudioSystem.getInstance().setConfig(project.audioConfig);
+    }
     StoryGraphSystem.getInstance().loadProject(project);
 
     // Listen for scene changes
@@ -408,6 +412,12 @@ export class Engine {
     this.currentScene.container.addChild(this.debugOverlay);
     this.currentScene.container.addChild(this.viewportMask);
     this.renderDebugOverlay();
+
+    if (!this.isEditorMode) {
+      AudioSystem.getInstance().playMusic(sceneData.backgroundMusicUrl);
+    } else {
+      AudioSystem.getInstance().stopMusic(500);
+    }
   }
 
   public update(delta: number): void {
@@ -1374,6 +1384,17 @@ export class Engine {
     if (action.requiredFlag && !StoryGraphSystem.getInstance().getFlag(action.requiredFlag)) {
       EventBus.getInstance().emit('ui:notify', `You cannot do that right now.`);
       return;
+    }
+
+    // Play SFX sound effect
+    if (action.sfxUrl) {
+      AudioSystem.getInstance().playSFX(action.sfxUrl);
+    } else if (action.giveItemId) {
+      AudioSystem.getInstance().playSFX(null, 'pickup');
+    } else if (action.targetSceneId) {
+      AudioSystem.getInstance().playSFX(null, 'door');
+    } else {
+      AudioSystem.getInstance().playSFX(null, 'click');
     }
 
     const player = this.currentScene?.playerCharacter;

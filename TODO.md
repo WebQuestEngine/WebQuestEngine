@@ -62,9 +62,9 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## 🎵 9. Audio System
-- [ ] **Background Music per Scene**: Support background music audio files per scene (`backgroundMusicUrl`) with smooth fading between scene transitions.
-- [ ] **Recorded Dialogues / Voiceover Support**: Add voiceover audio file fields to dialogue nodes (`voiceAudioUrl`) with automatic subtitle duration sync.
-- [ ] **Custom Action Sound Effects**: Support custom sound effect triggers on actions (`sfxUrl`) for door opening, item pickup, brewing potions, and inventory interactions.
+- [x] **Background Music per Scene**: Support background music audio files per scene (`backgroundMusicUrl`) with smooth fading between scene transitions.
+- [x] **Recorded Dialogues / Voiceover Support**: Add voiceover audio file fields to dialogue nodes (`voiceAudioUrl`) with automatic subtitle duration sync.
+- [x] **Custom Action Sound Effects**: Support custom sound effect triggers on actions (`sfxUrl`) for door opening, item pickup, brewing potions, and inventory interactions.
 
 ---
 
