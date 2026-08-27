@@ -713,7 +713,13 @@ export class Inspector {
 
               <div style="margin-bottom:6px;">
                 <label style="font-size:0.65rem; color:var(--text-muted);">🔊 Sound Effect (SFX URL)</label>
-                <input type="text" class="form-input act-sfx-url" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.sfxUrl || ''}" placeholder="e.g. assets/audio/door_open.mp3" style="font-size:0.75rem;" />
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <input type="text" class="form-input act-sfx-url" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" value="${act.sfxUrl || ''}" placeholder="e.g. assets/audio/door_open.mp3" style="flex:1; font-size:0.75rem;" />
+                  <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose SFX Audio File">
+                    📁
+                    <input type="file" class="act-sfx-file" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" accept="audio/*" style="display:none;" />
+                  </label>
+                </div>
               </div>
 
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
@@ -1331,6 +1337,32 @@ export class Inspector {
         if (actions && actions[aIdx]) {
           actions[aIdx].sfxUrl = targetEl.value.trim() || undefined;
           emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.act-sfx-file').forEach(fileInput => {
+      fileInput.addEventListener('change', (e) => {
+        const targetEl = e.target as HTMLInputElement;
+        const file = targetEl.files?.[0];
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        if (file) {
+          let relPath = file.name;
+          if ((file as any).path) {
+            relPath = (file as any).path.replace(/\\/g, '/');
+          } else {
+            relPath = `assets/audio/${file.name}`;
+          }
+          const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+          if (actions && actions[aIdx]) {
+            actions[aIdx].sfxUrl = relPath;
+            const urlInput = this.element.querySelector(`.act-sfx-url[data-hidx="${hIdx}"][data-aidx="${aIdx}"][data-ischar="${isChar}"]`) as HTMLInputElement;
+            if (urlInput) urlInput.value = relPath;
+            emitUpdate();
+          }
         }
       });
     });

@@ -1205,15 +1205,21 @@
             {
               "id": "c1",
               "text": "I seek the legendary Elixir of Wisdom!",
-              "nextNodeId": "node_2"
+              "nextNodeId": "node_2",
+              "voiceAudioUrl": "assets/c1s2/audio/i seek the legendary elixir of wisdom.mp3"
             },
             {
               "id": "c2",
               "text": "Just exploring your impressive alchemy setup.",
-              "nextNodeId": "node_3"
+              "nextNodeId": "node_3",
+              "voiceAudioUrl": "assets/c1s2/audio/Just exploring your impressive alchemy setup.mp3"
             }
           ],
-          "voiceAudioUrl": "assets/c1s2/audio/ah sir ronald you have managed.mp3"
+          "voiceAudioUrl": "assets/c1s2/audio/ah sir ronald you have managed.mp3",
+          "position": {
+            "x": 162,
+            "y": 121
+          }
         },
         "node_2": {
           "id": "node_2",
@@ -1224,23 +1230,36 @@
             {
               "id": "c3",
               "text": "Thank you, Master Eldrin! I shall do so at once.",
-              "nextNodeId": "node_end"
+              "nextNodeId": "node_end",
+              "voiceAudioUrl": "assets/c1s2/audio/Thank you, Master Eldrin! I shall do so at once.mp3"
             }
           ],
-          "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3"
+          "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3",
+          "position": {
+            "x": 827,
+            "y": 10
+          }
         },
         "node_3": {
           "id": "node_3",
           "speaker": "Master Eldrin",
           "text": "Feel free to inspect the room, but do not touch the explosive compounds!",
           "nextNodeId": "node_end",
-          "voiceAudioUrl": "assets/c1s2/audio/feel free to inspect the room but do not touch the explosive compunds.mp3"
+          "voiceAudioUrl": "assets/c1s2/audio/feel free to inspect the room but do not touch the explosive compunds.mp3",
+          "position": {
+            "x": 853,
+            "y": 492
+          }
         },
         "node_end": {
           "id": "node_end",
           "speaker": "Master Eldrin",
           "text": "May wisdom guide your quest.",
-          "voiceAudioUrl": "assets/c1s2/audio/may wisdom guide your quest.mp3"
+          "voiceAudioUrl": "assets/c1s2/audio/may wisdom guide your quest.mp3",
+          "position": {
+            "x": 1616,
+            "y": 488
+          }
         }
       }
     }

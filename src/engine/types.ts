@@ -156,6 +156,7 @@ export interface DialogChoice {
   id: string;
   text: string;
   nextNodeId: string;
+  voiceAudioUrl?: string;
   requiredFlag?: string;
   notFlag?: string;
   setFlag?: string;
@@ -174,6 +175,8 @@ export interface DialogNode {
   notFlag?: string;
   setFlag?: string;
   giveItem?: string;
+  position?: Vector2D;
+  isChoiceInteractive?: boolean;
 }
 
 export interface DialogTree {

@@ -18,11 +18,14 @@ export class DialogSystem {
     return DialogSystem.instance;
   }
 
+  private autoAdvanceChoiceId: string | null = null;
+
   public clear(): void {
     AudioSystem.getInstance().stopVoice();
     this.dialogs.clear();
     this.currentTree = null;
     this.currentNode = null;
+    this.autoAdvanceChoiceId = null;
     this.isExecuting = false;
   }
 
@@ -39,6 +42,7 @@ export class DialogSystem {
 
     this.currentTree = tree;
     this.currentNode = tree.nodes[tree.startNodeId];
+    this.autoAdvanceChoiceId = null;
     this.isExecuting = true;
 
     EventBus.getInstance().emit('dialog:start', { tree, node: this.currentNode });
@@ -76,29 +80,52 @@ export class DialogSystem {
       AudioSystem.getInstance().stopVoice();
     }
 
-    EventBus.getInstance().emit('dialog:node', {
-      speaker: this.currentNode.speaker,
-      text: this.currentNode.text,
-      portraitUrl: this.currentNode.portraitUrl,
-      choices: availableChoices,
-      hasNext: Boolean(this.currentNode.nextNodeId)
-    });
+    // Determine interactivity: if choices exist and isChoiceInteractive is explicitly false, auto-play next response node
+    const isInteractive = this.currentNode.isChoiceInteractive !== false;
+
+    if (availableChoices.length > 0 && !isInteractive) {
+      this.autoAdvanceChoiceId = availableChoices[0].id;
+      EventBus.getInstance().emit('dialog:node', {
+        speaker: this.currentNode.speaker,
+        text: this.currentNode.text,
+        portraitUrl: this.currentNode.portraitUrl,
+        choices: [],
+        hasNext: true
+      });
+    } else {
+      this.autoAdvanceChoiceId = null;
+      EventBus.getInstance().emit('dialog:node', {
+        speaker: this.currentNode.speaker,
+        text: this.currentNode.text,
+        portraitUrl: this.currentNode.portraitUrl,
+        choices: availableChoices,
+        hasNext: Boolean(this.currentNode.nextNodeId)
+      });
+    }
   }
 
   public selectChoice(choiceId: string, getFlagState?: (flag: string) => boolean): void {
-    if (!this.currentNode || !this.currentNode.choices || !this.currentTree) return;
+    if (!this.currentNode || !this.currentTree) return;
 
-    const choice = this.currentNode.choices.find(c => c.id === choiceId);
-    if (!choice) return;
-
-    if (choice.setFlag) {
-      EventBus.getInstance().emit('flag:set', choice.setFlag);
+    const choice = this.currentNode.choices?.find(c => c.id === choiceId);
+    if (choice) {
+      if (choice.voiceAudioUrl) {
+        AudioSystem.getInstance().playVoice(choice.voiceAudioUrl);
+      }
+      if (choice.setFlag) {
+        EventBus.getInstance().emit('flag:set', choice.setFlag);
+      }
+      if (choice.giveItem) {
+        EventBus.getInstance().emit('inventory:give', choice.giveItem);
+      }
+      this.currentNode = this.currentTree.nodes[choice.nextNodeId];
+    } else if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+      this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+    } else {
+      this.endDialog();
+      return;
     }
-    if (choice.giveItem) {
-      EventBus.getInstance().emit('inventory:give', choice.giveItem);
-    }
 
-    this.currentNode = this.currentTree.nodes[choice.nextNodeId];
     this.presentNode(getFlagState);
   }
 
@@ -108,9 +135,18 @@ export class DialogSystem {
       return;
     }
 
+    if (this.autoAdvanceChoiceId) {
+      const choiceId = this.autoAdvanceChoiceId;
+      this.autoAdvanceChoiceId = null;
+      this.selectChoice(choiceId, getFlagState);
+      return;
+    }
+
     if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
       this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
       this.presentNode(getFlagState);
+    } else if (this.currentNode.choices && this.currentNode.choices.length > 0) {
+      this.selectChoice(this.currentNode.choices[0].id, getFlagState);
     } else {
       this.endDialog();
     }
@@ -121,6 +157,7 @@ export class DialogSystem {
     this.isExecuting = false;
     this.currentTree = null;
     this.currentNode = null;
+    this.autoAdvanceChoiceId = null;
     EventBus.getInstance().emit('dialog:end');
   }
 
