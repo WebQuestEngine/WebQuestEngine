@@ -104,35 +104,54 @@ export class DialogSystem {
     }
   }
 
+  private pendingNextNodeId: string | null = null;
+
   public selectChoice(choiceId: string, getFlagState?: (flag: string) => boolean): void {
     if (!this.currentNode || !this.currentTree) return;
 
     const choice = this.currentNode.choices?.find(c => c.id === choiceId);
-    if (choice) {
-      if (choice.voiceAudioUrl) {
-        AudioSystem.getInstance().playVoice(choice.voiceAudioUrl);
-      }
-      if (choice.setFlag) {
-        EventBus.getInstance().emit('flag:set', choice.setFlag);
-      }
-      if (choice.giveItem) {
-        EventBus.getInstance().emit('inventory:give', choice.giveItem);
-      }
-      this.currentNode = this.currentTree.nodes[choice.nextNodeId];
-    } else if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
-      this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+    if (!choice) return;
+
+    if (choice.setFlag) {
+      EventBus.getInstance().emit('flag:set', choice.setFlag);
+    }
+    if (choice.giveItem) {
+      EventBus.getInstance().emit('inventory:give', choice.giveItem);
+    }
+
+    if (choice.voiceAudioUrl) {
+      AudioSystem.getInstance().playVoice(choice.voiceAudioUrl);
     } else {
+      AudioSystem.getInstance().stopVoice();
+    }
+
+    this.pendingNextNodeId = choice.nextNodeId;
+    this.autoAdvanceChoiceId = null;
+
+    // Speak the player's selected response choice
+    EventBus.getInstance().emit('dialog:node', {
+      speaker: 'Sir Ronald',
+      text: choice.text,
+      choices: [],
+      hasNext: true,
+      isResponseSpeech: true
+    });
+  }
+
+  public advanceNextNode(getFlagState?: (flag: string) => boolean): void {
+    if (!this.currentTree) {
       this.endDialog();
       return;
     }
 
-    this.presentNode(getFlagState);
-  }
-
-  public advanceNextNode(getFlagState?: (flag: string) => boolean): void {
-    if (!this.currentNode || !this.currentTree) {
-      this.endDialog();
-      return;
+    if (this.pendingNextNodeId) {
+      const nextId = this.pendingNextNodeId;
+      this.pendingNextNodeId = null;
+      if (this.currentTree.nodes[nextId]) {
+        this.currentNode = this.currentTree.nodes[nextId];
+        this.presentNode(getFlagState);
+        return;
+      }
     }
 
     if (this.autoAdvanceChoiceId) {
@@ -142,10 +161,10 @@ export class DialogSystem {
       return;
     }
 
-    if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+    if (this.currentNode && this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
       this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
       this.presentNode(getFlagState);
-    } else if (this.currentNode.choices && this.currentNode.choices.length > 0) {
+    } else if (this.currentNode && this.currentNode.choices && this.currentNode.choices.length > 0) {
       this.selectChoice(this.currentNode.choices[0].id, getFlagState);
     } else {
       this.endDialog();

@@ -281,8 +281,18 @@ export class EditorApp {
     const existing = parent.querySelector('.dialog-box-overlay');
     if (existing) existing.remove();
 
+    // Check character screen position for in-world speech bubble positioning
+    const screenPos = this.engine ? this.engine.getCharacterScreenPos(data.speaker) : null;
+
     const overlay = document.createElement('div');
-    overlay.className = 'dialog-box-overlay';
+    overlay.className = `dialog-box-overlay ${screenPos ? 'in-world-bubble' : ''}`;
+
+    if (screenPos) {
+      overlay.style.left = `${screenPos.x}px`;
+      overlay.style.top = `${screenPos.y}px`;
+      overlay.style.transform = 'translate(-50%, -100%)';
+      overlay.style.bottom = 'auto';
+    }
 
     overlay.innerHTML = `
       ${data.portraitUrl ? `<img src="${data.portraitUrl}" class="dialog-portrait" onError="this.style.display='none'" />` : ''}

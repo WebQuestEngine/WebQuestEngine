@@ -1433,14 +1433,18 @@ export class Engine {
     if (action.dialogId) {
       DialogSystem.getInstance().startDialog(action.dialogId, (flag) => StoryGraphSystem.getInstance().getFlag(flag));
     }
+    if (action.targetSceneId) {
+      StoryGraphSystem.getInstance().changeScene(action.targetSceneId, action.targetSpawnPoint);
+    }
   }
 
   public getCharacterScreenPos(speakerName?: string): Vector2D | null {
     if (!this.currentScene) return null;
 
+    const chars = Array.from(this.currentScene.characters.values());
     let targetChar = null;
     if (speakerName) {
-      targetChar = this.currentScene.characters.find(c =>
+      targetChar = chars.find(c =>
         c.data.name.toLowerCase() === speakerName.toLowerCase() ||
         c.data.id.toLowerCase() === speakerName.toLowerCase()
       );
@@ -1456,9 +1460,6 @@ export class Engine {
     const worldY = (targetChar.container.y || targetChar.position.y) - 145;
 
     return this.camera.toScreenPoint({ x: worldX, y: worldY });
-  }  if (action.targetSceneId) {
-      StoryGraphSystem.getInstance().changeScene(action.targetSceneId, action.targetSpawnPoint);
-    }
   }
 
   private renderDebugOverlay(): void {

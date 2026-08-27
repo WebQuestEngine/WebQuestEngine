@@ -73,4 +73,11 @@ export class Camera {
       y: -this.position.y * parallaxY
     };
   }
+
+  public toScreenPoint(worldPt: Vector2D): Vector2D {
+    return {
+      x: (worldPt.x - this.position.x) * this.zoom + this.panOffset.x,
+      y: (worldPt.y - this.position.y) * this.zoom + this.panOffset.y
+    };
+  }
 }
