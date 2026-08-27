@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { ProjectData, Vector2D, VerbType, AspectRatioType } from '../types';
+import { ProjectData, Vector2D, VerbType, AspectRatioType, HotspotAction } from '../types';
 import { Camera } from './Camera';
 import { Scene } from '../scene/Scene';
 import { InventorySystem } from '../systems/InventorySystem';
@@ -264,7 +264,7 @@ export class Engine {
       this.handleCanvasRightClick(e);
     });
 
-    // Mouse wheel zoom and verb cycling
+    // Mouse wheel zoom and verb/item cycling
     this.app.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       const worldPt = this.getWorldPoint(e);
@@ -277,14 +277,44 @@ export class Engine {
         return;
       }
 
-      const verbs: ('walk' | 'look' | 'interact' | 'talk' | 'pick_up')[] = ['walk', 'look', 'interact', 'talk', 'pick_up'];
-      const current = UISystem.getInstance().activeVerb;
-      const idx = verbs.indexOf(current as any);
-      const nextIdx = e.deltaY > 0 ? (idx + 1) % verbs.length : (idx - 1 + verbs.length) % verbs.length;
-      const nextVerb = verbs[nextIdx];
+      const preset = UISystem.getInstance().config.preset;
+      const items = InventorySystem.getInstance().getItems();
+      const currentItem = InventorySystem.getInstance().getSelectedItem();
 
-      InventorySystem.getInstance().selectItem(null);
-      UISystem.getInstance().setActiveVerb(nextVerb);
+      if (preset === 'direct_cursor') {
+        if (items.length > 0) {
+          const itemIds: (string | null)[] = [null, ...items.map(i => i.id)];
+          const currentId = currentItem ? currentItem.id : null;
+          const idx = itemIds.indexOf(currentId);
+          const nextIdx = e.deltaY > 0 ? (idx + 1) % itemIds.length : (idx - 1 + itemIds.length) % itemIds.length;
+          const nextItemId = itemIds[nextIdx];
+          InventorySystem.getInstance().selectItem(nextItemId);
+          if (!nextItemId) {
+            UISystem.getInstance().setActiveVerb('interact');
+          }
+        } else {
+          const currentVerb = UISystem.getInstance().activeVerb;
+          const nextVerb = currentVerb === 'talk' ? 'interact' : 'talk';
+          UISystem.getInstance().setActiveVerb(nextVerb);
+        }
+      } else {
+        let validVerbs: VerbType[] = ['walk', 'look', 'interact', 'talk', 'pick_up'];
+        if (preset === 'sierra') {
+          validVerbs = ['walk', 'look', 'interact', 'talk'];
+        } else if (preset === 'context_coin') {
+          validVerbs = ['interact', 'talk', 'look'];
+        }
+
+        const current = UISystem.getInstance().activeVerb;
+        const idx = validVerbs.indexOf(current as any);
+        const nextIdx = e.deltaY > 0 ? (idx + 1) % validVerbs.length : (idx - 1 + validVerbs.length) % validVerbs.length;
+        const nextVerb = validVerbs[nextIdx >= 0 ? nextIdx : 0];
+
+        InventorySystem.getInstance().selectItem(null);
+        UISystem.getInstance().setActiveVerb(nextVerb);
+      }
+
+      this.handleMouseHover(worldPt);
     });
 
     // Drag & Drop onto WebGL canvas
@@ -937,34 +967,91 @@ export class Engine {
     }
 
     this.renderDebugOverlay();
+    this.handleMouseHover(worldPt);
   }
 
   private handleMouseHover(worldPt: Vector2D): void {
     if (!this.currentScene) return;
 
-    // Hover tooltip processing
     const hotspot = this.currentScene.findHotspotAt(worldPt);
     const charNPC = this.currentScene.findCharacterAt(worldPt);
     const selectedItem = InventorySystem.getInstance().getSelectedItem();
+
+    const preset = UISystem.getInstance().config.preset;
+    if (!this.isEditorMode && preset === 'direct_cursor' && !selectedItem) {
+      if (charNPC) {
+        if (UISystem.getInstance().activeVerb !== 'talk') UISystem.getInstance().setActiveVerb('talk');
+      } else if (hotspot) {
+        if (UISystem.getInstance().activeVerb !== 'interact') UISystem.getInstance().setActiveVerb('interact');
+      } else {
+        if (UISystem.getInstance().activeVerb !== 'walk') UISystem.getInstance().setActiveVerb('walk');
+      }
+    }
+
     const activeVerb = UISystem.getInstance().activeVerb;
+    const uiConfig = this.project?.uiConfig;
+
+    let effectiveVerb: VerbType = activeVerb;
+    let effectiveAction: HotspotAction | undefined;
+
+    if (selectedItem) {
+      effectiveVerb = 'use';
+    } else if (hotspot) {
+      effectiveAction = hotspot.getBestAction(activeVerb);
+      if (effectiveAction) {
+        effectiveVerb = effectiveAction.verb || 'interact';
+      } else if (hotspot.data.cursor) {
+        effectiveVerb = hotspot.data.cursor as VerbType;
+      }
+    } else if (charNPC) {
+      effectiveAction = charNPC.getBestAction(activeVerb) || charNPC.getBestAction('talk');
+      if (effectiveAction) {
+        effectiveVerb = effectiveAction.verb || 'talk';
+      } else {
+        effectiveVerb = 'talk';
+      }
+    } else {
+      effectiveVerb = 'walk';
+    }
+
+    // 1. Held Inventory Item Cursor
+    if (selectedItem) {
+      this.app.canvas.style.cursor = 'none';
+      UISystem.getInstance().updateCustomCursor(selectedItem.iconUrl);
+    } else if (hotspot?.data.customCursorUrl) {
+      // 2. Custom Hotspot Cursor
+      this.app.canvas.style.cursor = 'none';
+      UISystem.getInstance().updateCustomCursor(hotspot.data.customCursorUrl);
+    } else if (!this.isEditorMode && uiConfig?.customCursors?.[effectiveVerb]?.url) {
+      // 3. Custom Verb Cursor matching effective verb
+      this.app.canvas.style.cursor = 'none';
+      UISystem.getInstance().updateCustomCursor(uiConfig.customCursors[effectiveVerb]!.url);
+    } else {
+      UISystem.getInstance().updateCustomCursor(null);
+      this.app.canvas.style.cursor = hotspot || charNPC ? 'pointer' : (this.isEditorMode ? 'crosshair' : 'default');
+    }
+
+    const labelMap: Record<string, string> = {
+      walk: 'Walk to',
+      look: 'Look at',
+      interact: 'Use',
+      talk: 'Talk to',
+      pick_up: 'Pick up',
+      use: 'Use',
+      open: 'Open',
+      close: 'Close',
+      push: 'Push',
+      pull: 'Pull'
+    };
 
     if (hotspot || charNPC) {
-      this.app.canvas.style.cursor = 'pointer';
-
       const targetName = hotspot ? hotspot.data.name : charNPC!.data.name;
       let text = '';
       if (selectedItem) {
         text = `Use ${selectedItem.name} with ${targetName}`;
       } else {
-        const action = hotspot ? hotspot.getBestAction(activeVerb) : null;
-        if (action) {
-          const verbStr = (action.verb || activeVerb).replace('_', ' ');
-          text = `${verbStr.charAt(0).toUpperCase() + verbStr.slice(1)} ${targetName}`;
-        } else if (charNPC) {
-          text = `Talk to ${targetName}`;
-        } else {
-          text = `Look at ${targetName}`;
-        }
+        const verbPhrase = labelMap[effectiveVerb] || 'Use';
+        text = `${verbPhrase} ${targetName}`;
       }
 
       const sentenceEl = this.containerElement.querySelector('#ui-action-sentence');
@@ -972,15 +1059,12 @@ export class Engine {
         sentenceEl.textContent = text;
       }
     } else {
-      this.app.canvas.style.cursor = this.isEditorMode ? 'crosshair' : 'default';
-
       const sentenceEl = this.containerElement.querySelector('#ui-action-sentence');
       if (sentenceEl) {
         if (selectedItem) {
           sentenceEl.textContent = `Use ${selectedItem.name} with`;
         } else {
-          const verbLabel = activeVerb.replace('_', ' ');
-          sentenceEl.textContent = `${verbLabel.charAt(0).toUpperCase() + verbLabel.slice(1)} to`;
+          sentenceEl.textContent = labelMap[activeVerb] || 'Walk to';
         }
       }
     }
@@ -1089,6 +1173,10 @@ export class Engine {
 
     // 4. Hotspot Interaction (Direct Cursor, LucasArts, Sierra)
     if (hotspot) {
+      if (activeVerb === 'look') {
+        hotspot.isExamined = true;
+        hotspot.data.examined = true;
+      }
       let action = hotspot.getBestAction(activeVerb);
       if (!action && activeVerb === 'walk') {
         const cursorVerb = (hotspot.data.cursor as VerbType) || 'interact';
@@ -1205,6 +1293,10 @@ export class Engine {
       return;
     }
 
+    if (hotspot) {
+      hotspot.isExamined = true;
+      hotspot.data.examined = true;
+    }
     UISystem.getInstance().setActiveVerb('look');
     this.handleCanvasClick(e);
   }
@@ -1328,6 +1420,9 @@ export class Engine {
     if (!this.currentScene || !this.isEditorMode) return;
 
     // Ensure debugOverlay is drawn on top of all layers and objects
+    if (this.debugOverlay.parent !== this.currentScene.container) {
+      this.currentScene.container.addChild(this.debugOverlay);
+    }
     if (this.currentScene.container.children.length > 0) {
       this.currentScene.container.setChildIndex(this.debugOverlay, this.currentScene.container.children.length - 1);
     }

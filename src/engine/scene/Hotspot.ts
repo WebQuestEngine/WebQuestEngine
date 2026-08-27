@@ -91,6 +91,8 @@ export class Hotspot extends InteractableElement {
     return true;
   }
 
+  public isExamined = false;
+
   public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
     if (selectedItemId) {
       const itemAction = this.getActionForItemId(selectedItemId);
@@ -101,10 +103,10 @@ export class Hotspot extends InteractableElement {
     if (verbAction) return verbAction;
 
     const validActions = this.data.actions.filter(a => this.isActionValid(a, selectedItemId));
-    return validActions.find(a => a.verb === 'interact') ||
-           validActions.find(a => a.verb === 'look') ||
-           validActions.find(a => a.verb === 'talk') ||
-           validActions[0];
+    const nonLookAction = validActions.find(a => a.verb !== 'look');
+    const lookAction = validActions.find(a => a.verb === 'look');
+
+    return nonLookAction || lookAction || validActions[0];
   }
 
   private createProceduralHotspotTexture(type: string): PIXI.Texture {

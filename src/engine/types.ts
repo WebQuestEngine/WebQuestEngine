@@ -7,6 +7,12 @@ export interface Vector2D {
   y: number;
 }
 
+export interface VerbCursorConfig {
+  url: string;
+  hotspotX?: number;
+  hotspotY?: number;
+}
+
 export interface UIConfig {
   preset: UIPresetType;
   primaryColor: string;
@@ -15,6 +21,7 @@ export interface UIConfig {
   inventoryPosition: 'bottom' | 'top' | 'drawer' | 'radial';
   autoHideBars: boolean;
   showVerbText: boolean;
+  customCursors?: Partial<Record<VerbType, VerbCursorConfig>>;
 }
 
 export interface InventoryItemData {
@@ -68,6 +75,8 @@ export interface HotspotData {
   visible?: boolean;
   locked?: boolean;
   depthY?: number;
+  customCursorUrl?: string;
+  examined?: boolean;
 }
 
 export interface CharacterAnimFrame {

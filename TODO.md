@@ -48,9 +48,9 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## 🖱️ 7. Custom Cursors
-- [ ] **Verb Cursors**: Support custom image cursors for each verb (`walk`, `look`, `interact`, `talk`, `pick_up`) with configurable hotspot pixel offsets `(x, y)`.
-- [ ] **Inventory Item Cursors**: Display the selected inventory item PNG icon directly at the mouse cursor location when an item is selected.
-- [ ] **Hotspot Dynamic Cursors**: Allow hotspots to define custom mouse cursor graphics when hovering over them.
+- [x] **Verb Cursors**: Supported custom image cursors per verb (`walk`, `look`, `interact`, `talk`, `pick_up`) configurable in Project Settings (`uiConfig.customCursors`).
+- [x] **Inventory Item Cursors**: Selected inventory item PNG icons display smoothly at the mouse cursor location when holding an item.
+- [x] **Hotspot Dynamic Cursors**: Hotspots can define custom mouse cursor graphics (`customCursorUrl`) when hovering over them.
 
 ---
 

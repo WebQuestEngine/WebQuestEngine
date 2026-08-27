@@ -1,4 +1,4 @@
-import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, InventoryItemData, ChapterData, HotspotAction, AnimFrameRef } from '../../engine/types';
+import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, InventoryItemData, ChapterData, HotspotAction, AnimFrameRef, VerbType } from '../../engine/types';
 import { AssetManager } from '../../engine/core/AssetManager';
 import { EventBus } from '../../engine/core/EventBus';
 import { VisualSpawnPickerModal } from './VisualSpawnPickerModal';
@@ -316,7 +316,7 @@ export class Inspector {
       if (header) header.innerHTML = `<span>📖 Chapter: <b>${ch.title}</b></span>`;
       contentHTML = this.getChapterHTML(ch);
     } else {
-      if (header) header.innerHTML = `<span>⚙️ Project Configuration</span>`;
+      if (header) header.innerHTML = `<span>⚙️ Project Settings</span>`;
       contentHTML = this.getProjectHTML();
     }
 
@@ -508,7 +508,16 @@ export class Inspector {
         </div>
         <div class="form-group" style="margin-top:8px;">
           <label>Cursor Context</label>
-          <input type="text" class="form-input single-hs-cursor" data-hidx="${hIdx}" value="${hs.cursor}" />
+          <select class="form-select single-hs-cursor" data-hidx="${hIdx}">
+            <option value="interact" ${hs.cursor === 'interact' ? 'selected' : ''}>✋ Touch / Interact</option>
+            <option value="look" ${hs.cursor === 'look' ? 'selected' : ''}>👁️ Look</option>
+            <option value="talk" ${hs.cursor === 'talk' ? 'selected' : ''}>💬 Talk</option>
+            <option value="walk" ${hs.cursor === 'walk' ? 'selected' : ''}>🥾 Walk</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Custom Cursor Graphic (URL)</label>
+          <input type="text" class="form-input single-hs-custom-cursor" data-hidx="${hIdx}" value="${hs.customCursorUrl || ''}" placeholder="Optional custom mouse cursor PNG" />
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
           <div>
@@ -973,6 +982,30 @@ export class Inspector {
           💡 Tip: Drag cyan corner handles on canvas to visually resize the game frame!
         </div>
       </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title" style="color:var(--accent-gold);">🖱️ Custom Verb Cursors</div>
+        <div class="form-group">
+          <label>🥾 Walk Cursor Graphic</label>
+          <input type="text" class="form-input proj-cursor-input" data-verb="walk" value="${this.project.uiConfig.customCursors?.walk?.url || ''}" placeholder="e.g. assets/cursors/walk.png" />
+        </div>
+        <div class="form-group">
+          <label>👁️ Look Cursor Graphic</label>
+          <input type="text" class="form-input proj-cursor-input" data-verb="look" value="${this.project.uiConfig.customCursors?.look?.url || ''}" placeholder="e.g. assets/cursors/look.png" />
+        </div>
+        <div class="form-group">
+          <label>✋ Interact/Use Cursor Graphic</label>
+          <input type="text" class="form-input proj-cursor-input" data-verb="interact" value="${this.project.uiConfig.customCursors?.interact?.url || ''}" placeholder="e.g. assets/cursors/use.png" />
+        </div>
+        <div class="form-group">
+          <label>💬 Talk Cursor Graphic</label>
+          <input type="text" class="form-input proj-cursor-input" data-verb="talk" value="${this.project.uiConfig.customCursors?.talk?.url || ''}" placeholder="e.g. assets/cursors/talk.png" />
+        </div>
+        <div class="form-group">
+          <label>🎒 Pick Up Cursor Graphic</label>
+          <input type="text" class="form-input proj-cursor-input" data-verb="pick_up" value="${this.project.uiConfig.customCursors?.pick_up?.url || ''}" placeholder="e.g. assets/cursors/pickup.png" />
+        </div>
+      </div>
     `;
   }
 
@@ -989,6 +1022,38 @@ export class Inspector {
       if (type) {
         EventBus.getInstance().emit('editor:toggle_lock', { type, id: id || undefined, sceneId: sceneId || undefined });
       }
+    });
+
+    // Project Custom Verb Cursors
+    this.element.querySelectorAll('.proj-cursor-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const verb = target.dataset.verb as VerbType;
+        if (this.project && verb) {
+          if (!this.project.uiConfig.customCursors) {
+            this.project.uiConfig.customCursors = {};
+          }
+          if (target.value.trim()) {
+            this.project.uiConfig.customCursors[verb] = { url: target.value.trim() };
+          } else {
+            delete this.project.uiConfig.customCursors[verb];
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    // Hotspot Custom Cursor
+    this.element.querySelectorAll('.single-hs-custom-cursor').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const hIdx = parseInt(target.dataset.hidx!);
+        const hs = this.currentScene?.hotspots[hIdx];
+        if (hs) {
+          hs.customCursorUrl = target.value.trim() || undefined;
+          emitUpdate();
+        }
+      });
     });
 
     // Sub-tabs switching

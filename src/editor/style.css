@@ -1208,6 +1208,11 @@ body {
   display: none !important;
 }
 
+.custom-cursor-active,
+.custom-cursor-active * {
+  cursor: none !important;
+}
+
 /* Notification Dialog Modal */
 .dialog-box-overlay {
   position: absolute;

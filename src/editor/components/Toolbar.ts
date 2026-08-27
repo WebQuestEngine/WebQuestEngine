@@ -30,6 +30,7 @@ export class Toolbar {
         <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open</button>
         <button class="btn" id="btn-save-file" title="Save Project JSON (Ctrl+S or Shift+Click for Save As)">💾 Save</button>
         <button class="btn" id="btn-save-as-file" title="Save Project JSON As... (Ctrl+Shift+S)">💾 Save As...</button>
+        <button class="btn" id="btn-project-settings" title="Project & Custom Cursors Settings">⚙️ Settings</button>
       </div>
 
       <div class="toolbar-group">
@@ -110,6 +111,10 @@ export class Toolbar {
 
     this.element.querySelector('#btn-save-as-file')?.addEventListener('click', () => {
       EventBus.getInstance().emit('editor:save_file_as');
+    });
+
+    this.element.querySelector('#btn-project-settings')?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:select_target', { type: 'project' });
     });
 
     this.element.querySelector('#select-viewport-preset')?.addEventListener('change', (e) => {

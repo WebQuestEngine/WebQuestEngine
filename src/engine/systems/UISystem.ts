@@ -27,12 +27,51 @@ export class UISystem {
     return UISystem.instance;
   }
 
+  private cursorFollowerElement: HTMLElement | null = null;
+
+  public updateCustomCursor(iconUrl?: string | null): void {
+    if (!this.cursorFollowerElement) {
+      this.cursorFollowerElement = document.createElement('div');
+      this.cursorFollowerElement.id = 'custom-cursor-follower';
+      this.cursorFollowerElement.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        z-index: 99999;
+        transform: translate(-50%, -50%);
+        display: none;
+      `;
+      document.body.appendChild(this.cursorFollowerElement);
+
+      window.addEventListener('mousemove', (e) => {
+        if (this.cursorFollowerElement) {
+          this.cursorFollowerElement.style.left = `${e.clientX}px`;
+          this.cursorFollowerElement.style.top = `${e.clientY}px`;
+        }
+      });
+    }
+
+    if (iconUrl) {
+      const resolved = AssetManager.getInstance().resolveImageSrc(iconUrl);
+      this.cursorFollowerElement.innerHTML = `<img src="${resolved}" style="max-width:44px; max-height:44px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,0.7));" />`;
+      this.cursorFollowerElement.style.display = 'block';
+      document.body.classList.add('custom-cursor-active');
+    } else {
+      this.cursorFollowerElement.style.display = 'none';
+      document.body.classList.remove('custom-cursor-active');
+    }
+  }
+
   public init(container: HTMLElement, config?: UIConfig): void {
     this.containerElement = container;
     if (config) {
       this.config = { ...this.config, ...config };
     }
     this.renderUI();
+    EventBus.getInstance().on('inventory:selected', (item: any) => {
+      this.updateCustomCursor(item ? item.iconUrl : null);
+    });
   }
 
   public setPreset(preset: UIPresetType): void {
