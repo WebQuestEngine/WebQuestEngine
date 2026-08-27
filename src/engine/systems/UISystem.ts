@@ -1,6 +1,7 @@
 import { UIConfig, VerbType, InventoryItemData, UIPresetType } from '../types';
 import { EventBus } from '../core/EventBus';
 import { InventorySystem } from './InventorySystem';
+import { AssetManager } from '../core/AssetManager';
 
 export class UISystem {
   private static instance: UISystem;
@@ -288,10 +289,12 @@ export class UISystem {
   }
 
   private getItemIconHTML(item: InventoryItemData): string {
-    const url = item.iconUrl || '';
-    if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/') || url.endsWith('.png') || url.endsWith('.jpg') || url.endsWith('.svg')) {
-      return `<img src="${url}" alt="${item.name}" onError="this.style.display='none'; this.nextElementSibling.style.display='block';" />
-              <div style="display:none;">${this.getProceduralSVG(item.id, item.name)}</div>`;
+    const rawUrl = item.iconUrl || '';
+    const resolvedUrl = AssetManager.getInstance().resolveImageSrc(rawUrl);
+
+    if (resolvedUrl) {
+      return `<img src="${resolvedUrl}" alt="${item.name}" style="width:100%; height:100%; object-fit:contain;" onError="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+              <div style="display:none; width:100%; height:100%;">${this.getProceduralSVG(item.id, item.name)}</div>`;
     }
     return this.getProceduralSVG(item.id, item.name);
   }

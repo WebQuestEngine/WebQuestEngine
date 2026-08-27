@@ -28,6 +28,26 @@ export class AssetManager {
     return Array.from(this.baseFolders);
   }
 
+  public resolveImageSrc(url: string): string {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) {
+      return url;
+    }
+
+    let clean = url.replace(/\\/g, '/');
+    if (clean.startsWith('file://')) clean = clean.replace(/^file:\/\//, '');
+    if (clean.startsWith('/')) clean = clean.substring(1);
+
+    if (clean.startsWith('assets/')) {
+      return `/src/demo/${clean}`;
+    }
+    if (!clean.startsWith('src/')) {
+      return `/src/${clean}`;
+    }
+
+    return `/${clean}`;
+  }
+
   public trackFileFolder(filePath: string): void {
     if (!filePath) return;
     const normalized = filePath.replace(/\\/g, '/');
