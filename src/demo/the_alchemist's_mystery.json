@@ -16,7 +16,24 @@
     "fontFamily": "Inter, sans-serif",
     "inventoryPosition": "bottom",
     "autoHideBars": false,
-    "showVerbText": true
+    "showVerbText": true,
+    "customCursors": {
+      "walk": {
+        "url": "assets/cursors/walk.png"
+      },
+      "look": {
+        "url": "assets/cursors/look.png"
+      },
+      "interact": {
+        "url": "assets/cursors/use.png"
+      },
+      "talk": {
+        "url": "assets/cursors/talk.png"
+      },
+      "pick_up": {
+        "url": "assets/cursors/use.png"
+      }
+    }
   },
   "chapters": [
     {
