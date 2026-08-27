@@ -1,7 +1,8 @@
 import * as PIXI from 'pixi.js';
 import { MovableElement } from './MovableElement';
-import { Vector2D, CharacterData, Direction8Way, AnimationClipConfig, AnimFrameRef } from '../types';
+import { Vector2D, CharacterData, Direction8Way, AnimationClipConfig, AnimFrameRef, VerbType, HotspotAction } from '../types';
 import { AssetManager } from '../core/AssetManager';
+import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { WalkPath } from './WalkPath';
 
 export type CharacterState = 'idle' | 'walking' | 'talking' | 'picking_up' | 'gesturing' | 'custom_anim';
@@ -265,5 +266,44 @@ export class Character extends MovableElement {
       source: this.textureSheet.source,
       frame: frameRect
     });
+  }
+
+  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+    if (!this.data.actions || this.data.actions.length === 0) return undefined;
+    const storySystem = StoryGraphSystem.getInstance();
+    const effectiveVerb = activeVerb === 'use' ? 'interact' : activeVerb;
+
+    if (selectedItemId) {
+      const itemAction = this.data.actions.find(a => {
+        if (a.requireItemId !== selectedItemId) return false;
+        if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
+        if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+        return true;
+      });
+      if (itemAction) return itemAction;
+    }
+
+    return this.data.actions.find(a => {
+      if (a.requireItemId) return false;
+      const actVerb = a.verb === 'use' ? 'interact' : a.verb;
+      if (effectiveVerb === 'interact') {
+        if (actVerb !== 'interact') return false;
+      } else {
+        if (actVerb !== effectiveVerb) return false;
+      }
+      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
+      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      return true;
+    });
+  }
+
+  public freezeFrame(): void {
+    this.state = 'idle';
+    this.animFrame = 0;
+    this.updateSpriteFrame();
+  }
+
+  public destroy(): void {
+    this.container.destroy({ children: true, texture: false });
   }
 }

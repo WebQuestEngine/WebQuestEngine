@@ -7,7 +7,7 @@ export class InventorySystem {
   private playerInventory: Set<string> = new Set();
   private selectedItemId: string | null = null;
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): InventorySystem {
     if (!InventorySystem.instance) {

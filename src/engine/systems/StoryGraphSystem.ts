@@ -9,7 +9,7 @@ export class StoryGraphSystem {
   private currentScene: SceneData | null = null;
   private flags: Map<string, boolean> = new Map();
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): StoryGraphSystem {
     if (!StoryGraphSystem.instance) {

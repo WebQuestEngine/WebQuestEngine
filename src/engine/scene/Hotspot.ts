@@ -141,4 +141,8 @@ export class Hotspot extends InteractableElement {
 
     return PIXI.Texture.from(canvas);
   }
+
+  public destroy(): void {
+    this.container.destroy({ children: true, texture: false });
+  }
 }

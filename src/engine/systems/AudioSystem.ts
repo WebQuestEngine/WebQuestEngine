@@ -5,6 +5,7 @@ import { AudioConfig } from '../types';
 export class AudioSystem {
   private static instance: AudioSystem;
 
+  private isPlayMode: boolean = false;
   private currentMusicAudio: HTMLAudioElement | null = null;
   private currentMusicUrl: string | null = null;
   private musicFadeInterval: number | null = null;
@@ -19,12 +20,15 @@ export class AudioSystem {
     voiceVolume: 1.0
   };
 
-  private constructor() {
+  public constructor() {
     EventBus.getInstance().on('audio:play_sfx', (payload: { url?: string; type?: 'click' | 'item' | 'door' | 'pickup' }) => {
-      this.playSFX(payload.url, payload.type);
+      if (this.isPlayMode) {
+        this.playSFX(payload.url, payload.type);
+      }
     });
 
     const unlock = () => {
+      if (!this.isPlayMode) return;
       if (this.audioCtx && this.audioCtx.state === 'suspended') {
         this.audioCtx.resume();
       }
@@ -45,6 +49,17 @@ export class AudioSystem {
       AudioSystem.instance = new AudioSystem();
     }
     return AudioSystem.instance;
+  }
+
+  public setPlayMode(play: boolean): void {
+    this.isPlayMode = play;
+    if (!play) {
+      this.stopAll();
+    }
+  }
+
+  public getPlayMode(): boolean {
+    return this.isPlayMode;
   }
 
   public setConfig(config?: Partial<AudioConfig>): void {
@@ -87,7 +102,7 @@ export class AudioSystem {
 
   // --- Background Music per Scene (with smooth fading) ---
   public playMusic(rawUrl: string | null | undefined, fadeDurationMs = 1000): void {
-    if (!rawUrl) {
+    if (!this.isPlayMode || !rawUrl) {
       this.stopMusic(fadeDurationMs);
       return;
     }
@@ -177,7 +192,7 @@ export class AudioSystem {
   // --- Recorded Dialogues / Voiceover ---
   public playVoice(rawUrl: string, onEnded?: () => void): void {
     this.stopVoice();
-    if (!rawUrl) return;
+    if (!this.isPlayMode || !rawUrl) return;
 
     try {
       const resolved = AssetManager.getInstance().resolveImageSrc(rawUrl);
@@ -202,14 +217,37 @@ export class AudioSystem {
 
   public stopVoice(): void {
     if (this.currentVoiceAudio) {
-      this.currentVoiceAudio.pause();
-      this.currentVoiceAudio.removeAttribute('src');
+      try {
+        this.currentVoiceAudio.pause();
+        this.currentVoiceAudio.currentTime = 0;
+        this.currentVoiceAudio.removeAttribute('src');
+        this.currentVoiceAudio.load();
+      } catch (e) {}
       this.currentVoiceAudio = null;
     }
   }
 
+  public stopAll(): void {
+    if (this.currentMusicAudio) {
+      try {
+        this.currentMusicAudio.pause();
+        this.currentMusicAudio.currentTime = 0;
+        this.currentMusicAudio.removeAttribute('src');
+        this.currentMusicAudio.load();
+      } catch (e) {}
+      this.currentMusicAudio = null;
+      this.currentMusicUrl = null;
+    }
+    if (this.musicFadeInterval) {
+      clearInterval(this.musicFadeInterval);
+      this.musicFadeInterval = null;
+    }
+    this.stopVoice();
+  }
+
   // --- Sound Effects (Custom Files + Procedural Web Audio API) ---
   public playSFX(rawUrl?: string | null, synthType: 'click' | 'item' | 'door' | 'pickup' = 'click'): void {
+    if (!this.isPlayMode) return;
     const vol = this.config.masterVolume * this.config.sfxVolume;
     if (vol <= 0) return;
 

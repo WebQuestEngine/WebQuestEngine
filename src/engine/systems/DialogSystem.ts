@@ -9,7 +9,7 @@ export class DialogSystem {
   private dialogs: Map<string, DialogTree> = new Map();
   private isExecuting = false;
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): DialogSystem {
     if (!DialogSystem.instance) {

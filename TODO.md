@@ -42,9 +42,9 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## 🏗️ 6. Decouple Engine Runtime & Editor
-- [ ] **Standalone Engine Player**: Create a dedicated standalone `player.ts` entry point to publish/ship lightweight games without any editor UI overhead.
-- [ ] **Multi-Game Editor Architecture**: Decouple the Editor (`src/editor/`) into a reusable authoring environment capable of loading, editing, and exporting multiple distinct game project files (`project.json`).
-- [ ] **Game Export Pipeline**: Provide a clean production build script (`npm run build:game`) to bundle published games into standalone web packages.
+- [x] **Full Architectural Decoupling**: Completely separated authoring canvas (`EditorCanvas.ts`) from game execution (`GameRuntime.ts`). Editor displays static frames with no animations or game audio.
+- [x] **Scoped Runtime Sessions (`RuntimeContext.ts`)**: Sandboxed runtime sessions discard all state, audio nodes, and event listeners on destruction without global singleton leakage.
+- [x] **Standalone Game Player & Pipeline**: Created dedicated standalone player (`src/player/main.ts`, `player.html`, `npm run dev:player`, `npm run build:game`) to bundle and run games independently from editor code.
 
 ---
 

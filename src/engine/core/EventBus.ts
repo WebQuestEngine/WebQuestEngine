@@ -4,7 +4,7 @@ export class EventBus {
   private static instance: EventBus;
   private listeners: Map<string, EventCallback[]> = new Map();
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): EventBus {
     if (!EventBus.instance) {
@@ -36,5 +36,9 @@ export class EventBus {
     if (list) {
       list.forEach(cb => cb(payload));
     }
+  }
+
+  public clear(): void {
+    this.listeners.clear();
   }
 }

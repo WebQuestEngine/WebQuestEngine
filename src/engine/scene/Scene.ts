@@ -176,4 +176,28 @@ export class Scene {
       layer.updateParallax(camera.position.x, camera.position.y);
     }
   }
+
+  public getElementAtPoint(point: Vector2D): Character | Hotspot | undefined {
+    const char = this.findCharacterAt(point);
+    if (char) return char;
+    const hs = this.findHotspotAt(point);
+    if (hs) return hs;
+    return undefined;
+  }
+
+  public destroy(): void {
+    for (const char of this.characters.values()) {
+      char.destroy();
+    }
+    this.characters.clear();
+    for (const hs of this.hotspots) {
+      hs.destroy();
+    }
+    this.hotspots = [];
+    for (const layer of this.layers) {
+      layer.destroy();
+    }
+    this.layers = [];
+    this.container.destroy({ children: true, texture: false });
+  }
 }

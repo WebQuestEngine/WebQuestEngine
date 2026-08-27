@@ -48,6 +48,15 @@ export class AssetManager {
     return `/${clean}`;
   }
 
+  public getLocalDiskPath(url: string): string {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) {
+      return url;
+    }
+    const resolved = this.resolveImageSrc(url);
+    return resolved.startsWith('/') ? resolved.substring(1) : resolved;
+  }
+
   public trackFileFolder(filePath: string): void {
     if (!filePath) return;
     const normalized = filePath.replace(/\\/g, '/');

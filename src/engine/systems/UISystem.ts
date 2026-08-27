@@ -18,7 +18,7 @@ export class UISystem {
   public activeVerb: VerbType = 'walk';
   public containerElement: HTMLElement | null = null;
 
-  private constructor() {}
+  public constructor() {}
 
   public static getInstance(): UISystem {
     if (!UISystem.instance) {
@@ -413,6 +413,22 @@ export class UISystem {
 
         grid.appendChild(slot);
       }
+    }
+  }
+
+  public updateHoverTitle(name: string, verb?: string): void {
+    if (!this.containerElement) return;
+    const titleEl = this.containerElement.querySelector('#ui-hover-title, .ui-hover-title');
+    if (titleEl) {
+      titleEl.textContent = verb ? `${verb.toUpperCase()} ${name}` : name;
+    }
+  }
+
+  public clearHoverTitle(): void {
+    if (!this.containerElement) return;
+    const titleEl = this.containerElement.querySelector('#ui-hover-title, .ui-hover-title');
+    if (titleEl) {
+      titleEl.textContent = '';
     }
   }
 }

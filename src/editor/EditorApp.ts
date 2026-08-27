@@ -1,5 +1,6 @@
 import { ProjectData, UIPresetType } from '../engine/types';
-import { Engine } from '../engine/core/Engine';
+import { EditorCanvas } from './canvas/EditorCanvas';
+import { GameRuntime } from '../engine/runtime/GameRuntime';
 import { Toolbar } from './components/Toolbar';
 import { Inspector } from './components/Inspector';
 import { ProjectTreeView } from './components/ProjectTreeView';
@@ -10,9 +11,6 @@ import { EventBus } from '../engine/core/EventBus';
 import { FileAccessAdapter } from '../engine/storage/FileAccessAdapter';
 import { ProjectSerializer } from '../engine/storage/ProjectSerializer';
 import { UISystem } from '../engine/systems/UISystem';
-import { InventorySystem } from '../engine/systems/InventorySystem';
-import { StoryGraphSystem } from '../engine/systems/StoryGraphSystem';
-import { DialogSystem } from '../engine/systems/DialogSystem';
 import { HistoryManager } from './HistoryManager';
 
 export class EditorApp {
@@ -24,8 +22,11 @@ export class EditorApp {
   private zoomWidget: ZoomWidget;
   private storyGraphView: StoryGraphView;
   private dialogEditor: DialogEditor;
-  private engine: Engine | null = null;
+
+  private editorCanvas: EditorCanvas | null = null;
+  private gameRuntime: GameRuntime | null = null;
   private viewportElement: HTMLElement | null = null;
+  private pristineProjectJson: string = '';
 
   constructor(container: HTMLElement, initialProject: ProjectData) {
     this.container = container;
@@ -38,86 +39,97 @@ export class EditorApp {
     this.storyGraphView = new StoryGraphView();
     this.dialogEditor = new DialogEditor();
 
-    HistoryManager.getInstance().init(initialProject);
+    HistoryManager.getInstance().init(this.project);
   }
 
   public async init(): Promise<void> {
-    this.container.innerHTML = '';
+    this.container.innerHTML = `
+      <div class="editor-layout">
+        <div id="toolbar-slot"></div>
+        <div class="editor-workspace">
+          <div id="tree-slot"></div>
+          <div id="viewport-slot" class="editor-viewport">
+            <div id="canvas-container" style="width:100%; height:100%;"></div>
+            <div id="zoom-widget-slot"></div>
+          </div>
+          <div id="inspector-slot"></div>
+        </div>
+      </div>
+      <div id="story-graph-slot"></div>
+      <div id="dialog-editor-slot"></div>
+    `;
 
-    // Add Toolbar
-    this.container.appendChild(this.toolbar.element);
+    this.container.querySelector('#toolbar-slot')?.appendChild(this.toolbar.element);
+    this.container.querySelector('#tree-slot')?.appendChild(this.treeView.element);
+    this.container.querySelector('#inspector-slot')?.appendChild(this.inspector.element);
+    this.container.querySelector('#zoom-widget-slot')?.appendChild(this.zoomWidget.element);
+    this.container.querySelector('#story-graph-slot')?.appendChild(this.storyGraphView.element);
+    this.container.querySelector('#dialog-editor-slot')?.appendChild(this.dialogEditor.element);
 
-    // Main layout
-    const mainLayout = document.createElement('div');
-    mainLayout.className = 'editor-main-layout';
+    this.viewportElement = this.container.querySelector('#canvas-container');
 
-    // Viewport Container
-    this.viewportElement = document.createElement('div');
-    this.viewportElement.className = 'editor-viewport-container';
-    this.viewportElement.appendChild(this.zoomWidget.element);
-
-    mainLayout.appendChild(this.treeView.element);
-    mainLayout.appendChild(this.viewportElement);
-    mainLayout.appendChild(this.inspector.element);
-
-    this.container.appendChild(mainLayout);
-
-    // Modals
-    this.container.appendChild(this.storyGraphView.element);
-    this.container.appendChild(this.dialogEditor.element);
-
-    // Set initial project data
-    this.treeView.setProject(this.project);
-    this.storyGraphView.setProject(this.project);
-    this.dialogEditor.setProject(this.project);
-
-    const initialScene = this.project.scenes.find(s => s.id === this.project.scenes[0].id);
-    this.inspector.setProject(this.project, initialScene);
-
-    // Attach EventBus handlers
+    this.syncAllViews();
     this.attachEvents();
-
-    // Attach Keyboard Shortcuts (Ctrl+Z / Cmd+Z, Ctrl+Y / Cmd+Shift+Z)
     this.attachKeyboardShortcuts();
 
-    // Start Engine
-    await this.startEngine();
+    await this.startEditorCanvas();
   }
 
-  private async startEngine(): Promise<void> {
+  private async startEditorCanvas(): Promise<void> {
     if (!this.viewportElement) return;
-    if (this.engine) {
-      this.engine.destroy();
+
+    if (this.editorCanvas) {
+      this.editorCanvas.destroy();
+      this.editorCanvas = null;
     }
 
-    this.engine = new Engine(this.viewportElement);
-    await this.engine.init(this.project);
+    this.editorCanvas = new EditorCanvas(this.viewportElement, this.project);
+    await this.editorCanvas.init();
+  }
 
-    // Populate inventory UI with items if available
-    EventBus.getInstance().on('inventory:updated', (items: any[]) => {
-      UISystem.getInstance().renderInventoryItems(items);
-    });
+  private async startPlayRuntime(): Promise<void> {
+    if (!this.viewportElement) return;
 
-    // Dialog start handler
-    EventBus.getInstance().on('dialog:node', (data: any) => {
-      this.renderDialogOverlay(data);
-    });
+    // Save pristine master copy before entering play testing
+    this.pristineProjectJson = ProjectSerializer.serialize(this.project);
 
-    EventBus.getInstance().on('dialog:end', () => {
-      const existing = this.container.querySelector('.dialog-box-overlay');
-      if (existing) existing.remove();
-    });
+    // Destroy editor canvas
+    if (this.editorCanvas) {
+      this.editorCanvas.destroy();
+      this.editorCanvas = null;
+    }
 
-    // In-game notification banner
-    EventBus.getInstance().on('ui:notify', (msg: string) => {
-      this.showNotification(msg);
-    });
+    // Spin up isolated GameRuntime with cloned project data
+    const runtimeProject = ProjectSerializer.deserialize(this.pristineProjectJson);
+    this.gameRuntime = new GameRuntime(this.viewportElement, runtimeProject);
+    await this.gameRuntime.init();
+  }
+
+  private async stopPlayRuntime(): Promise<void> {
+    // Destroy game runtime completely
+    if (this.gameRuntime) {
+      this.gameRuntime.destroy();
+      this.gameRuntime = null;
+    }
+
+    // Restore pristine project master copy
+    if (this.pristineProjectJson) {
+      this.project = ProjectSerializer.deserialize(this.pristineProjectJson);
+    }
+
+    // Re-mount clean Editor Canvas
+    await this.startEditorCanvas();
+    this.syncAllViews();
+    window.dispatchEvent(new Event('resize'));
   }
 
   private attachEvents(): void {
     // Record history snapshot on project updates
     EventBus.getInstance().on('editor:project_updated', () => {
       HistoryManager.getInstance().pushState(this.project);
+      if (this.editorCanvas) {
+        this.editorCanvas.setProject(this.project);
+      }
     });
 
     // Undo action
@@ -126,7 +138,7 @@ export class EditorApp {
       if (restored) {
         this.project = restored;
         this.syncAllViews();
-        await this.startEngine();
+        await this.startEditorCanvas();
         this.showNotification('↩️ Undo executed');
       }
     });
@@ -137,7 +149,7 @@ export class EditorApp {
       if (restored) {
         this.project = restored;
         this.syncAllViews();
-        await this.startEngine();
+        await this.startEditorCanvas();
         this.showNotification('↪️ Redo executed');
       }
     });
@@ -150,7 +162,7 @@ export class EditorApp {
           this.project = loadedProject;
           HistoryManager.getInstance().init(loadedProject);
           this.syncAllViews();
-          await this.startEngine();
+          await this.startEditorCanvas();
           this.showNotification(`Loaded project: "${loadedProject.title}" from local file system`);
         } catch (err: any) {
           alert(`Failed to parse project file: ${err.message}`);
@@ -180,7 +192,6 @@ export class EditorApp {
 
     EventBus.getInstance().on('editor:change_preset', (preset: UIPresetType) => {
       this.project.uiConfig.preset = preset;
-      UISystem.getInstance().setPreset(preset);
       HistoryManager.getInstance().pushState(this.project);
       this.showNotification(`Interface layout set to: ${preset.toUpperCase()}`);
     });
@@ -193,7 +204,8 @@ export class EditorApp {
       this.dialogEditor.show();
     });
 
-    EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
+    // Decoupled Mode Switching
+    EventBus.getInstance().on('editor:mode_changed', async (data: { isPlayMode: boolean }) => {
       let exitBar = document.querySelector('.play-mode-exit-bar');
 
       if (data.isPlayMode) {
@@ -209,18 +221,21 @@ export class EditorApp {
           });
           document.body.appendChild(exitBar);
         }
+
+        await this.startPlayRuntime();
       } else {
         document.body.classList.remove('play-mode-active');
         if (exitBar) exitBar.remove();
-        this.syncAllViews();
-        window.dispatchEvent(new Event('resize'));
+
+        await this.stopPlayRuntime();
+        this.showNotification('⏪ Game reset to initial editor state.');
       }
     });
 
-    EventBus.getInstance().on('editor:select_scene', (sceneId: string) => {
+    EventBus.getInstance().on('editor:select_scene', async (sceneId: string) => {
       const targetScene = this.project.scenes.find(s => s.id === sceneId);
-      if (targetScene) {
-        StoryGraphSystem.getInstance().changeScene(sceneId);
+      if (targetScene && this.editorCanvas) {
+        await this.editorCanvas.loadScene(targetScene);
         this.inspector.setCurrentScene(targetScene);
       }
     });
@@ -230,7 +245,7 @@ export class EditorApp {
     this.treeView.setProject(this.project);
     this.storyGraphView.setProject(this.project);
     this.dialogEditor.setProject(this.project);
-    const activeScene = StoryGraphSystem.getInstance().getCurrentScene() || this.project.scenes[0];
+    const activeScene = this.project.scenes[0];
     this.inspector.setProject(this.project, activeScene);
   }
 
@@ -244,12 +259,11 @@ export class EditorApp {
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
-      // Global Ctrl+S / Cmd+S save shortcut (works everywhere regardless of focused element)
+      // Global Ctrl+S / Cmd+S save shortcut
       if (ctrlOrCmd && e.key.toLowerCase() === 's') {
         e.preventDefault();
         e.stopPropagation();
 
-        // Commit active input value if currently focused on an input element
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -268,97 +282,31 @@ export class EditorApp {
 
       if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
-          // Redo: Ctrl+Shift+Z / Cmd+Shift+Z
           e.preventDefault();
           EventBus.getInstance().emit('editor:redo');
         } else {
-          // Undo: Ctrl+Z / Cmd+Z
           e.preventDefault();
           EventBus.getInstance().emit('editor:undo');
         }
       } else if (ctrlOrCmd && e.key.toLowerCase() === 'y') {
-        // Redo: Ctrl+Y
         e.preventDefault();
         EventBus.getInstance().emit('editor:redo');
       }
     }, true);
   }
 
-  private renderDialogOverlay(data: any): void {
-    const parent = this.viewportElement || this.container;
-    const existing = parent.querySelector('.dialog-box-overlay');
+  private showNotification(text: string): void {
+    const existing = document.querySelector('.editor-notification');
     if (existing) existing.remove();
 
-    // Check character screen position for in-world speech bubble positioning
-    const screenPos = this.engine ? this.engine.getCharacterScreenPos(data.speaker) : null;
-
-    const overlay = document.createElement('div');
-    overlay.className = `dialog-box-overlay ${screenPos ? 'in-world-bubble' : ''}`;
-
-    if (screenPos) {
-      overlay.style.left = `${screenPos.x}px`;
-      overlay.style.top = `${screenPos.y}px`;
-      overlay.style.transform = 'translate(-50%, -100%)';
-      overlay.style.bottom = 'auto';
-    }
-
-    overlay.innerHTML = `
-      ${data.portraitUrl ? `<img src="${data.portraitUrl}" class="dialog-portrait" onError="this.style.display='none'" />` : ''}
-      <div class="dialog-content">
-        <div class="dialog-speaker">${data.speaker}</div>
-        <div class="dialog-text">${data.text}</div>
-        ${data.choices && data.choices.length > 0 ? `
-          <div class="dialog-choices">
-            ${data.choices.map((c: any) => `
-              <button class="dialog-choice-btn" data-choiceid="${c.id}">${c.text}</button>
-            `).join('')}
-          </div>
-        ` : (data.hasNext ? `<button class="btn btn-primary" id="btn-dlg-next">Continue ➔</button>` : `<button class="btn btn-primary" id="btn-dlg-end">Close</button>`)}
-      </div>
-    `;
-
-    overlay.querySelectorAll('.dialog-choice-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const id = (e.currentTarget as HTMLElement).dataset.choiceid!;
-        DialogSystem.getInstance().selectChoice(id, (flag) => StoryGraphSystem.getInstance().getFlag(flag));
-      });
-    });
-
-    overlay.querySelector('#btn-dlg-next')?.addEventListener('click', () => {
-      DialogSystem.getInstance().advanceNextNode((flag) => StoryGraphSystem.getInstance().getFlag(flag));
-    });
-
-    overlay.querySelector('#btn-dlg-end')?.addEventListener('click', () => {
-      DialogSystem.getInstance().endDialog();
-    });
-
-    parent.appendChild(overlay);
-  }
-
-  private showNotification(text: string): void {
-    const banner = document.createElement('div');
-    banner.style.cssText = `
-      position: absolute;
-      top: 64px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(15, 23, 42, 0.95);
-      border: 1px solid var(--accent-gold);
-      color: var(--accent-gold);
-      padding: 10px 20px;
-      border-radius: 20px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      z-index: 300;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-      pointer-events: none;
-      animation: fadeIn 0.3s ease;
-    `;
-    banner.textContent = text;
-    this.container.appendChild(banner);
+    const notif = document.createElement('div');
+    notif.className = 'editor-notification';
+    notif.textContent = text;
+    document.body.appendChild(notif);
 
     setTimeout(() => {
-      banner.remove();
-    }, 3500);
+      notif.classList.add('fade-out');
+      setTimeout(() => notif.remove(), 400);
+    }, 2800);
   }
 }

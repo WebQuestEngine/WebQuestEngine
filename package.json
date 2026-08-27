@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:player": "vite --open /player.html",
     "build": "tsc && vite build",
+    "build:game": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

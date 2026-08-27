@@ -44,6 +44,12 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        player: path.resolve(__dirname, 'player.html')
+      }
+    }
   }
 });
