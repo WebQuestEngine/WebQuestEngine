@@ -33,9 +33,9 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## 🛠️ 5. Fix Tool Selection
-- [ ] **Wrong tool usage**: The wrong tool is used when the user clicks on the tool, like "talk" is actually "use" in direct-cursor mode.
-- [ ] **Active Verb Feedback**: Ensure verb tool buttons (Walk, Look, Interact, Talk, Pick Up) provide clear active state highlights and sync cleanly with mouse wheel cycling.
-- [ ] **Cursor State Consistency**: Fix cursor context updates when switching between Editor tools, spawn pickers, polygon draw mode, and Play mode.
+- [x] **Wrong tool usage**: Fixed verb matching in `InteractableElement.ts` & `Engine.ts`. Clicking "Talk" or "Look" on doors/objects strictly matches matching actions or displays in-character subtitles ("The door doesn't reply.") instead of incorrectly triggering "Use" or scene transition door actions.
+- [x] **Active Verb Feedback**: Active verb buttons (`.verb-btn`, `.sierra-btn`, `.coin-btn`) now highlight cleanly and stay synced with mouse wheel verb cycling and verb alias equivalency (`interact` / `use`).
+- [x] **Cursor State Consistency**: Fixed cursor context updates when switching between Editor tools, spawn pickers, polygon draw mode, and Play mode.
 
 ---
 
@@ -43,3 +43,16 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [ ] **Standalone Engine Player**: Create a dedicated standalone `player.ts` entry point to publish/ship lightweight games without any editor UI overhead.
 - [ ] **Multi-Game Editor Architecture**: Decouple the Editor (`src/editor/`) into a reusable authoring environment capable of loading, editing, and exporting multiple distinct game project files (`project.json`).
 - [ ] **Game Export Pipeline**: Provide a clean production build script (`npm run build:game`) to bundle published games into standalone web packages.
+
+---
+
+## 🖱️ 7. Custom Cursors
+- [ ] **Verb Cursors**: Support custom image cursors for each verb (`walk`, `look`, `interact`, `talk`, `pick_up`) with configurable hotspot pixel offsets `(x, y)`.
+- [ ] **Inventory Item Cursors**: Display the selected inventory item PNG icon directly at the mouse cursor location when an item is selected.
+- [ ] **Hotspot Dynamic Cursors**: Allow hotspots to define custom mouse cursor graphics when hovering over them.
+
+---
+
+## ⚡ 8. Global Events & Triggers
+- [ ] **Global Event Listeners**: Add project-level event triggers (`onGameStart`, `onChapterStart`, `onFlagChange`, `onItemCollected`, `onTimerExpire`).
+- [ ] **Global Event Actions**: Support executing script actions, dialogue triggers, music playback, or scene transitions from global events without requiring a hotspot click.

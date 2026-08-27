@@ -241,9 +241,10 @@ export class UISystem {
 
   private updateVerbHighlights(): void {
     if (!this.containerElement) return;
-    this.containerElement.querySelectorAll('.verb-btn, .sierra-btn').forEach(btn => {
+    const active = this.activeVerb;
+    this.containerElement.querySelectorAll('.verb-btn, .sierra-btn, .coin-btn').forEach(btn => {
       const verb = (btn as HTMLElement).dataset.verb;
-      if (verb === this.activeVerb) {
+      if (verb === active || (verb === 'interact' && active === 'use') || (verb === 'use' && active === 'interact')) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');

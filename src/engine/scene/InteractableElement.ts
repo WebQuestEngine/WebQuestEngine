@@ -59,9 +59,20 @@ export class InteractableElement extends GraphicalElement {
 
   public getActionForVerb(verb: VerbType): HotspotAction | undefined {
     const storySystem = StoryGraphSystem.getInstance();
+    const effectiveVerb = verb === 'use' ? 'interact' : verb;
+
     return this.actions.find(a => {
       if (a.requireItemId) return false;
-      if (a.verb !== verb && verb !== 'interact' && a.verb !== 'interact' && !a.targetSceneId) return false;
+
+      const actVerb = a.verb === 'use' ? 'interact' : a.verb;
+
+      // Scene transition actions (doors/exits) should only trigger on interact/use/walk
+      if (a.targetSceneId) {
+        if (effectiveVerb !== 'interact' && effectiveVerb !== 'walk') return false;
+      } else {
+        if (actVerb !== effectiveVerb && actVerb !== 'interact' && effectiveVerb !== 'interact') return false;
+      }
+
       if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
       if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
       return true;
@@ -84,20 +95,6 @@ export class InteractableElement extends GraphicalElement {
       if (itemAction) return itemAction;
     }
 
-    const verbAction = this.getActionForVerb(activeVerb);
-    if (verbAction) return verbAction;
-
-    const storySystem = StoryGraphSystem.getInstance();
-    const validActions = this.actions.filter(a => {
-      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
-      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
-      return true;
-    });
-
-    return validActions.find(a => a.verb === 'interact') ||
-           validActions.find(a => a.verb === 'talk') ||
-           validActions.find(a => a.verb === 'pick_up') ||
-           validActions.find(a => a.verb === 'use') ||
-           validActions[0];
+    return this.getActionForVerb(activeVerb);
   }
 }

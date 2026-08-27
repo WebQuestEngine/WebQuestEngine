@@ -1075,11 +1075,8 @@ export class Engine {
     // 3. Interaction with NPC character (Direct Cursor, LucasArts, Sierra)
     if (charNPC && charNPC !== player) {
       let action = charNPC.getBestAction(activeVerb);
-      if (!action) {
-        action = charNPC.getBestAction('talk')
-          || charNPC.getBestAction('interact')
-          || charNPC.getBestAction('look')
-          || (charNPC.data.actions ? charNPC.data.actions[0] : undefined);
+      if (!action && activeVerb === 'walk') {
+        action = charNPC.getBestAction('talk') || charNPC.getBestAction('interact');
       }
       if (action) {
         if (player) {
@@ -1100,20 +1097,22 @@ export class Engine {
         }
         return;
       }
+      if (player) {
+        player.walkTo(charNPC.position, walkPath, () => {
+          if (activeVerb === 'talk') UISystem.getInstance().showSubtitle("They don't have much to say.");
+          else if (activeVerb === 'look') UISystem.getInstance().showSubtitle(`It's ${charNPC.data.name}.`);
+          else UISystem.getInstance().showSubtitle("That doesn't seem to work.");
+        });
+      }
+      return;
     }
 
     // 4. Hotspot Interaction (Direct Cursor, LucasArts, Sierra)
     if (hotspot) {
       let action = hotspot.getBestAction(activeVerb);
-      if (!action) {
+      if (!action && activeVerb === 'walk') {
         const cursorVerb = (hotspot.data.cursor as VerbType) || 'interact';
-        action = hotspot.getBestAction(cursorVerb)
-          || hotspot.getBestAction('interact')
-          || hotspot.getBestAction('look')
-          || hotspot.getBestAction('use')
-          || hotspot.getBestAction('pick_up')
-          || hotspot.getBestAction('open')
-          || (hotspot.data.actions ? hotspot.data.actions[0] : undefined);
+        action = hotspot.getBestAction(cursorVerb) || hotspot.getBestAction('interact');
       }
 
       const targetCenter = hotspot.getCenter();
@@ -1127,7 +1126,15 @@ export class Engine {
         }
       } else {
         if (player) {
-          player.walkTo(targetCenter, walkPath);
+          player.walkTo(targetCenter, walkPath, () => {
+            if (activeVerb === 'talk') UISystem.getInstance().showSubtitle("It doesn't talk.");
+            else if (activeVerb === 'look') UISystem.getInstance().showSubtitle(`It's ${hotspot.data.name}.`);
+            else UISystem.getInstance().showSubtitle("That doesn't seem to work.");
+          });
+        } else {
+          if (activeVerb === 'talk') UISystem.getInstance().showSubtitle("It doesn't talk.");
+          else if (activeVerb === 'look') UISystem.getInstance().showSubtitle(`It's ${hotspot.data.name}.`);
+          else UISystem.getInstance().showSubtitle("That doesn't seem to work.");
         }
       }
       return;
