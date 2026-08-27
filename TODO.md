@@ -10,6 +10,7 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [ ] **Item Drag & Combine Visuals**: Add visual feedback when dragging an item onto another inventory item or hot-bar slot.
 - [ ] **Custom graphics for tools and inventory**: Add custom graphics for tools and inventory slots
 - [ ] **Dialog box custom graphics**: Add custom graphics for dialog boxes
+- [ ] **Mouse Wheel Inventory Selection**: Display the inventory bar at the bottom during gameplay, where scrolling the mouse wheel cycles and highlights the selected inventory item, replacing verb tool selection.
 
 ---
 
