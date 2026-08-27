@@ -1200,37 +1200,7 @@ export class Engine {
 
   private renderDebugOverlay(): void {
     this.debugOverlay.clear();
-    if (!this.currentScene) return;
-
-    // 1. Draw Character Calculated Walk Route (Glowing Cyan Line & Waypoints in BOTH Editor & Play modes!)
-    if (this.currentScene.playerCharacter) {
-      const playerChar = this.currentScene.playerCharacter;
-      const path = playerChar.path;
-      if (path && path.length > 0) {
-        const startPt = { x: playerChar.container.x, y: playerChar.container.y };
-        const routePts = [startPt, ...path];
-
-        // Draw Thick Glowing Cyan Route Line
-        this.debugOverlay.moveTo(routePts[0].x, routePts[0].y);
-        for (let i = 1; i < routePts.length; i++) {
-          this.debugOverlay.lineTo(routePts[i].x, routePts[i].y);
-        }
-        this.debugOverlay.stroke({ color: 0x06b6d4, width: 6, alpha: 0.95 });
-
-        // Draw Waypoint Circles
-        for (let i = 0; i < routePts.length; i++) {
-          const pt = routePts[i];
-          const isStart = i === 0;
-          const isEnd = i === routePts.length - 1;
-
-          this.debugOverlay.circle(pt.x, pt.y, isEnd ? 9 : (isStart ? 7 : 6));
-          this.debugOverlay.fill({ color: isEnd ? 0x22c55e : (isStart ? 0x3b82f6 : 0x06b6d4) });
-          this.debugOverlay.stroke({ color: 0xffffff, width: 2.5 });
-        }
-      }
-    }
-
-    if (!this.isEditorMode) return;
+    if (!this.currentScene || !this.isEditorMode) return;
 
     // Draw Polygon Being Drawn From Scratch
     if (this.isDrawingPolygon && this.drawingPoints.length > 0) {
