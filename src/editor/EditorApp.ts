@@ -212,6 +212,8 @@ export class EditorApp {
       } else {
         document.body.classList.remove('play-mode-active');
         if (exitBar) exitBar.remove();
+        this.syncAllViews();
+        window.dispatchEvent(new Event('resize'));
       }
     });
 

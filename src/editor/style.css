@@ -119,6 +119,7 @@ body {
 
 .editor-viewport-container {
   flex: 1;
+  min-width: 0;
   position: relative;
   display: flex;
   align-items: center;
@@ -228,6 +229,8 @@ body {
 /* Left Sidebar Tree View */
 .editor-tree-sidebar {
   width: 280px;
+  min-width: 280px;
+  flex-shrink: 0;
   background: var(--panel-bg);
   backdrop-filter: blur(16px);
   border-right: 1px solid var(--panel-border);
@@ -622,6 +625,8 @@ body {
 /* Sidebar Inspector */
 .editor-sidebar {
   width: 340px;
+  min-width: 340px;
+  flex-shrink: 0;
   background: var(--panel-bg);
   backdrop-filter: blur(16px);
   border-left: 1px solid var(--panel-border);

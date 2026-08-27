@@ -55,8 +55,8 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## ⚡ 8. Global Events & Triggers
-- [ ] **Global Event Listeners**: Add project-level event triggers (`onGameStart`, `onChapterStart`, `onFlagChange`, `onItemCollected`, `onTimerExpire`).
-- [ ] **Global Event Actions**: Support executing script actions, dialogue triggers, music playback, or scene transitions from global events without requiring a hotspot click.
+- [ ] **Global Lifecycle Events**: Add project-level event triggers (`onGameStart`, `onChapterStart`, `onChapterEnd`, `onGameEnd`/Victory, `onFlagChange`, `onItemCollected`, `onTimerExpire`).
+- [ ] **Global Event Actions**: Support executing script actions, dialogue triggers, victory screens/credits, music playback, or scene transitions from global events without requiring a hotspot click.
 
 ---
 

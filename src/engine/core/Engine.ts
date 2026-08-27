@@ -106,54 +106,32 @@ export class Engine {
       StoryGraphSystem.getInstance().setFlag(flag, true);
     });
 
-    // Mode changed handler
-    EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
-      this.isEditorMode = !data.isPlayMode;
-      this.renderDebugOverlay();
-      this.showNotification(this.isEditorMode ? 'Editor Mode (Drag & Scale enabled)' : 'Play Mode (Game active)');
-    });
-
-    // Coin verb listener
-    EventBus.getInstance().on('ui:coin_verb', (verb: any) => {
-      if (this.coinTargetHotspot) {
-        const action = this.coinTargetHotspot.getBestAction(verb);
-        const player = this.currentScene?.playerCharacter;
-        const walkPath = this.currentScene?.getWalkPath();
-
-        if (action) {
-          if (!this.isEditorMode && player) {
-            player.walkTo(this.coinTargetHotspot.getCenter(), walkPath, () => {
-              this.executeAction(action);
-            });
-          } else {
-            this.executeAction(action);
-          }
-        }
-        this.coinTargetHotspot = null;
-      }
-    });
-
-    // Window resize handler for game viewport
-    window.addEventListener('resize', () => {
-      this.resizeViewport();
-    });
-
     // Editor mode change listener
     EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
       this.isEditorMode = !data.isPlayMode;
+      this.showNotification(this.isEditorMode ? '✏️ Editor Mode active' : '▶️ Play Mode active');
+
+      if (data.isPlayMode) {
+        this.camera.resetZoom();
+        if (this.currentScene?.playerCharacter) {
+          this.camera.follow(this.currentScene.playerCharacter.container);
+        }
+      } else {
+        this.viewportMask.visible = false;
+        if (this.currentScene?.container) {
+          this.currentScene.container.mask = null;
+        }
+        this.camera.follow(null);
+        this.camera.resetZoom();
+      }
+
       setTimeout(() => {
         this.resizeViewport();
-        if (data.isPlayMode) {
-          this.camera.resetZoom();
-          if (this.currentScene?.playerCharacter) {
-            this.camera.follow(this.currentScene.playerCharacter.container);
-          }
-        } else {
-          this.camera.follow(null);
-        }
         this.renderDebugOverlay();
       }, 50);
     });
+
+    // Coin verb listener
 
     // Selection handlers
     EventBus.getInstance().on('editor:select_layer', (layerId: string) => {
@@ -422,6 +400,7 @@ export class Engine {
       const vpY = vp.y ?? 0;
 
       if (this.isEditorMode) {
+        this.viewportMask.visible = false;
         this.currentScene.container.mask = null;
         const sceneWidth = this.currentScene.data.width || 1920;
         const sceneHeight = this.currentScene.data.height || 1080;
@@ -435,6 +414,7 @@ export class Engine {
         this.currentScene.container.y = viewCenterY + this.camera.panOffset.y;
       } else {
         // Play Mode: Hard-clip to Viewport Rectangle & Stretch/Fit Screen Window
+        this.viewportMask.visible = true;
         this.viewportMask.clear();
         this.viewportMask.rect(vpX, vpY, vpW, vpH);
         this.viewportMask.fill({ color: 0xffffff });
@@ -1346,6 +1326,11 @@ export class Engine {
   private renderDebugOverlay(): void {
     this.debugOverlay.clear();
     if (!this.currentScene || !this.isEditorMode) return;
+
+    // Ensure debugOverlay is drawn on top of all layers and objects
+    if (this.currentScene.container.children.length > 0) {
+      this.currentScene.container.setChildIndex(this.debugOverlay, this.currentScene.container.children.length - 1);
+    }
 
     // Draw Game Viewport Frame Boundary Box & Corner Drag Handles
     const vp = this.project?.viewportSettings || { aspectRatio: '16:9', width: 1920, height: 1080 };
