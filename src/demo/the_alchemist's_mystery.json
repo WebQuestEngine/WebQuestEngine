@@ -380,7 +380,8 @@
               "text": "You turn the Brass Key in the lock! The oak door unlocks and opens."
             }
           ],
-          "locked": true
+          "locked": true,
+          "examined": true
         },
         {
           "id": "hs_shrub",
@@ -460,7 +461,8 @@
               "text": "You search the shrub again, but there is nothing else inside."
             }
           ],
-          "locked": true
+          "locked": true,
+          "examined": true
         },
         {
           "id": "hs_1787742580648",
@@ -759,8 +761,7 @@
           "gridOffsetY": 0,
           "currentHoldingItemId": "item_key"
         }
-      ],
-      "backgroundMusicUrl": "assets/audio/bgm.mp3"
+      ]
     },
     {
       "id": "scene_lab",
@@ -1211,7 +1212,8 @@
               "text": "Just exploring your impressive alchemy setup.",
               "nextNodeId": "node_3"
             }
-          ]
+          ],
+          "voiceAudioUrl": "assets/c1s2/audio/ah sir ronald you have managed.mp3"
         },
         "node_2": {
           "id": "node_2",
@@ -1224,18 +1226,21 @@
               "text": "Thank you, Master Eldrin! I shall do so at once.",
               "nextNodeId": "node_end"
             }
-          ]
+          ],
+          "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3"
         },
         "node_3": {
           "id": "node_3",
           "speaker": "Master Eldrin",
           "text": "Feel free to inspect the room, but do not touch the explosive compounds!",
-          "nextNodeId": "node_end"
+          "nextNodeId": "node_end",
+          "voiceAudioUrl": "assets/c1s2/audio/feel free to inspect the room but do not touch the explosive compunds.mp3"
         },
         "node_end": {
           "id": "node_end",
           "speaker": "Master Eldrin",
-          "text": "May wisdom guide your quest."
+          "text": "May wisdom guide your quest.",
+          "voiceAudioUrl": "assets/c1s2/audio/may wisdom guide your quest.mp3"
         }
       }
     }

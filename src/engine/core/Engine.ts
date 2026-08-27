@@ -1397,8 +1397,6 @@ export class Engine {
       AudioSystem.getInstance().playSFX(null, 'pickup');
     } else if (action.targetSceneId) {
       AudioSystem.getInstance().playSFX(null, 'door');
-    } else {
-      AudioSystem.getInstance().playSFX(null, 'click');
     }
 
     const player = this.currentScene?.playerCharacter;
