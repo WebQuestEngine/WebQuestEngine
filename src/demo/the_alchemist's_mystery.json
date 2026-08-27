@@ -1220,5 +1220,10 @@
         }
       }
     }
-  ]
+  ],
+  "viewportSettings": {
+    "aspectRatio": "custom",
+    "width": 1669,
+    "height": 928
+  }
 }

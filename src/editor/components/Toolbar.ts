@@ -33,6 +33,14 @@ export class Toolbar {
       </div>
 
       <div class="toolbar-group">
+        <select class="form-select" id="select-viewport-preset" style="width: 145px;" title="Game Aspect Ratio / Viewport Preset">
+          <option value="16:9">📺 16:9 (Widescreen)</option>
+          <option value="4:3">📺 4:3 (Retro Sierra)</option>
+          <option value="16:10">📺 16:10 (Display)</option>
+          <option value="21:9">📺 21:9 (Ultrawide)</option>
+          <option value="1:1">📺 1:1 (Square)</option>
+          <option value="custom">📺 Custom Bounds</option>
+        </select>
         <select class="form-select" id="select-ui-preset" style="width: 140px;">
           <option value="lucasarts">LucasArts UI</option>
           <option value="sierra">Sierra UI</option>
@@ -102,6 +110,11 @@ export class Toolbar {
 
     this.element.querySelector('#btn-save-as-file')?.addEventListener('click', () => {
       EventBus.getInstance().emit('editor:save_file_as');
+    });
+
+    this.element.querySelector('#select-viewport-preset')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value;
+      EventBus.getInstance().emit('editor:change_viewport_preset', val);
     });
 
     this.element.querySelector('#select-ui-preset')?.addEventListener('change', (e) => {

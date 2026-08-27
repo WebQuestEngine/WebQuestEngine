@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { ProjectData, Vector2D, VerbType } from '../types';
+import { ProjectData, Vector2D, VerbType, AspectRatioType } from '../types';
 import { Camera } from './Camera';
 import { Scene } from '../scene/Scene';
 import { InventorySystem } from '../systems/InventorySystem';
@@ -18,6 +18,7 @@ export class Engine {
 
   private project: ProjectData | null = null;
   private debugOverlay: PIXI.Graphics;
+  private viewportMask: PIXI.Graphics;
   private coinTargetHotspot: any = null;
 
   public selectedLayerId: string | null = null;
@@ -47,6 +48,7 @@ export class Engine {
     this.app = new PIXI.Application();
     this.camera = new Camera(container.clientWidth || 1280, container.clientHeight || 720);
     this.debugOverlay = new PIXI.Graphics();
+    this.viewportMask = new PIXI.Graphics();
 
     window.addEventListener('keydown', (e) => {
       if (this.isDrawingPolygon) {
@@ -131,18 +133,26 @@ export class Engine {
       }
     });
 
+    // Window resize handler for game viewport
+    window.addEventListener('resize', () => {
+      this.resizeViewport();
+    });
+
     // Editor mode change listener
     EventBus.getInstance().on('editor:mode_changed', (data: { isPlayMode: boolean }) => {
       this.isEditorMode = !data.isPlayMode;
-      if (data.isPlayMode) {
-        this.camera.resetZoom();
-        if (this.currentScene?.playerCharacter) {
-          this.camera.follow(this.currentScene.playerCharacter.container);
+      setTimeout(() => {
+        this.resizeViewport();
+        if (data.isPlayMode) {
+          this.camera.resetZoom();
+          if (this.currentScene?.playerCharacter) {
+            this.camera.follow(this.currentScene.playerCharacter.container);
+          }
+        } else {
+          this.camera.follow(null);
         }
-      } else {
-        this.camera.follow(null);
-      }
-      this.renderDebugOverlay();
+        this.renderDebugOverlay();
+      }, 50);
     });
 
     // Selection handlers
@@ -239,6 +249,33 @@ export class Engine {
       this.renderDebugOverlay();
     });
 
+    // Viewport Aspect Ratio Preset handler
+    EventBus.getInstance().on('editor:change_viewport_preset', (preset: string) => {
+      if (!this.project) return;
+      let w = 1920, h = 1080;
+      if (preset === '16:9') { w = 1920; h = 1080; }
+      else if (preset === '4:3') { w = 1440; h = 1080; }
+      else if (preset === '16:10') { w = 1920; h = 1200; }
+      else if (preset === '21:9') { w = 2560; h = 1080; }
+      else if (preset === '1:1') { w = 1080; h = 1080; }
+      else if (preset === 'custom') {
+        w = this.project.viewportSettings?.width || 1920;
+        h = this.project.viewportSettings?.height || 1080;
+      }
+
+      this.project.viewportSettings = {
+        aspectRatio: preset as AspectRatioType,
+        width: w,
+        height: h,
+        x: 0,
+        y: 0
+      };
+      this.camera.setBounds(w, h);
+      this.renderDebugOverlay();
+      EventBus.getInstance().emit('editor:project_updated');
+      EventBus.getInstance().emit('ui:notify', `📺 Game Viewport set to ${preset.toUpperCase()} (${w}x${h})`);
+    });
+
     // Global canvas listeners
     this.app.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.app.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -290,6 +327,15 @@ export class Engine {
     if (initialSceneData) {
       await this.loadScene(initialSceneData);
     }
+  }
+
+  public resizeViewport(): void {
+    if (!this.containerElement || !this.app || !this.app.renderer) return;
+    const w = this.containerElement.clientWidth || window.innerWidth;
+    const h = this.containerElement.clientHeight || window.innerHeight;
+    this.app.renderer.resize(w, h);
+    this.camera.viewport = { width: w, height: h };
+    this.renderDebugOverlay();
   }
 
   private registerSceneDialogs(sceneData: any): void {
@@ -352,6 +398,7 @@ export class Engine {
 
     this.app.stage.addChild(this.currentScene.container);
     this.currentScene.container.addChild(this.debugOverlay);
+    this.currentScene.container.addChild(this.viewportMask);
     this.renderDebugOverlay();
   }
 
@@ -368,22 +415,42 @@ export class Engine {
         this.renderDebugOverlay();
       }
 
-      const sceneWidth = this.currentScene.data.width || 1920;
-      const sceneHeight = this.currentScene.data.height || 1080;
-
-      const viewCenterX = this.camera.viewport.width / 2;
-      const viewCenterY = this.camera.viewport.height / 2;
-
-      this.currentScene.container.scale.set(this.camera.zoom, this.camera.zoom);
+      const vp = this.project?.viewportSettings || { width: 1920, height: 1080, x: 0, y: 0 };
+      const vpW = vp.width || 1920;
+      const vpH = vp.height || 1080;
+      const vpX = vp.x ?? 0;
+      const vpY = vp.y ?? 0;
 
       if (this.isEditorMode) {
+        this.currentScene.container.mask = null;
+        const sceneWidth = this.currentScene.data.width || 1920;
+        const sceneHeight = this.currentScene.data.height || 1080;
+
+        const viewCenterX = this.camera.viewport.width / 2;
+        const viewCenterY = this.camera.viewport.height / 2;
+
+        this.currentScene.container.scale.set(this.camera.zoom, this.camera.zoom);
         this.currentScene.container.pivot.set(sceneWidth / 2, sceneHeight / 2);
         this.currentScene.container.x = viewCenterX + this.camera.panOffset.x;
         this.currentScene.container.y = viewCenterY + this.camera.panOffset.y;
       } else {
-        this.currentScene.container.pivot.set(0, 0);
-        this.currentScene.container.x = -this.camera.position.x * this.camera.zoom;
-        this.currentScene.container.y = -this.camera.position.y * this.camera.zoom;
+        // Play Mode: Hard-clip to Viewport Rectangle & Stretch/Fit Screen Window
+        this.viewportMask.clear();
+        this.viewportMask.rect(vpX, vpY, vpW, vpH);
+        this.viewportMask.fill({ color: 0xffffff });
+        this.currentScene.container.mask = this.viewportMask;
+
+        const scaleX = this.camera.viewport.width / vpW;
+        const scaleY = this.camera.viewport.height / vpH;
+        const playScale = Math.min(scaleX, scaleY);
+
+        const offsetX = (this.camera.viewport.width - vpW * playScale) / 2;
+        const offsetY = (this.camera.viewport.height - vpH * playScale) / 2;
+
+        this.currentScene.container.scale.set(playScale, playScale);
+        this.currentScene.container.pivot.set(vpX, vpY);
+        this.currentScene.container.x = offsetX;
+        this.currentScene.container.y = offsetY;
       }
     }
   }
@@ -409,8 +476,24 @@ export class Engine {
       const worldY = Math.round(sceneCenterY + (screenY - (viewCenterY + this.camera.panOffset.y)) / this.camera.zoom);
       return { x: worldX, y: worldY };
     } else {
-      const worldX = Math.round(screenX / this.camera.zoom + this.camera.position.x);
-      const worldY = Math.round(screenY / this.camera.zoom + this.camera.position.y);
+      const vp = this.project?.viewportSettings || { width: 1920, height: 1080, x: 0, y: 0 };
+      const vpW = vp.width || 1920;
+      const vpH = vp.height || 1080;
+      const vpX = vp.x ?? 0;
+      const vpY = vp.y ?? 0;
+
+      const viewW = this.containerElement.clientWidth || window.innerWidth;
+      const viewH = this.containerElement.clientHeight || window.innerHeight;
+
+      const scaleX = viewW / vpW;
+      const scaleY = viewH / vpH;
+      const playScale = Math.min(scaleX, scaleY);
+
+      const offsetX = (viewW - vpW * playScale) / 2;
+      const offsetY = (viewH - vpH * playScale) / 2;
+
+      const worldX = Math.round(vpX + (screenX - offsetX) / playScale);
+      const worldY = Math.round(vpY + (screenY - offsetY) / playScale);
       return { x: worldX, y: worldY };
     }
   }
@@ -448,6 +531,29 @@ export class Engine {
       this.updateDrawingPolygonTarget();
       this.renderDebugOverlay();
       return;
+    }
+
+    // 0. Check Viewport Frame Corner Handles for Drag-Resizing
+    const vpSettings = this.project?.viewportSettings || { aspectRatio: '16:9', width: 1920, height: 1080 };
+    const vW = vpSettings.width || 1920;
+    const vH = vpSettings.height || 1080;
+    const vX = vpSettings.x ?? 0;
+    const vY = vpSettings.y ?? 0;
+    const vpCorners = [
+      { x: vX, y: vY },
+      { x: vX + vW, y: vY },
+      { x: vX + vW, y: vY + vH },
+      { x: vX, y: vY + vH }
+    ];
+
+    for (const c of vpCorners) {
+      if (Math.hypot(worldPt.x - c.x, worldPt.y - c.y) < 16) {
+        this.isScaling = true;
+        this.dragTarget = { type: 'viewport_frame' as any };
+        this.dragStartWorld = worldPt;
+        this.dragInitialPos = { x: vW, y: vH };
+        return;
+      }
     }
 
     // 1. Check selected layer corner handles for Aspect-Ratio Scaling
@@ -815,14 +921,46 @@ export class Engine {
             charData.position.y = Math.round(this.dragInitialPos.y + dy);
             charObj.container.x = charData.position.x;
             charObj.container.y = charData.position.y;
-            EventBus.getInstance().emit('editor:project_updated');
           }
         }
-      }
+      } else if (this.dragTarget.type === ('viewport_frame' as any) && this.project) {
+        let newW = Math.max(320, Math.round(this.dragInitialPos.x + dx));
+        let newH = Math.max(240, Math.round(this.dragInitialPos.y + dy));
 
-      this.renderDebugOverlay();
-      return;
+        const currentRatio = this.project.viewportSettings?.aspectRatio || '16:9';
+        if (currentRatio === '16:9') {
+          newH = Math.round(newW * (9 / 16));
+        } else if (currentRatio === '4:3') {
+          newH = Math.round(newW * (3 / 4));
+        } else if (currentRatio === '16:10') {
+          newH = Math.round(newW * (10 / 16));
+        } else if (currentRatio === '21:9') {
+          newH = Math.round(newW * (9 / 21));
+        } else if (currentRatio === '1:1') {
+          newH = newW;
+        } else {
+          if (this.project.viewportSettings) {
+            this.project.viewportSettings.aspectRatio = 'custom';
+          }
+        }
+
+        if (!this.project.viewportSettings) {
+          this.project.viewportSettings = { aspectRatio: 'custom', width: newW, height: newH };
+        }
+        this.project.viewportSettings.width = newW;
+        this.project.viewportSettings.height = newH;
+
+        this.camera.setBounds(newW, newH);
+        this.renderDebugOverlay();
+        return;
+      }
     }
+
+    this.renderDebugOverlay();
+  }
+
+  private handleMouseHover(worldPt: Vector2D): void {
+    if (!this.currentScene) return;
 
     // Hover tooltip processing
     const hotspot = this.currentScene.findHotspotAt(worldPt);
@@ -1201,6 +1339,32 @@ export class Engine {
   private renderDebugOverlay(): void {
     this.debugOverlay.clear();
     if (!this.currentScene || !this.isEditorMode) return;
+
+    // Draw Game Viewport Frame Boundary Box & Corner Drag Handles
+    const vp = this.project?.viewportSettings || { aspectRatio: '16:9', width: 1920, height: 1080 };
+    const vpW = vp.width || 1920;
+    const vpH = vp.height || 1080;
+    const vpX = vp.x ?? 0;
+    const vpY = vp.y ?? 0;
+
+    // Viewport Dashed Rect Boundary
+    this.debugOverlay.rect(vpX, vpY, vpW, vpH);
+    this.debugOverlay.stroke({ color: 0x38bdf8, width: 3, alpha: 0.95 });
+    this.debugOverlay.fill({ color: 0x0284c7, alpha: 0.04 });
+
+    // Corner Drag Handles: [TL, TR, BR, BL]
+    const vpHandles = [
+      { x: vpX, y: vpY },
+      { x: vpX + vpW, y: vpY },
+      { x: vpX + vpW, y: vpY + vpH },
+      { x: vpX, y: vpY + vpH }
+    ];
+
+    for (const h of vpHandles) {
+      this.debugOverlay.rect(h.x - 8, h.y - 8, 16, 16);
+      this.debugOverlay.fill({ color: 0x38bdf8 });
+      this.debugOverlay.stroke({ color: 0x0f172a, width: 2 });
+    }
 
     // Draw Polygon Being Drawn From Scratch
     if (this.isDrawingPolygon && this.drawingPoints.length > 0) {

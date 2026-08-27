@@ -191,12 +191,24 @@ export interface ChapterData {
   locked?: boolean;
 }
 
+export type AspectRatioType = '16:9' | '4:3' | '16:10' | '21:9' | '1:1' | 'custom';
+
+export interface ViewportSettings {
+  aspectRatio: AspectRatioType;
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  showBoundsInEditor?: boolean;
+}
+
 export interface ProjectData {
   version: string;
   title: string;
   author: string;
   assetBasePath?: string;
   uiConfig: UIConfig;
+  viewportSettings?: ViewportSettings;
   chapters: ChapterData[];
   storyNodes: StoryNodeData[];
   scenes: SceneData[];

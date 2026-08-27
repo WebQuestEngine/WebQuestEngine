@@ -945,6 +945,34 @@ export class Inspector {
           <input type="text" class="form-input" id="proj-base-folder" value="${this.project.assetBasePath || ''}" placeholder="e.g. src/demo or assets" />
         </div>
       </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title" style="color:var(--accent-gold);">📺 Game Viewport Frame</div>
+        <div class="form-group">
+          <label>Aspect Ratio Preset</label>
+          <select class="form-select" id="proj-vp-preset">
+            <option value="16:9" ${(this.project.viewportSettings?.aspectRatio || '16:9') === '16:9' ? 'selected' : ''}>16:9 Widescreen (1920x1080)</option>
+            <option value="4:3" ${this.project.viewportSettings?.aspectRatio === '4:3' ? 'selected' : ''}>4:3 Retro Sierra (1440x1080)</option>
+            <option value="16:10" ${this.project.viewportSettings?.aspectRatio === '16:10' ? 'selected' : ''}>16:10 Display (1920x1200)</option>
+            <option value="21:9" ${this.project.viewportSettings?.aspectRatio === '21:9' ? 'selected' : ''}>21:9 Ultrawide (2560x1080)</option>
+            <option value="1:1" ${this.project.viewportSettings?.aspectRatio === '1:1' ? 'selected' : ''}>1:1 Square (1080x1080)</option>
+            <option value="custom" ${this.project.viewportSettings?.aspectRatio === 'custom' ? 'selected' : ''}>Custom Drag Box</option>
+          </select>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Width (px)</label>
+            <input type="number" class="form-input" id="proj-vp-width" value="${this.project.viewportSettings?.width || 1920}" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Height (px)</label>
+            <input type="number" class="form-input" id="proj-vp-height" value="${this.project.viewportSettings?.height || 1080}" />
+          </div>
+        </div>
+        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px; font-style:italic;">
+          💡 Tip: Drag cyan corner handles on canvas to visually resize the game frame!
+        </div>
+      </div>
     `;
   }
 
@@ -1029,6 +1057,34 @@ export class Inspector {
         if (val) AssetManager.getInstance().setBaseFolder(val);
         emitUpdate();
       });
+    }
+
+    const vpPreset = this.element.querySelector('#proj-vp-preset') as HTMLSelectElement;
+    if (vpPreset && this.project) {
+      vpPreset.addEventListener('change', () => {
+        const val = vpPreset.value;
+        EventBus.getInstance().emit('editor:change_viewport_preset', val);
+        this.renderContent();
+      });
+    }
+
+    const vpW = this.element.querySelector('#proj-vp-width') as HTMLInputElement;
+    const vpH = this.element.querySelector('#proj-vp-height') as HTMLInputElement;
+    if (vpW && vpH && this.project) {
+      const updateVP = () => {
+        const w = parseInt(vpW.value) || 1920;
+        const h = parseInt(vpH.value) || 1080;
+        this.project!.viewportSettings = {
+          aspectRatio: 'custom',
+          width: w,
+          height: h,
+          x: 0,
+          y: 0
+        };
+        emitUpdate();
+      };
+      vpW.addEventListener('input', updateVP);
+      vpH.addEventListener('input', updateVP);
     }
 
     // Add Layer button

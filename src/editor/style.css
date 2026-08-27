@@ -145,7 +145,25 @@ body {
   width: 100vw;
   height: 100vh;
   z-index: 9999;
-  background: #000;
+  background: #020617;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.play-mode-active .editor-canvas-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-mode-active canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
 }
 
 .play-mode-exit-bar {
