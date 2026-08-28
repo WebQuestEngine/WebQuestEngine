@@ -439,12 +439,14 @@
             {
               "verb": "look",
               "notFlag": "hasKey",
-              "text": "A dense thorny shrub. Something brass gleams inside!"
+              "text": "A dense thorny shrub. Something brass gleams inside!",
+              "sfxUrl": "assets/c1s1/audio/A dense thorny shrub - Something brass gleams inside.mp3"
             },
             {
               "verb": "look",
               "requiredFlag": "hasKey",
-              "text": "A dense thorny shrub. You have already retrieved the Brass Key from inside."
+              "text": "A dense thorny shrub. I have already retrieved the Brass Key from inside.",
+              "sfxUrl": "assets/c1s1/audio/A dense thorny shrub - have already retrieved the Brass Key from inside.mp3"
             },
             {
               "verb": "pick_up",
@@ -536,11 +538,13 @@
           "actions": [
             {
               "verb": "look",
-              "text": "That's a big sun."
+              "text": "That's a big sun.",
+              "sfxUrl": "assets/c1s1/audio/thats a big sun.mp3"
             },
             {
               "verb": "interact",
-              "text": "I can't reach it."
+              "text": "I can't reach it.",
+              "sfxUrl": "assets/c1s1/audio/I cant reach it.mp3"
             }
           ],
           "locked": true
@@ -1339,5 +1343,6 @@
     "aspectRatio": "custom",
     "width": 1669,
     "height": 928
-  }
+  },
+  "assetBasePath": "assets/c1s1"
 }
