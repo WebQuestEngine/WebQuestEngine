@@ -139,8 +139,8 @@ export class DialogEditor {
         } else if (this.isDraggingNode && this.draggedNodeId && tree.nodes[this.draggedNodeId]) {
           const node = tree.nodes[this.draggedNodeId];
           node.position = {
-            x: Math.max(10, (this.lastClientX - lRect.left) / this.zoomLevel - this.dragOffset.x),
-            y: Math.max(10, (this.lastClientY - lRect.top) / this.zoomLevel - this.dragOffset.y)
+            x: (this.lastClientX - lRect.left) / this.zoomLevel - this.dragOffset.x,
+            y: (this.lastClientY - lRect.top) / this.zoomLevel - this.dragOffset.y
           };
           const card = transformLayer.querySelector(`.dialog-graph-card[data-nodeid="${this.draggedNodeId}"]`) as HTMLElement;
           if (card) {
@@ -197,15 +197,15 @@ export class DialogEditor {
             <input type="text" id="tree-start-node-input" class="form-input" value="" style="width:120px;" />
           </div>
 
-          <div id="dialog-graph-transform-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; transform-origin: 0 0;">
-            <svg id="dialog-connections-svg" style="position:absolute; top:0; left:0; width:8000px; height:8000px; pointer-events:none; z-index:3;">
+          <div id="dialog-graph-transform-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; overflow:visible; transform-origin: 0 0;">
+            <svg id="dialog-connections-svg" style="position:absolute; top:0; left:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:3;">
               <defs>
                 <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
                 </marker>
               </defs>
             </svg>
-            <div id="dialog-nodes-container" style="position:absolute; top:0; left:0; width:8000px; height:8000px; z-index:2; pointer-events:none;"></div>
+            <div id="dialog-nodes-container" style="position:absolute; top:0; left:0; width:100%; height:100%; overflow:visible; z-index:2; pointer-events:none;"></div>
           </div>
 
           <!-- Pan & Zoom Control Overlay -->
@@ -450,7 +450,7 @@ export class DialogEditor {
             : (isStartNode ? 'var(--accent-gold)' : 'var(--panel-border)');
 
           return `
-            <div class="dialog-graph-card" data-nodeid="${node.id}" style="position:absolute; left:${node.position?.x || 50}px; top:${node.position?.y || 50}px; width:380px; background:${cardBg}; border:1px solid ${cardBorder}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
+            <div class="dialog-graph-card" data-nodeid="${node.id}" style="position:absolute; left:${node.position?.x ?? 50}px; top:${node.position?.y ?? 50}px; width:380px; background:${cardBg}; border:1px solid ${cardBorder}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
               
               <!-- Left Input Port -->
               <div class="node-port node-port-in" data-nodeid="${node.id}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:${isRouter ? '#c084fc' : '#38bdf8'}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${isRouter ? 'rgba(192,132,252,0.9)' : 'rgba(56,189,248,0.9)'}; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
@@ -789,14 +789,17 @@ export class DialogEditor {
             const strokeColor = isRouter ? '#c084fc' : '#fbbf24';
             const markerId = isRouter ? 'arrow-purple' : 'arrow';
 
-            const midX = (x1 + x2) / 2;
-            const midY = (y1 + y2) / 2;
+            // Position disconnect button at 15% along the Bezier curve
+            const t = 0.15;
+            const t1 = 1 - t;
+            const btnX = (t1 * t1 * t1 * x1) + (3 * t1 * t1 * t * (x1 + dx)) + (3 * t1 * t * t * (x2 - dx)) + (t * t * t * x2);
+            const btnY = (t1 * t1 * t1 * y1) + (3 * t1 * t1 * t * y1) + (3 * t1 * t * t * y2) + (t * t * t * y2);
 
             pathsHTML += `
               <g class="wire-group" data-srcnode="${sourceNode.id}" data-cidx="${cIdx}" data-targetnode="${c.nextNodeId}">
                 <path d="${pathData}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" marker-end="url(#${markerId})" style="filter: drop-shadow(0 0 4px ${strokeColor}88);" />
-                <circle cx="${midX}" cy="${midY}" r="9" fill="#0f172a" stroke="#ef4444" stroke-width="1.5" style="cursor:pointer; pointer-events:auto;" class="wire-delete-btn" data-srcnode="${sourceNode.id}" data-cidx="${cIdx}" />
-                <text x="${midX}" y="${midY + 3}" fill="#ef4444" font-size="10" font-weight="900" text-anchor="middle" style="pointer-events:none; user-select:none;">✕</text>
+                <circle cx="${btnX}" cy="${btnY}" r="9" fill="#0f172a" stroke="#ef4444" stroke-width="1.5" style="cursor:pointer; pointer-events:auto;" class="wire-delete-btn" data-srcnode="${sourceNode.id}" data-cidx="${cIdx}" />
+                <text x="${btnX}" y="${btnY + 3}" fill="#ef4444" font-size="10" font-weight="900" text-anchor="middle" style="pointer-events:none; user-select:none;">✕</text>
               </g>
             `;
           }
@@ -817,14 +820,17 @@ export class DialogEditor {
           const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
           const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
+          // Position disconnect button at 15% along the Bezier curve
+          const t = 0.15;
+          const t1 = 1 - t;
+          const btnX = (t1 * t1 * t1 * x1) + (3 * t1 * t1 * t * (x1 + dx)) + (3 * t1 * t * t * (x2 - dx)) + (t * t * t * x2);
+          const btnY = (t1 * t1 * t1 * y1) + (3 * t1 * t1 * t * y1) + (3 * t1 * t * t * y2) + (t * t * t * y2);
 
           pathsHTML += `
             <g class="wire-group" data-srcnode="${sourceNode.id}" data-targetnode="${sourceNode.nextNodeId}">
               <path d="${pathData}" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow-blue)" style="filter: drop-shadow(0 0 4px #38bdf888);" />
-              <circle cx="${midX}" cy="${midY}" r="9" fill="#0f172a" stroke="#ef4444" stroke-width="1.5" style="cursor:pointer; pointer-events:auto;" class="wire-delete-btn" data-srcnode="${sourceNode.id}" />
-              <text x="${midX}" y="${midY + 3}" fill="#ef4444" font-size="10" font-weight="900" text-anchor="middle" style="pointer-events:none; user-select:none;">✕</text>
+              <circle cx="${btnX}" cy="${btnY}" r="9" fill="#0f172a" stroke="#ef4444" stroke-width="1.5" style="cursor:pointer; pointer-events:auto;" class="wire-delete-btn" data-srcnode="${sourceNode.id}" />
+              <text x="${btnX}" y="${btnY + 3}" fill="#ef4444" font-size="10" font-weight="900" text-anchor="middle" style="pointer-events:none; user-select:none;">✕</text>
             </g>
           `;
         }
@@ -988,8 +994,8 @@ export class DialogEditor {
         if (this.isDraggingNode && this.draggedNodeId && tree.nodes[this.draggedNodeId]) {
           const node = tree.nodes[this.draggedNodeId];
           node.position = {
-            x: Math.max(10, (e.clientX - lRect.left) / this.zoomLevel - this.dragOffset.x),
-            y: Math.max(10, (e.clientY - lRect.top) / this.zoomLevel - this.dragOffset.y)
+            x: (e.clientX - lRect.left) / this.zoomLevel - this.dragOffset.x,
+            y: (e.clientY - lRect.top) / this.zoomLevel - this.dragOffset.y
           };
 
           const card = transformLayer.querySelector(`.dialog-graph-card[data-nodeid="${this.draggedNodeId}"]`) as HTMLElement;
