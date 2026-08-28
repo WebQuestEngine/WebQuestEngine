@@ -24,6 +24,13 @@ export class DialogEditor {
   private wireStartPt: Vector2D = { x: 0, y: 0 };
   private tempWirePath: string | null = null;
 
+  // Viewport Edge Auto-Pan State
+  private autoPanRafId: number | null = null;
+  private autoPanVx: number = 0;
+  private autoPanVy: number = 0;
+  private lastClientX: number = 0;
+  private lastClientY: number = 0;
+
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'view-modal hidden';
@@ -44,7 +51,96 @@ export class DialogEditor {
   }
 
   public hide(): void {
+    this.stopAutoPan();
     this.element.classList.add('hidden');
+  }
+
+  private updateEdgePanVelocity(e: MouseEvent, viewport: HTMLElement): void {
+    const vRect = viewport.getBoundingClientRect();
+    const mouseX = e.clientX - vRect.left;
+    const mouseY = e.clientY - vRect.top;
+    const edgeMargin = 85;
+    const maxSpeed = 16;
+
+    let vx = 0;
+    let vy = 0;
+
+    // Left edge (cursor near left edge) -> canvas moves right, panning view left
+    if (mouseX < edgeMargin) {
+      const ratio = Math.min(1.8, (edgeMargin - mouseX) / edgeMargin);
+      vx = ratio * maxSpeed;
+    }
+    // Right edge (cursor near right edge) -> canvas moves left, panning view right
+    else if (mouseX > vRect.width - edgeMargin) {
+      const ratio = Math.min(1.8, (mouseX - (vRect.width - edgeMargin)) / edgeMargin);
+      vx = -ratio * maxSpeed;
+    }
+
+    // Top edge (cursor near top edge) -> canvas moves down, panning view up
+    if (mouseY < edgeMargin) {
+      const ratio = Math.min(1.8, (edgeMargin - mouseY) / edgeMargin);
+      vy = ratio * maxSpeed;
+    }
+    // Bottom edge (cursor near bottom edge) -> canvas moves up, panning view down
+    else if (mouseY > vRect.height - edgeMargin) {
+      const ratio = Math.min(1.8, (mouseY - (vRect.height - edgeMargin)) / edgeMargin);
+      vy = -ratio * maxSpeed;
+    }
+
+    this.autoPanVx = vx;
+    this.autoPanVy = vy;
+  }
+
+  private startAutoPan(tree: DialogTree, svgEl: SVGElement, transformLayer: HTMLElement): void {
+    if (this.autoPanRafId !== null) return;
+
+    const loop = () => {
+      if (!this.isWiring && !this.isDraggingNode) {
+        this.stopAutoPan();
+        return;
+      }
+
+      if (this.autoPanVx !== 0 || this.autoPanVy !== 0) {
+        this.panOffset.x += this.autoPanVx;
+        this.panOffset.y += this.autoPanVy;
+        this.updateTransform();
+
+        const lRect = transformLayer.getBoundingClientRect();
+
+        if (this.isWiring) {
+          const currentX = (this.lastClientX - lRect.left) / this.zoomLevel;
+          const currentY = (this.lastClientY - lRect.top) / this.zoomLevel;
+          const dx = Math.max(30, Math.abs(currentX - this.wireStartPt.x) * 0.5);
+          this.tempWirePath = `M ${this.wireStartPt.x} ${this.wireStartPt.y} C ${this.wireStartPt.x + dx} ${this.wireStartPt.y}, ${currentX - dx} ${currentY}, ${currentX} ${currentY}`;
+        } else if (this.isDraggingNode && this.draggedNodeId && tree.nodes[this.draggedNodeId]) {
+          const node = tree.nodes[this.draggedNodeId];
+          node.position = {
+            x: Math.max(10, (this.lastClientX - lRect.left) / this.zoomLevel - this.dragOffset.x),
+            y: Math.max(10, (this.lastClientY - lRect.top) / this.zoomLevel - this.dragOffset.y)
+          };
+          const card = transformLayer.querySelector(`.dialog-graph-card[data-nodeid="${this.draggedNodeId}"]`) as HTMLElement;
+          if (card) {
+            card.style.left = `${node.position.x}px`;
+            card.style.top = `${node.position.y}px`;
+          }
+        }
+
+        if (svgEl) this.renderConnectionLines(tree, svgEl);
+      }
+
+      this.autoPanRafId = requestAnimationFrame(loop);
+    };
+
+    this.autoPanRafId = requestAnimationFrame(loop);
+  }
+
+  private stopAutoPan(): void {
+    if (this.autoPanRafId !== null) {
+      cancelAnimationFrame(this.autoPanRafId);
+      this.autoPanRafId = null;
+    }
+    this.autoPanVx = 0;
+    this.autoPanVy = 0;
   }
 
   private render(): void {
@@ -322,15 +418,29 @@ export class DialogEditor {
               <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:6px; margin-bottom:8px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
                 <div>
                   <label style="font-size:0.6rem; color:var(--text-muted);">If Req Flag</label>
-                  <input type="text" class="form-input node-req-flag" data-nodeid="${node.id}" value="${node.requiredFlag || ''}" placeholder="e.g. hasKey" style="font-size:0.7rem;" />
+                  <input type="text" class="form-input node-req-flag" data-nodeid="${node.id}" value="${node.requiredFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
                 </div>
                 <div>
                   <label style="font-size:0.6rem; color:var(--text-muted);">If NOT Flag</label>
-                  <input type="text" class="form-input node-not-flag" data-nodeid="${node.id}" value="${node.notFlag || ''}" placeholder="e.g. talkedToNPC" style="font-size:0.7rem;" />
+                  <input type="text" class="form-input node-not-flag" data-nodeid="${node.id}" value="${node.notFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
                 </div>
-                <div style="grid-column: span 2;">
-                  <label style="font-size:0.6rem; color:var(--text-muted);">Set Story Flag on Entry</label>
+                <div>
+                  <label style="font-size:0.6rem; color:var(--text-muted);">Set Story Flag</label>
                   <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlag || ''}" placeholder="e.g. talkedToEldrin" style="font-size:0.7rem;" />
+                </div>
+                <div>
+                  <label style="font-size:0.6rem; color:var(--accent-gold); font-weight:700;">🎁 Give Item</label>
+                  <select class="form-input node-give-item-select" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem; color:${node.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on entering this node">
+                    <option value="">-- None --</option>
+                    ${(this.project?.items || []).map(item => `
+                      <option value="${item.id}" ${node.giveItem === item.id ? 'selected' : ''}>
+                        🎁 ${item.name} (${item.id})
+                      </option>
+                    `).join('')}
+                    ${node.giveItem && !(this.project?.items || []).some(it => it.id === node.giveItem) ? `
+                      <option value="${node.giveItem}" selected>🎁 ${node.giveItem} (Custom)</option>
+                    ` : ''}
+                  </select>
                 </div>
               </div>
 
@@ -372,10 +482,24 @@ export class DialogEditor {
                           <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Choice">✕</button>
                         </div>
                         
-                        <!-- Choice Branch Flags -->
+                        <!-- Choice Branch Flags & Actions -->
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:2px;">
-                          <input type="text" class="form-input choice-req-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.requiredFlag || ''}" placeholder="Req Flag" style="font-size:0.65rem;" title="Required Flag condition" />
+                          <input type="text" class="form-input choice-req-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.requiredFlag || ''}" placeholder="Req Flag (e.g. hasItem:crystal)" style="font-size:0.65rem;" title="Required Flag condition" />
                           <input type="text" class="form-input choice-not-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.notFlag || ''}" placeholder="NOT Flag" style="font-size:0.65rem;" title="Must NOT have flag condition" />
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:3px;">
+                          <input type="text" class="form-input choice-set-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.setFlag || ''}" placeholder="🚩 Set Flag..." style="font-size:0.65rem;" title="Set flag upon choosing this response" />
+                          <select class="form-input choice-give-item-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:100%; font-size:0.65rem; color:${c.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on choosing this response">
+                            <option value="">🎁 Give Item: None</option>
+                            ${(this.project?.items || []).map(item => `
+                              <option value="${item.id}" ${c.giveItem === item.id ? 'selected' : ''}>
+                                🎁 ${item.name} (${item.id})
+                              </option>
+                            `).join('')}
+                            ${c.giveItem && !(this.project?.items || []).some(it => it.id === c.giveItem) ? `
+                              <option value="${c.giveItem}" selected>🎁 ${c.giveItem} (Custom)</option>
+                            ` : ''}
+                          </select>
                         </div>
 
                         ${!isRouter ? `
@@ -600,10 +724,13 @@ export class DialogEditor {
     this.element.querySelectorAll('.node-port-out').forEach(port => {
       port.addEventListener('mousedown', (e: Event) => {
         e.stopPropagation();
+        const mouseEv = e as MouseEvent;
         this.isWiring = true;
         this.wireSourceNodeId = (port as HTMLElement).dataset.nodeid!;
         const cIdxStr = (port as HTMLElement).dataset.cidx;
         this.wireSourceCIdx = cIdxStr !== undefined ? parseInt(cIdxStr) : null;
+        this.lastClientX = mouseEv.clientX;
+        this.lastClientY = mouseEv.clientY;
 
         if (transformLayer) {
           const lRect = transformLayer.getBoundingClientRect();
@@ -612,6 +739,7 @@ export class DialogEditor {
             x: (pRect.left + pRect.width / 2 - lRect.left) / this.zoomLevel,
             y: (pRect.top + pRect.height / 2 - lRect.top) / this.zoomLevel
           };
+          if (svgEl) this.startAutoPan(tree, svgEl, transformLayer);
         }
       });
     });
@@ -624,6 +752,8 @@ export class DialogEditor {
         const mouseEv = e as MouseEvent;
         this.isDraggingNode = true;
         this.draggedNodeId = (handle as HTMLElement).dataset.nodeid!;
+        this.lastClientX = mouseEv.clientX;
+        this.lastClientY = mouseEv.clientY;
         const card = handle.closest('.dialog-graph-card') as HTMLElement;
 
         if (card && transformLayer) {
@@ -633,17 +763,25 @@ export class DialogEditor {
             x: (mouseEv.clientX - cRect.left) / this.zoomLevel,
             y: (mouseEv.clientY - cRect.top) / this.zoomLevel
           };
+          if (svgEl) this.startAutoPan(tree, svgEl, transformLayer);
         }
       });
     });
 
     if (viewport && transformLayer) {
       viewport.addEventListener('mousemove', (e: MouseEvent) => {
+        this.lastClientX = e.clientX;
+        this.lastClientY = e.clientY;
+
         if (this.isPanning) {
           this.panOffset.x = e.clientX - this.panStart.x;
           this.panOffset.y = e.clientY - this.panStart.y;
           this.updateTransform();
           return;
+        }
+
+        if (this.isWiring || this.isDraggingNode) {
+          this.updateEdgePanVelocity(e, viewport);
         }
 
         const lRect = transformLayer.getBoundingClientRect();
@@ -677,6 +815,8 @@ export class DialogEditor {
       });
 
       viewport.addEventListener('mouseup', (e: MouseEvent) => {
+        this.stopAutoPan();
+
         if (this.isPanning) {
           this.isPanning = false;
           viewport.style.cursor = 'grab';
@@ -814,6 +954,17 @@ export class DialogEditor {
         const nid = (input as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nid]) {
           tree.nodes[nid].setFlag = (input as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    // Node Give Item Select
+    this.element.querySelectorAll('.node-give-item-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].giveItem = (e.target as HTMLSelectElement).value.trim() || undefined;
           emitUpdate();
         }
       });
@@ -959,6 +1110,32 @@ export class DialogEditor {
         const cIdx = parseInt(target.dataset.cidx!);
         if (tree.nodes[nid]?.choices?.[cIdx]) {
           tree.nodes[nid].choices![cIdx].notFlag = target.value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    // Choice Set Flag Edit
+    this.element.querySelectorAll('.choice-set-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const nid = target.dataset.nodeid!;
+        const cIdx = parseInt(target.dataset.cidx!);
+        if (tree.nodes[nid]?.choices?.[cIdx]) {
+          tree.nodes[nid].choices![cIdx].setFlag = target.value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    // Choice Give Item Select
+    this.element.querySelectorAll('.choice-give-item-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((sel as HTMLElement).dataset.cidx!);
+        if (tree.nodes[nid]?.choices?.[cIdx]) {
+          tree.nodes[nid].choices![cIdx].giveItem = target.value.trim() || undefined;
           emitUpdate();
         }
       });

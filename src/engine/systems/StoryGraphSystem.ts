@@ -1,5 +1,6 @@
 import { ProjectData, StoryNodeData, ChapterData, SceneData } from '../types';
 import { EventBus } from '../core/EventBus';
+import { InventorySystem } from './InventorySystem';
 
 export class StoryGraphSystem {
   private static instance: StoryGraphSystem;
@@ -107,6 +108,24 @@ export class StoryGraphSystem {
 
   public getFlag(flag: string): boolean {
     if (!flag) return false;
+
+    const lower = flag.toLowerCase();
+    const inv = InventorySystem.getInstance();
+
+    // 1. Explicit item flag checks (e.g. "hasItem:item_crystal", "hasItem:crystal", "item:key", "inventory:item_key")
+    if (lower.startsWith('hasitem:') || lower.startsWith('has_item:') || lower.startsWith('hasitem_') || lower.startsWith('item:') || lower.startsWith('inventory:')) {
+      const sep = flag.includes(':') ? ':' : '_';
+      const targetItemId = flag.substring(flag.indexOf(sep) + 1).trim();
+      if (inv.hasItem(targetItemId)) return true;
+      if (targetItemId.toLowerCase().startsWith('item_') && inv.hasItem(targetItemId.substring(5))) return true;
+      if (!targetItemId.toLowerCase().startsWith('item_') && inv.hasItem('item_' + targetItemId)) return true;
+      const items = inv.getItems();
+      if (items.some(it => it.id.toLowerCase() === targetItemId.toLowerCase() || it.name.toLowerCase() === targetItemId.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // 2. Exact flag dictionary check
     let res = false;
     if (this.flags.has(flag)) {
       res = this.flags.get(flag)!;
@@ -121,6 +140,16 @@ export class StoryGraphSystem {
         }
       }
     }
+
+    // 3. Fallback: If flag was not explicitly in dictionary, check if it represents a "has<Item>" name
+    if (!res && lower.startsWith('has') && lower.length > 3) {
+      const candidate = lower.substring(3);
+      const items = inv.getItems();
+      if (items.some(it => it.id.toLowerCase().replace(/[^a-z0-9]/g, '').includes(candidate) || it.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(candidate))) {
+        return true;
+      }
+    }
+
     return res;
   }
 

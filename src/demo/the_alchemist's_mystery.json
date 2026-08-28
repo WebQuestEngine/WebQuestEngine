@@ -1314,14 +1314,14 @@
               "text": "Remind me what I should do now?",
               "nextNodeId": "node_2",
               "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3",
-              "notFlag": "hasCrystal"
+              "notFlag": "hasItem:item_crystal"
             },
             {
               "id": "branch_2",
               "text": "Remind me what I should do now?",
               "nextNodeId": "node_2",
               "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3",
-              "requiredFlag": "hasCrystal"
+              "requiredFlag": "hasItem:item_crystal"
             },
             {
               "id": "branch_3",
