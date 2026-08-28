@@ -1305,15 +1305,15 @@
           "speaker": "Master Eldrin",
           "text": "Yes, Sir Ronald?",
           "position": {
-            "x": 483,
-            "y": 719
+            "x": 456.66849263435324,
+            "y": 781.0064209102745
           },
           "choices": [
             {
               "id": "branch_1",
-              "text": "Remind me what I should do now?",
+              "text": "I seek the legendary Elixir of Wisdom!",
               "nextNodeId": "node_2",
-              "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3",
+              "voiceAudioUrl": "assets/c1s2/audio/i seek the legendary elixir of wisdom.mp3",
               "notFlag": "hasItem:item_crystal"
             },
             {
