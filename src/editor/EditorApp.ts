@@ -193,7 +193,7 @@ export class EditorApp {
     EventBus.getInstance().on('editor:load_project', async (newProject: ProjectData) => {
       if (!newProject) return;
       this.project = newProject;
-      RecentProjectsManager.addOrUpdateRecentProject(this.project);
+      RecentProjectsManager.addOrUpdateRecentProject(this.project, FileAccessAdapter.getActiveFilename());
       HistoryManager.getInstance().init(this.project);
       this.syncAllViews();
       await this.startEditorCanvas();
@@ -206,11 +206,12 @@ export class EditorApp {
         try {
           const loadedProject = ProjectSerializer.deserialize(res.content);
           this.project = loadedProject;
-          RecentProjectsManager.addOrUpdateRecentProject(loadedProject);
+          FileAccessAdapter.setActiveFilename(res.filename);
+          RecentProjectsManager.addOrUpdateRecentProject(loadedProject, res.filename);
           HistoryManager.getInstance().init(loadedProject);
           this.syncAllViews();
           await this.startEditorCanvas();
-          this.showNotification(`Loaded project: "${loadedProject.title}" from local file system`);
+          this.showNotification(`Loaded project: "${loadedProject.title}" (${res.filename})`);
         } catch (err: any) {
           alert(`Failed to parse project file: ${err.message}`);
         }
@@ -220,11 +221,12 @@ export class EditorApp {
     EventBus.getInstance().on('editor:save_file', async () => {
       if (!this.project) return;
       const jsonStr = ProjectSerializer.serialize(this.project);
-      const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
-      const success = await FileAccessAdapter.saveProjectFile(jsonStr, filename);
+      const defaultFilename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
+      const targetFilename = FileAccessAdapter.getActiveFilename() || defaultFilename;
+      const success = await FileAccessAdapter.saveProjectFile(jsonStr, targetFilename);
       if (success) {
-        RecentProjectsManager.addOrUpdateRecentProject(this.project);
-        const activeName = FileAccessAdapter.getActiveFilename() || filename;
+        RecentProjectsManager.addOrUpdateRecentProject(this.project, FileAccessAdapter.getActiveFilename());
+        const activeName = FileAccessAdapter.getActiveFilename() || targetFilename;
         this.showNotification(`💾 Saved project to "${activeName}" successfully.`);
       }
     });
@@ -232,11 +234,12 @@ export class EditorApp {
     EventBus.getInstance().on('editor:save_file_as', async () => {
       if (!this.project) return;
       const jsonStr = ProjectSerializer.serialize(this.project);
-      const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
-      const success = await FileAccessAdapter.saveProjectFileAs(jsonStr, filename);
+      const defaultFilename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
+      const targetFilename = FileAccessAdapter.getActiveFilename() || defaultFilename;
+      const success = await FileAccessAdapter.saveProjectFileAs(jsonStr, targetFilename);
       if (success) {
-        RecentProjectsManager.addOrUpdateRecentProject(this.project);
-        const activeName = FileAccessAdapter.getActiveFilename() || filename;
+        RecentProjectsManager.addOrUpdateRecentProject(this.project, FileAccessAdapter.getActiveFilename());
+        const activeName = FileAccessAdapter.getActiveFilename() || targetFilename;
         this.showNotification(`💾 Saved project as "${activeName}" successfully.`);
       }
     });

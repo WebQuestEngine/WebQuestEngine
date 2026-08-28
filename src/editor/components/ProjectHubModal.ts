@@ -354,6 +354,7 @@ export class ProjectHubModal {
           try {
             const content = await file.text();
             const loaded = ProjectSerializer.deserialize(content);
+            FileAccessAdapter.setActiveFilename(file.name);
             this.hide();
             EventBus.getInstance().emit('editor:load_project', loaded);
           } catch (err: any) {
@@ -366,6 +367,8 @@ export class ProjectHubModal {
     // Tab 2: Load Sample Alchemist Quest
     this.overlay.querySelector('#btn-load-sample-alchemist')?.addEventListener('click', () => {
       const sampleCopy = JSON.parse(JSON.stringify(alchemistSampleProject)) as ProjectData;
+      const filename = "the_alchemist's_mystery.json";
+      FileAccessAdapter.setActiveFilename(filename);
       this.hide();
       EventBus.getInstance().emit('editor:load_project', sampleCopy);
     });
@@ -382,6 +385,8 @@ export class ProjectHubModal {
         const pId = (btn as HTMLElement).dataset.projectid;
         const entry = recents.find(r => r.id === pId);
         if (entry && entry.data) {
+          const filename = entry.filename || `${entry.title.toLowerCase().replace(/\s+/g, '_')}.json`;
+          FileAccessAdapter.setActiveFilename(filename);
           this.hide();
           EventBus.getInstance().emit('editor:load_project', entry.data);
         }

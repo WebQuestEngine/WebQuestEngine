@@ -64,6 +64,8 @@ export class FileAccessAdapter {
    * DIRECT SAVE: Writes directly to local disk without opening ANY dialog modal!
    */
   public static async saveProjectFile(content: string, defaultFilename = "quest_project.json"): Promise<boolean> {
+    const targetFilename = this.activeFilename || defaultFilename;
+
     // 1. Try HTML5 File System Handle if available
     if (this.activeFileHandle) {
       try {
@@ -78,15 +80,31 @@ export class FileAccessAdapter {
         await writable.close();
         return true;
       } catch (err: any) {
-        console.warn('Direct File Handle write failed, trying save picker', err);
+        console.warn('Direct File Handle write failed, trying dev server / picker', err);
       }
     }
 
-    // 2. Fallback to save picker if no handle exists yet
+    // 2. Try Dev Server Direct File Save Endpoint (zero dialogs, writes directly to target disk file)
+    try {
+      const parsedData = JSON.parse(content);
+      const res = await fetch('/api/save-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: targetFilename, data: parsedData })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return true;
+      }
+    } catch (err: any) {
+      console.warn('Dev server direct save failed, trying fallback save picker', err);
+    }
+
+    // 3. Fallback to save picker if standalone/no dev server
     if ('showSaveFilePicker' in window) {
       try {
         const handle = await (window as any).showSaveFilePicker({
-          suggestedName: this.activeFilename || defaultFilename,
+          suggestedName: targetFilename,
           types: [
             {
               description: 'Quest Engine Project JSON',
@@ -107,12 +125,12 @@ export class FileAccessAdapter {
       }
     }
 
-    // 3. Fallback to browser blob download
+    // 4. Fallback to browser blob download
     const blob = new Blob([content], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = this.activeFilename || defaultFilename;
+    a.download = targetFilename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

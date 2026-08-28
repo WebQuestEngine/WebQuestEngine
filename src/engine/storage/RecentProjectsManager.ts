@@ -4,6 +4,7 @@ export interface RecentProjectEntry {
   id: string;
   title: string;
   author: string;
+  filename?: string;
   lastModified: number;
   sceneCount: number;
   chapterCount: number;
@@ -29,17 +30,21 @@ export class RecentProjectsManager {
     }
   }
 
-  public static addOrUpdateRecentProject(project: ProjectData): void {
+  public static addOrUpdateRecentProject(project: ProjectData, filename?: string): void {
     if (!project || !project.title) return;
 
     try {
       const existingList = this.getRecentProjects();
       const projectId = this.generateProjectId(project);
+      const existingEntry = existingList.find(p => p.id === projectId || p.title.toLowerCase() === project.title.toLowerCase());
+
+      const finalFilename = filename || existingEntry?.filename || `${project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
 
       const entry: RecentProjectEntry = {
         id: projectId,
         title: project.title.trim() || 'Untitled Quest',
         author: project.author?.trim() || 'Quest Creator',
+        filename: finalFilename,
         lastModified: Date.now(),
         sceneCount: project.scenes?.length || 0,
         chapterCount: project.chapters?.length || 0,

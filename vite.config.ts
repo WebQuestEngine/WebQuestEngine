@@ -13,8 +13,10 @@ function localSavePlugin(): Plugin {
           req.on('end', () => {
             try {
               const payload = JSON.parse(body);
-              const filename = payload.filename || "the_alchemist's_mystery.json";
-              const targetPath = path.resolve(__dirname, 'demo', filename);
+              const filename = payload.filename || "quest_project.json";
+              const rootPath = path.resolve(__dirname, filename);
+              const demoPath = path.resolve(__dirname, 'demo', filename);
+              const targetPath = fs.existsSync(rootPath) ? rootPath : demoPath;
               fs.writeFileSync(targetPath, JSON.stringify(payload.data, null, 2), 'utf8');
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ success: true, filepath: targetPath }));
