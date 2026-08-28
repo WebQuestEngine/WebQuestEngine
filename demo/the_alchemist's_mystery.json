@@ -1238,8 +1238,8 @@
           ],
           "voiceAudioUrl": "assets/c1s2/audio/ah sir ronald you have managed.mp3",
           "position": {
-            "x": 450,
-            "y": 10
+            "x": 648.3354573300908,
+            "y": 10.000000580606816
           },
           "isRouterNode": false,
           "setFlag": "eldrinFirstTalkDone"
@@ -1259,8 +1259,8 @@
           ],
           "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3",
           "position": {
-            "x": 1087.1815685107892,
-            "y": 157.28047176071425
+            "x": 1476.6307570632778,
+            "y": 195.12969083788138
           }
         },
         "node_3": {
@@ -1270,8 +1270,8 @@
           "nextNodeId": "node_end",
           "voiceAudioUrl": "assets/c1s2/audio/feel free to inspect the room but do not touch the explosive compunds.mp3",
           "position": {
-            "x": 1076,
-            "y": 910
+            "x": 1555.1246249888031,
+            "y": 866.000028270661
           }
         },
         "node_end": {
@@ -1280,8 +1280,8 @@
           "text": "May wisdom guide your quest.",
           "voiceAudioUrl": "assets/c1s2/audio/may wisdom guide your quest.mp3",
           "position": {
-            "x": 1643.4654585483781,
-            "y": 640.7769555750594
+            "x": 2133.882805689479,
+            "y": 644.3716688680873
           }
         },
         "router_5": {
@@ -1304,7 +1304,7 @@
           ],
           "position": {
             "x": 10,
-            "y": 55
+            "y": 20.73840543218536
           }
         },
         "node_6": {
@@ -1312,8 +1312,8 @@
           "speaker": "Master Eldrin",
           "text": "Yes, Sir Ronald?",
           "position": {
-            "x": 442.2935997703344,
-            "y": 1007.2111105789451
+            "x": 672.6777345108085,
+            "y": 778.036625607094
           },
           "choices": [
             {
