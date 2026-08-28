@@ -133,18 +133,29 @@ export class UISystem {
     }
   }
 
+  private unsubscribers: (() => void)[] = [];
+
   public init(container: HTMLElement, config?: UIConfig): void {
     this.containerElement = container;
     if (config) {
       this.config = { ...this.config, ...config };
     }
     this.renderUI();
-    EventBus.getInstance().on('inventory:selected', (item: any) => {
-      this.updateCustomCursor(item ? item.iconUrl : null);
-    });
-    EventBus.getInstance().on('inventory:updated', (items: any) => {
-      this.renderInventoryItems(items || InventorySystem.getInstance().getItems());
-    });
+
+    // Clean up previous event subscriptions if re-initialized
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('inventory:selected', (item: any) => {
+        this.updateCustomCursor(item ? item.iconUrl : null);
+      })
+    );
+    this.unsubscribers.push(
+      EventBus.getInstance().on('inventory:updated', (items: any) => {
+        this.renderInventoryItems(items || InventorySystem.getInstance().getItems());
+      })
+    );
   }
 
   public setPreset(preset: UIPresetType): void {
@@ -507,6 +518,9 @@ export class UISystem {
   }
 
   public destroy(): void {
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
+
     if (this.containerElement) {
       const overlays = this.containerElement.querySelectorAll('.quest-ui-overlay, .speech-subtitle-box, .ui-subtitle-bar');
       overlays.forEach(el => el.remove());

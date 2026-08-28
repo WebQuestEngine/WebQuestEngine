@@ -1209,7 +1209,7 @@
     {
       "id": "dlg_eldrin",
       "title": "Conversation with Master Eldrin",
-      "startNodeId": "node_1",
+      "startNodeId": "router_5",
       "nodes": {
         "node_1": {
           "id": "node_1",
@@ -1313,10 +1313,18 @@
               "id": "branch_1",
               "text": "Remind me what I should do now?",
               "nextNodeId": "node_2",
-              "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3"
+              "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3",
+              "notFlag": "hasCrystal"
             },
             {
               "id": "branch_2",
+              "text": "Remind me what I should do now?",
+              "nextNodeId": "node_2",
+              "voiceAudioUrl": "assets/c1s2/audio/Remind me what I should do now.mp3",
+              "requiredFlag": "hasCrystal"
+            },
+            {
+              "id": "branch_3",
               "text": "Just exploring your impressive alchemy setup.",
               "nextNodeId": "node_3",
               "voiceAudioUrl": "assets/c1s2/audio/Just exploring your impressive alchemy setup.mp3"

@@ -23,6 +23,7 @@ export class DialogSystem {
   }
 
   private autoAdvanceChoiceId: string | null = null;
+  private activeFlagGetter: ((flag: string) => boolean) | null = null;
 
   public clear(): void {
     AudioSystem.getInstance().stopVoice();
@@ -30,6 +31,7 @@ export class DialogSystem {
     this.currentTree = null;
     this.currentNode = null;
     this.autoAdvanceChoiceId = null;
+    this.activeFlagGetter = null;
     this.isExecuting = false;
   }
 
@@ -40,8 +42,12 @@ export class DialogSystem {
   public startDialog(dialogId: string, getFlagState?: (flag: string) => boolean): boolean {
     const tree = this.dialogs.get(dialogId);
     if (!tree) {
-      console.warn(`Dialog ID '${dialogId}' not found.`);
+      console.warn(`[DialogSystem] ⚠️ Dialog ID '${dialogId}' not found.`);
       return false;
+    }
+
+    if (getFlagState) {
+      this.activeFlagGetter = getFlagState;
     }
 
     this.currentTree = tree;
@@ -49,54 +55,126 @@ export class DialogSystem {
     this.autoAdvanceChoiceId = null;
     this.isExecuting = true;
 
+    console.group(`%c[DialogSystem] 💬 Started Dialog: "%c${tree.id}%c" (Start Node: "${tree.startNodeId}")`, 'color: #8b5cf6; font-weight: bold;', 'color: #38bdf8; font-weight: bold;', 'color: #8b5cf6; font-weight: bold;');
+
     EventBus.getInstance().emit('dialog:start', { tree, node: this.currentNode });
-    this.presentNode(getFlagState);
+    this.presentNode(getFlagState || this.activeFlagGetter || undefined);
     return true;
   }
 
   public presentNode(getFlagState?: (flag: string) => boolean): void {
+    const flagGetter = getFlagState || this.activeFlagGetter || undefined;
+
     if (!this.currentNode || !this.currentTree) {
+      console.log('%c[DialogSystem] ⏹️ No current node or tree, ending dialog.', 'color: #8b5cf6;');
       this.endDialog();
       return;
     }
 
+    console.log(
+      `%c[DialogSystem] 📍 Presenting Node: "%c${this.currentNode.id}%c" | Speaker: "%c${this.currentNode.speaker || 'Narrator'}%c" | Type: %c${this.currentNode.isRouterNode ? '🔀 Router Node' : '💬 Speech Node'}%c`,
+      'color: #94a3b8;',
+      'color: #38bdf8; font-weight: bold;',
+      'color: #94a3b8;',
+      'color: #f59e0b; font-weight: bold;',
+      'color: #94a3b8;',
+      this.currentNode.isRouterNode ? 'color: #a855f7; font-weight: bold;' : 'color: #10b981; font-weight: bold;',
+      'color: #94a3b8;'
+    );
+
     // 1. Evaluate per-node flag testing conditions (optional)
-    if (this.currentNode.requiredFlag && getFlagState && !getFlagState(this.currentNode.requiredFlag)) {
-      if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
-        this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
-        this.presentNode(getFlagState);
+    if (this.currentNode.requiredFlag && flagGetter) {
+      const hasFlag = flagGetter(this.currentNode.requiredFlag);
+      console.log(
+        `  🔍 Node requiredFlag check: "%c${this.currentNode.requiredFlag}%c" -> %c${hasFlag ? 'PASS (True)' : 'FAIL (False)'}%c`,
+        'color: #f59e0b; font-weight: bold;',
+        'color: inherit;',
+        hasFlag ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+        'color: inherit;'
+      );
+      if (!hasFlag) {
+        if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+          console.log(`  ↪️ Node skipped due to requiredFlag, advancing to fallback nextNodeId: "${this.currentNode.nextNodeId}"`);
+          this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+          this.presentNode(flagGetter);
+          return;
+        }
+        console.log('  ⏹️ Node skipped due to requiredFlag and no fallback nextNodeId, ending dialog.');
+        this.endDialog();
         return;
       }
-      this.endDialog();
-      return;
     }
-    if (this.currentNode.notFlag && getFlagState && getFlagState(this.currentNode.notFlag)) {
-      if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
-        this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
-        this.presentNode(getFlagState);
+
+    if (this.currentNode.notFlag && flagGetter) {
+      const hasFlag = flagGetter(this.currentNode.notFlag);
+      console.log(
+        `  🔍 Node notFlag check: "%c${this.currentNode.notFlag}%c" -> %c${!hasFlag ? 'PASS (False)' : 'FAIL (True - blocked)'}%c`,
+        'color: #f59e0b; font-weight: bold;',
+        'color: inherit;',
+        !hasFlag ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+        'color: inherit;'
+      );
+      if (hasFlag) {
+        if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+          console.log(`  ↪️ Node skipped due to notFlag, advancing to fallback nextNodeId: "${this.currentNode.nextNodeId}"`);
+          this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
+          this.presentNode(flagGetter);
+          return;
+        }
+        console.log('  ⏹️ Node skipped due to notFlag and no fallback nextNodeId, ending dialog.');
+        this.endDialog();
         return;
       }
-      this.endDialog();
-      return;
     }
 
     // 2. Router Node Processing (Invisible logic router: selects first matching condition & auto-starts conversation)
     if (this.currentNode.isRouterNode) {
       if (this.currentNode.setFlag) {
+        console.log(`  🚩 Router Node setting flag: "${this.currentNode.setFlag}"`);
         EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
       }
       if (this.currentNode.giveItem) {
+        console.log(`  🎒 Router Node giving item: "${this.currentNode.giveItem}"`);
         EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
       }
 
+      console.group(`%c[Dialog Router] 🔀 Evaluating routes for Router Node "${this.currentNode.id}" (${this.currentNode.choices?.length || 0} routes)`, 'color: #a855f7; font-weight: bold;');
+
       let matchingTargetNodeId: string | null = null;
       if (this.currentNode.choices && this.currentNode.choices.length > 0) {
-        for (const choice of this.currentNode.choices) {
+        for (let idx = 0; idx < this.currentNode.choices.length; idx++) {
+          const choice = this.currentNode.choices[idx];
           let valid = true;
-          if (choice.requiredFlag && getFlagState && !getFlagState(choice.requiredFlag)) valid = false;
-          if (choice.notFlag && getFlagState && getFlagState(choice.notFlag)) valid = false;
+          let reqPass = true;
+          let notPass = true;
+
+          if (choice.requiredFlag && flagGetter) {
+            reqPass = flagGetter(choice.requiredFlag);
+            if (!reqPass) valid = false;
+          }
+          if (choice.notFlag && flagGetter) {
+            const hasNot = flagGetter(choice.notFlag);
+            if (hasNot) {
+              notPass = false;
+              valid = false;
+            }
+          }
+
+          console.log(
+            `  ↳ Route #${idx + 1} -> Target Node: "%c${choice.nextNodeId || '(None)'}%c" | reqFlag: "%c${choice.requiredFlag || 'None'}%c" (${choice.requiredFlag ? (reqPass ? '✅ PASS' : '❌ FAIL') : 'N/A'}) | notFlag: "%c${choice.notFlag || 'None'}%c" (${choice.notFlag ? (notPass ? '✅ PASS' : '❌ FAIL') : 'N/A'}) -> %c${valid ? 'MATCHED' : 'SKIPPED'}%c`,
+            'color: #38bdf8; font-weight: bold;',
+            'color: inherit;',
+            'color: #f59e0b;',
+            'color: inherit;',
+            'color: #f59e0b;',
+            'color: inherit;',
+            valid ? 'color: #10b981; font-weight: bold;' : 'color: #94a3b8;',
+            'color: inherit;'
+          );
+
           if (valid) {
             matchingTargetNodeId = choice.nextNodeId;
+            console.log(`  🎯 Route #${idx + 1} chosen! Target Node: "${matchingTargetNodeId}"`);
             break;
           }
         }
@@ -104,33 +182,62 @@ export class DialogSystem {
 
       if (!matchingTargetNodeId && this.currentNode.nextNodeId) {
         matchingTargetNodeId = this.currentNode.nextNodeId;
+        console.log(`  ↩️ No route condition matched. Using default fallback nextNodeId: "${matchingTargetNodeId}"`);
       }
+
+      console.groupEnd();
 
       if (matchingTargetNodeId && this.currentTree.nodes[matchingTargetNodeId]) {
         this.currentNode = this.currentTree.nodes[matchingTargetNodeId];
-        this.presentNode(getFlagState);
+        this.presentNode(flagGetter);
         return;
       }
 
+      console.warn(`[Dialog Router] ⚠️ Router Node "${this.currentNode.id}" could not find a valid matching target node (target: "${matchingTargetNodeId}"). Ending dialog.`);
       this.endDialog();
       return;
     }
 
     // 3. Regular Speech Node Processing
     if (this.currentNode.setFlag) {
+      console.log(`  🚩 Speech Node setting flag: "${this.currentNode.setFlag}"`);
       EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
     }
     if (this.currentNode.giveItem) {
+      console.log(`  🎒 Speech Node giving item: "${this.currentNode.giveItem}"`);
       EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
     }
 
     // Filter available choices based on required & not flags
     let availableChoices: DialogChoice[] = [];
-    if (this.currentNode.choices) {
-      availableChoices = this.currentNode.choices.filter(choice => {
-        if (choice.requiredFlag && getFlagState && !getFlagState(choice.requiredFlag)) return false;
-        if (choice.notFlag && getFlagState && getFlagState(choice.notFlag)) return false;
-        return true;
+    if (this.currentNode.choices && this.currentNode.choices.length > 0) {
+      console.log(`  💬 Evaluating ${this.currentNode.choices.length} response choices:`);
+      availableChoices = this.currentNode.choices.filter((choice, idx) => {
+        let valid = true;
+        let reqPass = true;
+        let notPass = true;
+
+        if (choice.requiredFlag && flagGetter) {
+          reqPass = flagGetter(choice.requiredFlag);
+          if (!reqPass) valid = false;
+        }
+        if (choice.notFlag && flagGetter) {
+          const hasNot = flagGetter(choice.notFlag);
+          if (hasNot) {
+            notPass = false;
+            valid = false;
+          }
+        }
+
+        console.log(
+          `    [Option #${idx + 1}] "%c${choice.text}%c" -> reqFlag: "${choice.requiredFlag || 'None'}" (${choice.requiredFlag ? (reqPass ? 'PASS' : 'FAIL') : 'N/A'}), notFlag: "${choice.notFlag || 'None'}" (${choice.notFlag ? (notPass ? 'PASS' : 'FAIL') : 'N/A'}) -> %c${valid ? 'AVAILABLE' : 'FILTERED OUT'}%c`,
+          'color: #38bdf8;',
+          'color: inherit;',
+          valid ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+          'color: inherit;'
+        );
+
+        return valid;
       });
     }
 
@@ -145,6 +252,7 @@ export class DialogSystem {
 
     if (availableChoices.length > 0 && !isInteractive) {
       this.autoAdvanceChoiceId = availableChoices[0].id;
+      console.log(`  ⏩ Non-interactive choice auto-advancing to choice ID: "${availableChoices[0].id}"`);
       EventBus.getInstance().emit('dialog:node', {
         speaker: this.currentNode.speaker,
         text: this.currentNode.text,
@@ -167,15 +275,30 @@ export class DialogSystem {
   private pendingNextNodeId: string | null = null;
 
   public selectChoice(choiceId: string, getFlagState?: (flag: string) => boolean): void {
+    const flagGetter = getFlagState || this.activeFlagGetter || undefined;
     if (!this.currentNode || !this.currentTree) return;
 
     const choice = this.currentNode.choices?.find(c => c.id === choiceId);
-    if (!choice) return;
+    if (!choice) {
+      console.warn(`[DialogSystem] ⚠️ Selected choice ID "${choiceId}" not found in current node.`);
+      return;
+    }
+
+    console.log(
+      `%c[DialogSystem] 👤 Player Selected Choice: "%c${choice.text}%c" (Choice ID: "${choiceId}") -> Target Node: "%c${choice.nextNodeId || '(None)'}%c"`,
+      'color: #38bdf8;',
+      'color: #f59e0b; font-weight: bold;',
+      'color: #38bdf8;',
+      'color: #10b981; font-weight: bold;',
+      'color: #38bdf8;'
+    );
 
     if (choice.setFlag) {
+      console.log(`  🚩 Choice setting flag: "${choice.setFlag}"`);
       EventBus.getInstance().emit('flag:set', choice.setFlag);
     }
     if (choice.giveItem) {
+      console.log(`  🎒 Choice giving item: "${choice.giveItem}"`);
       EventBus.getInstance().emit('inventory:give', choice.giveItem);
     }
 
@@ -199,6 +322,8 @@ export class DialogSystem {
   }
 
   public advanceNextNode(getFlagState?: (flag: string) => boolean): void {
+    const flagGetter = getFlagState || this.activeFlagGetter || undefined;
+
     if (!this.currentTree) {
       this.endDialog();
       return;
@@ -208,8 +333,9 @@ export class DialogSystem {
       const nextId = this.pendingNextNodeId;
       this.pendingNextNodeId = null;
       if (this.currentTree.nodes[nextId]) {
+        console.log(`%c[DialogSystem] ⏩ Advancing to pending choice target node: "${nextId}"`, 'color: #38bdf8;');
         this.currentNode = this.currentTree.nodes[nextId];
-        this.presentNode(getFlagState);
+        this.presentNode(flagGetter);
         return;
       }
     }
@@ -217,16 +343,20 @@ export class DialogSystem {
     if (this.autoAdvanceChoiceId) {
       const choiceId = this.autoAdvanceChoiceId;
       this.autoAdvanceChoiceId = null;
-      this.selectChoice(choiceId, getFlagState);
+      console.log(`%c[DialogSystem] ⏩ Executing auto-advance choice: "${choiceId}"`, 'color: #38bdf8;');
+      this.selectChoice(choiceId, flagGetter);
       return;
     }
 
     if (this.currentNode && this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
+      console.log(`%c[DialogSystem] ⏩ Advancing to nextNodeId: "${this.currentNode.nextNodeId}"`, 'color: #38bdf8;');
       this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
-      this.presentNode(getFlagState);
+      this.presentNode(flagGetter);
     } else if (this.currentNode && this.currentNode.choices && this.currentNode.choices.length > 0) {
-      this.selectChoice(this.currentNode.choices[0].id, getFlagState);
+      console.log(`%c[DialogSystem] ⏩ Auto-selecting first choice: "${this.currentNode.choices[0].id}"`, 'color: #38bdf8;');
+      this.selectChoice(this.currentNode.choices[0].id, flagGetter);
     } else {
+      console.log('%c[DialogSystem] ⏹️ No more nodes in dialog sequence.', 'color: #8b5cf6;');
       this.endDialog();
     }
   }
@@ -237,6 +367,11 @@ export class DialogSystem {
     this.currentTree = null;
     this.currentNode = null;
     this.autoAdvanceChoiceId = null;
+    this.activeFlagGetter = null;
+    console.log('%c[DialogSystem] ⏹️ Dialog Ended.', 'color: #8b5cf6; font-weight: bold;');
+    try {
+      console.groupEnd();
+    } catch (_) {}
     EventBus.getInstance().emit('dialog:end');
   }
 

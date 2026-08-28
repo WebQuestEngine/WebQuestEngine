@@ -78,7 +78,7 @@ export class DialogEditor {
           </div>
 
           <div id="dialog-graph-transform-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; transform-origin: 0 0;">
-            <svg id="dialog-connections-svg" style="position:absolute; top:0; left:0; width:8000px; height:8000px; pointer-events:none; z-index:1;">
+            <svg id="dialog-connections-svg" style="position:absolute; top:0; left:0; width:8000px; height:8000px; pointer-events:none; z-index:3;">
               <defs>
                 <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
@@ -358,8 +358,18 @@ export class DialogEditor {
                         <div style="display:flex; gap:4px; align-items:center; margin-bottom:4px;">
                           <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.text}" placeholder="${isRouter ? 'Branch Condition Description' : 'Choice Text'}" style="flex:1; font-size:0.75rem; font-weight:600;" />
                           <span style="font-size:0.65rem; color:var(--text-muted);">➔</span>
-                          <input type="text" class="form-input choice-next" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.nextNodeId}" placeholder="Next ID" style="width:75px; font-size:0.75rem;" />
-                          <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;">✕</button>
+                          <select class="form-input choice-next-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:115px; font-size:0.7rem; color:${c.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Select target node to connect">
+                            <option value="">-- End / None --</option>
+                            ${Object.values(tree.nodes).map(targetN => `
+                              <option value="${targetN.id}" ${c.nextNodeId === targetN.id ? 'selected' : ''}>
+                                ${targetN.isRouterNode ? '🔀 ' : '💬 '}${targetN.id} (${targetN.speaker || 'Narrator'})
+                              </option>
+                            `).join('')}
+                          </select>
+                          ${c.nextNodeId ? `
+                            <button class="btn btn-disconnect-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.65rem; color:#f59e0b;" title="✂️ Disconnect this wire">✂️</button>
+                          ` : ''}
+                          <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Choice">✕</button>
                         </div>
                         
                         <!-- Choice Branch Flags -->
@@ -379,14 +389,24 @@ export class DialogEditor {
                         ` : ''}
                         
                         <!-- Response Choice Output Port (Right Edge) -->
-                        <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:${isRouter ? '#c084fc' : '#fbbf24'}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${isRouter ? 'rgba(192,132,252,0.9)' : 'rgba(251,191,36,0.9)'}; z-index:10;" title="Click & Drag arrow to connect to target node Input Port"></div>
+                        <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:${isRouter ? '#c084fc' : '#fbbf24'}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${isRouter ? 'rgba(192,132,252,0.9)' : 'rgba(251,191,36,0.9)'}; z-index:10;" title="Click & Drag arrow to connect or reconnect to any target node Input Port"></div>
                       </div>
                     `).join('')}
                   </div>
                 ` : `
                   <div style="display:flex; gap:6px; align-items:center;">
-                    <span style="font-size:0.65rem; color:var(--text-muted);">Default Next Node:</span>
-                    <input type="text" class="form-input node-next-id" data-nodeid="${node.id}" value="${node.nextNodeId || ''}" placeholder="Node ID or empty for end" style="flex:1; font-size:0.75rem;" />
+                    <span style="font-size:0.65rem; color:var(--text-muted); white-space:nowrap;">Default Next Node:</span>
+                    <select class="form-input node-next-select" data-nodeid="${node.id}" style="flex:1; font-size:0.75rem; color:${node.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Select target node to connect">
+                      <option value="">-- (None - End Dialogue) --</option>
+                      ${Object.values(tree.nodes).filter(targetN => targetN.id !== node.id).map(targetN => `
+                        <option value="${targetN.id}" ${node.nextNodeId === targetN.id ? 'selected' : ''}>
+                          ${targetN.isRouterNode ? '🔀 ' : '💬 '}${targetN.id} (${targetN.speaker || 'Narrator'})
+                        </option>
+                      `).join('')}
+                    </select>
+                    ${node.nextNodeId ? `
+                      <button class="btn btn-disconnect-node-next" data-nodeid="${node.id}" style="padding:2px 6px; font-size:0.65rem; color:#f59e0b;" title="✂️ Disconnect this wire">✂️ Disconnect</button>
+                    ` : ''}
                   </div>
                 `}
               </div>
@@ -451,7 +471,19 @@ export class DialogEditor {
             const strokeColor = isRouter ? '#c084fc' : '#fbbf24';
             const markerId = isRouter ? 'arrow-purple' : 'arrow';
 
-            pathsHTML += `<path d="${pathData}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-dasharray="${sourceNode.isChoiceInteractive === false ? '4,4' : 'none'}" marker-end="url(#${markerId})" opacity="0.9" />`;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+
+            pathsHTML += `
+              <g class="wire-group">
+                <path d="${pathData}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-dasharray="${sourceNode.isChoiceInteractive === false ? '4,4' : 'none'}" marker-end="url(#${markerId})" opacity="0.9" />
+                <g class="wire-delete-btn" data-srcnode="${sourceNode.id}" data-cidx="${cIdx}" style="cursor:pointer; pointer-events:all;" transform="translate(${midX}, ${midY})">
+                  <title>Click to disconnect wire (from "${sourceNode.id}" to "${c.nextNodeId}")</title>
+                  <circle r="10" fill="#0f172a" stroke="#ef4444" stroke-width="2" />
+                  <text text-anchor="middle" dy="3.5" font-size="11" fill="#ef4444" font-weight="900">✕</text>
+                </g>
+              </g>
+            `;
           }
         });
       } else if (sourceNode.nextNodeId && nodes[sourceNode.nextNodeId]) {
@@ -469,7 +501,20 @@ export class DialogEditor {
 
           const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
           const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-          pathsHTML += `<path d="${pathData}" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrow-blue)" opacity="0.9" />`;
+
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          pathsHTML += `
+            <g class="wire-group">
+              <path d="${pathData}" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrow-blue)" opacity="0.9" />
+              <g class="wire-delete-btn" data-srcnode="${sourceNode.id}" style="cursor:pointer; pointer-events:all;" transform="translate(${midX}, ${midY})">
+                <title>Click to disconnect wire (from "${sourceNode.id}" to "${sourceNode.nextNodeId}")</title>
+                <circle r="10" fill="#0f172a" stroke="#ef4444" stroke-width="2" />
+                <text text-anchor="middle" dy="3.5" font-size="11" fill="#ef4444" font-weight="900">✕</text>
+              </g>
+            </g>
+          `;
         }
       }
     }
@@ -479,6 +524,29 @@ export class DialogEditor {
     }
 
     svgEl.innerHTML = pathsHTML;
+
+    // Attach click listeners on wire delete buttons directly in SVG
+    svgEl.querySelectorAll('.wire-delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const target = e.currentTarget as HTMLElement;
+        const srcNodeId = target.dataset.srcnode;
+        const cIdxStr = target.dataset.cidx;
+
+        if (srcNodeId && tree.nodes[srcNodeId]) {
+          if (cIdxStr !== undefined && cIdxStr !== '') {
+            const cIdx = parseInt(cIdxStr);
+            if (tree.nodes[srcNodeId].choices && tree.nodes[srcNodeId].choices![cIdx]) {
+              tree.nodes[srcNodeId].choices![cIdx].nextNodeId = '';
+            }
+          } else {
+            tree.nodes[srcNodeId].nextNodeId = undefined;
+          }
+          this.renderTree();
+          EventBus.getInstance().emit('editor:project_updated');
+        }
+      });
+    });
   }
 
   private attachEvents(tree: DialogTree): void {
@@ -774,12 +842,24 @@ export class DialogEditor {
       });
     });
 
-    // Next Node ID Edit
-    this.element.querySelectorAll('.node-next-id').forEach(input => {
-      input.addEventListener('input', (e) => {
-        const nid = (input as HTMLElement).dataset.nodeid!;
+    // Next Node Select Dropdown (Reconnect)
+    this.element.querySelectorAll('.node-next-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (sel as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nid]) {
-          tree.nodes[nid].nextNodeId = (input as HTMLInputElement).value.trim() || undefined;
+          tree.nodes[nid].nextNodeId = (e.target as HTMLSelectElement).value.trim() || undefined;
+          this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Next Node Disconnect Button
+    this.element.querySelectorAll('.btn-disconnect-node-next').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const nid = (e.currentTarget as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].nextNodeId = undefined;
           this.renderTree();
           emitUpdate();
         }
@@ -831,14 +911,28 @@ export class DialogEditor {
       });
     });
 
-    // Choice Next Node ID Edit
-    this.element.querySelectorAll('.choice-next').forEach(input => {
-      input.addEventListener('input', (e) => {
-        const target = e.target as HTMLInputElement;
+    // Choice Next Node Select Dropdown (Reconnect)
+    this.element.querySelectorAll('.choice-next-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((sel as HTMLElement).dataset.cidx!);
+        if (tree.nodes[nid]?.choices?.[cIdx]) {
+          tree.nodes[nid].choices![cIdx].nextNodeId = target.value.trim();
+          this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Choice Disconnect Button
+    this.element.querySelectorAll('.btn-disconnect-choice').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
         const nid = target.dataset.nodeid!;
         const cIdx = parseInt(target.dataset.cidx!);
         if (tree.nodes[nid]?.choices?.[cIdx]) {
-          tree.nodes[nid].choices![cIdx].nextNodeId = target.value.trim();
+          tree.nodes[nid].choices![cIdx].nextNodeId = '';
           this.renderTree();
           emitUpdate();
         }

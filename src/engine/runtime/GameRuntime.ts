@@ -64,34 +64,53 @@ export class GameRuntime {
   private currentHoverTarget: Hotspot | Character | null = null;
   private targetActionIndex = 0;
   private lastMouseWorldPos: Vector2D | null = null;
+  private unsubscribers: (() => void)[] = [];
 
   private setupEventHandlers(): void {
     // Scene change
-    EventBus.getInstance().on('scene:change', async (payload: any) => {
-      const sceneData = payload.scene || payload;
-      await this.loadScene(sceneData, payload.spawnPoint);
-    });
+    this.unsubscribers.push(
+      EventBus.getInstance().on('scene:change', async (payload: any) => {
+        if (this.isDestroyed) return;
+        const sceneData = payload.scene || payload;
+        await this.loadScene(sceneData, payload.spawnPoint);
+      })
+    );
 
     // Inventory give & flag set
-    EventBus.getInstance().on('inventory:give', (itemId: string) => {
-      this.context.inventory.addItem(itemId);
-    });
+    this.unsubscribers.push(
+      EventBus.getInstance().on('inventory:give', (itemId: string) => {
+        if (this.isDestroyed) return;
+        this.context.inventory.addItem(itemId);
+      })
+    );
 
-    EventBus.getInstance().on('flag:set', (flag: string) => {
-      this.context.story.setFlag(flag, true);
-    });
+    this.unsubscribers.push(
+      EventBus.getInstance().on('flag:set', (flag: string) => {
+        if (this.isDestroyed) return;
+        this.context.story.setFlag(flag, true);
+      })
+    );
 
     // Dialogue presentation
-    EventBus.getInstance().on('dialog:node', (data: any) => {
-      this.renderDialogOverlay(data);
-    });
+    this.unsubscribers.push(
+      EventBus.getInstance().on('dialog:node', (data: any) => {
+        if (this.isDestroyed) return;
+        this.renderDialogOverlay(data);
+      })
+    );
 
-    EventBus.getInstance().on('dialog:end', () => {
-      if (this.dialogOverlayEl) {
-        this.dialogOverlayEl.remove();
-        this.dialogOverlayEl = null;
-      }
-    });
+    this.unsubscribers.push(
+      EventBus.getInstance().on('dialog:end', () => {
+        if (this.isDestroyed) return;
+        if (this.dialogOverlayEl) {
+          this.dialogOverlayEl.remove();
+          this.dialogOverlayEl = null;
+        }
+        if (this.containerElement) {
+          this.containerElement.querySelectorAll('.dialog-box-overlay').forEach(el => el.remove());
+        }
+      })
+    );
   }
 
   private setupInputListeners(): void {
@@ -702,14 +721,17 @@ export class GameRuntime {
     }
 
     if (action.setFlag) {
+      console.log(`%c[GameRuntime] ⚡ Action executing setFlag: "${action.setFlag}"`, 'color: #10b981; font-weight: bold;');
       this.context.story.setFlag(action.setFlag, true);
     }
 
     if (action.giveItemId) {
+      console.log(`%c[GameRuntime] 🎒 Action giving itemId: "${action.giveItemId}"`, 'color: #38bdf8; font-weight: bold;');
       this.context.inventory.addItem(action.giveItemId);
     }
 
     if (action.dialogId) {
+      console.log(`%c[GameRuntime] 💬 Action triggering dialog: "${action.dialogId}"`, 'color: #8b5cf6; font-weight: bold;');
       this.context.dialog.startDialog(action.dialogId, (flag) => this.context.story.getFlag(flag));
     }
 
@@ -762,10 +784,14 @@ export class GameRuntime {
   }
 
   private renderDialogOverlay(data: any): void {
+    if (this.isDestroyed || !this.containerElement) return;
+
     if (this.dialogOverlayEl) {
       this.dialogOverlayEl.remove();
       this.dialogOverlayEl = null;
     }
+    // Remove any orphaned dialog overlays in container
+    this.containerElement.querySelectorAll('.dialog-box-overlay').forEach(el => el.remove());
 
     const screenPos = this.getCharacterScreenPos(data.speaker);
     const overlay = document.createElement('div');
@@ -849,9 +875,16 @@ export class GameRuntime {
   public destroy(): void {
     this.isDestroyed = true;
 
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
+
     if (this.dialogOverlayEl) {
       this.dialogOverlayEl.remove();
       this.dialogOverlayEl = null;
+    }
+
+    if (this.containerElement) {
+      this.containerElement.querySelectorAll('.dialog-box-overlay').forEach(el => el.remove());
     }
 
     this.context.destroy();

@@ -87,6 +87,14 @@ export class StoryGraphSystem {
   }
 
   public setFlag(flag: string, value = true): void {
+    console.log(
+      `%c[StoryGraphSystem] 🚩 Flag Set: %c"${flag}"%c = %c${value}%c`,
+      'color: #06b6d4; font-weight: bold;',
+      'color: #f59e0b; font-weight: bold;',
+      'color: #06b6d4; font-weight: bold;',
+      value ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+      'color: #06b6d4; font-weight: bold;'
+    );
     this.flags.set(flag, value);
     if (flag.includes(':')) {
       const bare = flag.split(':')[1];
@@ -99,19 +107,21 @@ export class StoryGraphSystem {
 
   public getFlag(flag: string): boolean {
     if (!flag) return false;
-    if (this.flags.has(flag)) return this.flags.get(flag)!;
-
-    if (flag.includes(':')) {
+    let res = false;
+    if (this.flags.has(flag)) {
+      res = this.flags.get(flag)!;
+    } else if (flag.includes(':')) {
       const bare = flag.split(':')[1];
-      if (this.flags.has(bare)) return this.flags.get(bare)!;
+      if (this.flags.has(bare)) res = this.flags.get(bare)!;
     } else {
       for (const [key, val] of this.flags.entries()) {
         if (key.endsWith(':' + flag) && val) {
-          return true;
+          res = true;
+          break;
         }
       }
     }
-    return false;
+    return res;
   }
 
   public getKnownFlags(): { scope: string; flag: string; label: string }[] {
