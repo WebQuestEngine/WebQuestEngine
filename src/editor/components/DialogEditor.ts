@@ -31,6 +31,7 @@ export class DialogEditor {
   private autoPanVy: number = 0;
   private lastClientX: number = 0;
   private lastClientY: number = 0;
+  private isGlobalEventsAttached = false;
 
   constructor() {
     this.element = document.createElement('div');
@@ -54,6 +55,136 @@ export class DialogEditor {
   public hide(): void {
     this.stopAutoPan();
     this.element.classList.add('hidden');
+  }
+
+  private getAllScenes(): SceneData[] {
+    return this.project?.scenes || [];
+  }
+
+  private getAllHotspots(): { id: string; name: string; sceneId: string; sceneName: string }[] {
+    const list: { id: string; name: string; sceneId: string; sceneName: string }[] = [];
+    if (this.project?.scenes) {
+      for (const sc of this.project.scenes) {
+        for (const hs of sc.hotspots || []) {
+          list.push({ id: hs.id, name: hs.name, sceneId: sc.id, sceneName: sc.name });
+        }
+      }
+    }
+    return list;
+  }
+
+  private getAllCharacters(): { id: string; name: string; sceneId: string; sceneName: string }[] {
+    const list: { id: string; name: string; sceneId: string; sceneName: string }[] = [];
+    if (this.project?.scenes) {
+      for (const sc of this.project.scenes) {
+        for (const ch of sc.characters || []) {
+          list.push({ id: ch.id, name: ch.name, sceneId: sc.id, sceneName: sc.name });
+        }
+      }
+    }
+    return list;
+  }
+
+  private getAllItems(): { id: string; name: string }[] {
+    return (this.project?.items || []).map(it => ({ id: it.id, name: it.name }));
+  }
+
+  private getEventsForScope(scope: string): { id: string; label: string }[] {
+    switch (scope) {
+      case 'game':
+        return [
+          { id: 'start', label: '🎮 On Game Start / Launch' },
+          { id: 'end', label: '🏁 On Game End / Victory' },
+          { id: 'loaded', label: '💾 On Save Game Loaded' }
+        ];
+      case 'scene':
+        return [
+          { id: 'enter', label: '🚪 On Enter Scene' },
+          { id: 'first_enter', label: '✨ On First Time Enter Scene' },
+          { id: 'exit', label: '🚶 On Exit Scene' }
+        ];
+      case 'hotspot':
+        return [
+          { id: 'interact', label: '⚡ On Any Interaction' },
+          { id: 'look_at', label: '👁️ On Look At' },
+          { id: 'use', label: '✋ On Use / Activate' },
+          { id: 'talk_to', label: '💬 On Talk To' },
+          { id: 'pick_up', label: '🎒 On Pick Up / Take' },
+          { id: 'open', label: '🔓 On Open' },
+          { id: 'close', label: '🔒 On Close' }
+        ];
+      case 'character':
+        return [
+          { id: 'talk_to', label: '💬 On Talk To' },
+          { id: 'interact', label: '⚡ On Any Interaction' },
+          { id: 'arrived_at', label: '📍 On Arrived At Target' },
+          { id: 'anim_completed', label: '🎬 On Animation Finished' }
+        ];
+      case 'item':
+        return [
+          { id: 'use', label: '✋ On Use Item' },
+          { id: 'examine', label: '🔍 On Examine Item' },
+          { id: 'obtained', label: '🎁 On Item Obtained' },
+          { id: 'combine', label: '🔗 On Item Combined' }
+        ];
+      default:
+        return [{ id: 'trigger', label: '⚡ On Trigger' }];
+    }
+  }
+
+  private deleteSequence(treeId: string): void {
+    if (!this.project) return;
+    const tree = this.project.dialogs.find(d => d.id === treeId);
+    if (!tree) return;
+
+    const confirmed = window.confirm(`Are you sure you want to delete the sequence "${tree.title || tree.id}"?\n\nThis will remove all its nodes and connections. This action cannot be undone.`);
+    if (!confirmed) return;
+
+    this.project.dialogs = this.project.dialogs.filter(d => d.id !== treeId);
+    if (this.project.dialogs.length === 0) {
+      const defaultTree: DialogTree = {
+        id: `dlg_${Date.now()}`,
+        title: 'New Sequence',
+        startNodeId: 'beat_1',
+        nodes: {
+          beat_1: {
+            id: 'beat_1',
+            speaker: 'Hero',
+            text: 'Sequence starting line.',
+            position: { x: 60, y: 60 }
+          }
+        }
+      };
+      this.project.dialogs.push(defaultTree);
+      this.selectedTreeId = defaultTree.id;
+    } else {
+      this.selectedTreeId = this.project.dialogs[0].id;
+    }
+
+    this.renderTree();
+    EventBus.getInstance().emit('editor:project_updated');
+  }
+
+  private escapeHtml(str: string): string {
+    return (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  private findDialogScene(dTree: DialogTree): SceneData | null {
+    if (!this.project || !this.project.scenes) return null;
+    for (const sc of this.project.scenes) {
+      for (const ch of sc.characters || []) {
+        if (ch.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && dTree.id.includes(ch.id.replace(/^npc_/, '')))) return sc;
+      }
+      for (const hs of sc.hotspots || []) {
+        if (hs.actions?.some(a => a.dialogId === dTree.id)) return sc;
+      }
+    }
+    return this.project.scenes[0] || null;
   }
 
   private getAllProjectActors(): { id: string; name: string; animations: string[] }[] {
@@ -171,13 +302,237 @@ export class DialogEditor {
     }
   }
 
+  private getActiveTree(): DialogTree | null {
+    if (!this.project || !this.selectedTreeId) return null;
+    return this.project.dialogs.find(d => d.id === this.selectedTreeId) || null;
+  }
+
+  private findTargetNodeIdAt(clientX: number, clientY: number, excludeNodeId?: string | null): string | null {
+    const dropTarget = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    if (dropTarget) {
+      // 1. Direct hit on an input port
+      const inPort = dropTarget.closest('.node-port-in') as HTMLElement | null;
+      if (inPort?.dataset.nodeid && inPort.dataset.nodeid !== excludeNodeId) {
+        return inPort.dataset.nodeid;
+      }
+      // 2. Direct hit on any part of a node card (or child element inside)
+      const card = dropTarget.closest('.dialog-graph-card') as HTMLElement | null;
+      if (card?.dataset.nodeid && card.dataset.nodeid !== excludeNodeId) {
+        return card.dataset.nodeid;
+      }
+    }
+
+    // 3. Proximity hit around all node cards in the transform layer (snap within 40px)
+    const transformLayer = this.element.querySelector('#dialog-graph-transform-layer');
+    if (transformLayer) {
+      const cards = transformLayer.querySelectorAll('.dialog-graph-card');
+      let bestDist = Infinity;
+      let bestNodeId: string | null = null;
+
+      cards.forEach(cardEl => {
+        const nid = (cardEl as HTMLElement).dataset.nodeid;
+        if (!nid || nid === excludeNodeId) return;
+
+        const rect = cardEl.getBoundingClientRect();
+        const pad = 40;
+        if (
+          clientX >= rect.left - pad &&
+          clientX <= rect.right + pad &&
+          clientY >= rect.top - pad &&
+          clientY <= rect.bottom + pad
+        ) {
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const dist = Math.hypot(clientX - cx, clientY - cy);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestNodeId = nid;
+          }
+        }
+      });
+
+      if (bestNodeId) return bestNodeId;
+    }
+
+    return null;
+  }
+
+  private initGlobalEvents(): void {
+    if (this.isGlobalEventsAttached) return;
+    this.isGlobalEventsAttached = true;
+
+    const viewport = this.element.querySelector('#dialog-nodes-viewport') as HTMLElement;
+    const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
+    const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
+
+    if (viewport) {
+      viewport.addEventListener('wheel', (e: WheelEvent) => {
+        e.preventDefault();
+        const tree = this.getActiveTree();
+        const delta = e.deltaY < 0 ? 1.12 : 0.88;
+        const newZoom = Math.max(0.2, Math.min(2.5, this.zoomLevel * delta));
+
+        const vRect = viewport.getBoundingClientRect();
+        const mouseX = e.clientX - vRect.left;
+        const mouseY = e.clientY - vRect.top;
+
+        this.panOffset.x = mouseX - (mouseX - this.panOffset.x) * (newZoom / this.zoomLevel);
+        this.panOffset.y = mouseY - (mouseY - this.panOffset.y) * (newZoom / this.zoomLevel);
+        this.zoomLevel = newZoom;
+
+        this.updateTransform();
+        if (tree && svgEl) this.renderConnectionLines(tree, svgEl);
+      }, { passive: false });
+
+      viewport.addEventListener('mousedown', (e: MouseEvent) => {
+        if (this.isWiring || this.isDraggingNode) return;
+        const target = e.target as HTMLElement;
+        const isCanvasBackground = target.id === 'dialog-nodes-viewport' ||
+                                    target.id === 'dialog-nodes-container' ||
+                                    target.id === 'dialog-graph-transform-layer' ||
+                                    target.tagName.toLowerCase() === 'svg';
+
+        if (e.button === 1 || e.button === 2 || isCanvasBackground) {
+          this.isPanning = true;
+          this.panStart = { x: e.clientX - this.panOffset.x, y: e.clientY - this.panOffset.y };
+          viewport.style.cursor = 'grabbing';
+          e.preventDefault();
+        }
+      });
+
+      viewport.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    window.addEventListener('mousemove', (e: MouseEvent) => {
+      this.lastClientX = e.clientX;
+      this.lastClientY = e.clientY;
+      const tree = this.getActiveTree();
+      if (!tree) return;
+
+      if (this.isPanning && viewport) {
+        this.panOffset.x = e.clientX - this.panStart.x;
+        this.panOffset.y = e.clientY - this.panStart.y;
+        this.updateTransform();
+        return;
+      }
+
+      if ((this.isWiring || this.isDraggingNode) && viewport) {
+        this.updateEdgePanVelocity(e, viewport);
+      }
+
+      const lRect = transformLayer?.getBoundingClientRect();
+      if (!lRect) return;
+
+      if (this.isWiring) {
+        const hoverTargetId = this.findTargetNodeIdAt(e.clientX, e.clientY, this.wireSourceNodeId);
+
+        // Highlight target card
+        transformLayer.querySelectorAll('.dialog-graph-card').forEach(c => {
+          const cardEl = c as HTMLElement;
+          if (hoverTargetId && cardEl.dataset.nodeid === hoverTargetId) {
+            cardEl.style.outline = '2px solid #22c55e';
+            cardEl.style.boxShadow = '0 0 20px rgba(34,197,94,0.6)';
+          } else {
+            cardEl.style.outline = '';
+            cardEl.style.boxShadow = '';
+          }
+        });
+
+        let targetX = (e.clientX - lRect.left) / this.zoomLevel;
+        let targetY = (e.clientY - lRect.top) / this.zoomLevel;
+
+        if (hoverTargetId) {
+          const inPort = transformLayer.querySelector(`.node-port-in[data-nodeid="${hoverTargetId}"]`);
+          if (inPort) {
+            const pRect = inPort.getBoundingClientRect();
+            targetX = (pRect.left + pRect.width / 2 - lRect.left) / this.zoomLevel;
+            targetY = (pRect.top + pRect.height / 2 - lRect.top) / this.zoomLevel;
+          }
+        }
+
+        const dx = Math.max(30, Math.abs(targetX - this.wireStartPt.x) * 0.5);
+        this.tempWirePath = `M ${this.wireStartPt.x} ${this.wireStartPt.y} C ${this.wireStartPt.x + dx} ${this.wireStartPt.y}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
+        if (svgEl) this.renderConnectionLines(tree, svgEl);
+        return;
+      }
+
+      if (this.isDraggingNode && this.draggedNodeId && tree.nodes[this.draggedNodeId]) {
+        const node = tree.nodes[this.draggedNodeId];
+        node.position = {
+          x: (e.clientX - lRect.left) / this.zoomLevel - this.dragOffset.x,
+          y: (e.clientY - lRect.top) / this.zoomLevel - this.dragOffset.y
+        };
+
+        const card = transformLayer.querySelector(`.dialog-graph-card[data-nodeid="${this.draggedNodeId}"]`) as HTMLElement;
+        if (card) {
+          card.style.left = `${node.position.x}px`;
+          card.style.top = `${node.position.y}px`;
+        }
+
+        if (svgEl) this.renderConnectionLines(tree, svgEl);
+      }
+    });
+
+    window.addEventListener('mouseup', (e: MouseEvent) => {
+      this.stopAutoPan();
+      const tree = this.getActiveTree();
+
+      if (this.isPanning) {
+        this.isPanning = false;
+        if (viewport) viewport.style.cursor = 'grab';
+        return;
+      }
+
+      if (this.isWiring) {
+        const targetNodeId = this.findTargetNodeIdAt(e.clientX, e.clientY, this.wireSourceNodeId);
+        const srcId = this.wireSourceNodeId;
+        const cIdx = this.wireSourceCIdx;
+
+        this.isWiring = false;
+        this.tempWirePath = null;
+        this.wireSourceNodeId = null;
+        this.wireSourceCIdx = null;
+
+        transformLayer?.querySelectorAll('.dialog-graph-card').forEach(c => {
+          (c as HTMLElement).style.outline = '';
+          (c as HTMLElement).style.boxShadow = '';
+        });
+
+        if (tree && targetNodeId && srcId && targetNodeId !== srcId) {
+          const srcNode = tree.nodes[srcId];
+          if (srcNode) {
+            if (cIdx !== null && srcNode.choices && srcNode.choices[cIdx]) {
+              srcNode.choices[cIdx].nextNodeId = targetNodeId;
+            } else {
+              srcNode.nextNodeId = targetNodeId;
+            }
+            this.renderTree();
+            EventBus.getInstance().emit('editor:project_updated');
+            return;
+          }
+        }
+
+        if (tree && svgEl) this.renderConnectionLines(tree, svgEl);
+        return;
+      }
+
+      if (this.isDraggingNode) {
+        this.isDraggingNode = false;
+        this.draggedNodeId = null;
+        EventBus.getInstance().emit('editor:project_updated');
+      }
+    });
+  }
+
   private render(): void {
     this.element.innerHTML = `
       <div class="view-modal-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:12px; align-items:center;">
-          <h2 style="font-family: var(--font-heading); color: var(--accent-gold);">🎬 Cinematic Sequences & Beat Studio</h2>
-          <button class="btn btn-primary" id="btn-add-dialog-node" style="font-size:0.8rem;">+ Add Beat Node</button>
-          <button class="btn btn-primary" id="btn-add-router-node" style="font-size:0.8rem; background:linear-gradient(135deg, #7e22ce, #a855f7); border-color:#c084fc;">🔀 + Add Logic Router</button>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <h2 style="font-family: var(--font-heading); color: var(--accent-gold); margin-right:4px;">🎬 Visual Sequences & Scripting Studio</h2>
+          <button class="btn btn-primary" id="btn-add-beat-node" style="font-size:0.75rem; background:#1e293b; border-color:#38bdf8; color:#38bdf8;">🎬 + Beat (Dialogue)</button>
+          <button class="btn btn-primary" id="btn-add-router-node" style="font-size:0.75rem; background:linear-gradient(135deg, #7e22ce, #a855f7); border-color:#c084fc;">🔀 + Router (Logic)</button>
+          <button class="btn btn-primary" id="btn-add-event-node" style="font-size:0.75rem; background:linear-gradient(135deg, #b45309, #d97706); border-color:#f59e0b; color:#fff;">⚡ + Event Trigger</button>
+          <button class="btn btn-primary" id="btn-add-action-node" style="font-size:0.75rem; background:linear-gradient(135deg, #047857, #059669); border-color:#10b981; color:#fff;">✨ + Action / FX</button>
         </div>
         <button class="btn btn-primary" id="btn-close-dialog-editor">Close Editor</button>
       </div>
@@ -193,12 +548,13 @@ export class DialogEditor {
         <!-- Pan & Zoom Interactive Viewport Canvas -->
         <div style="flex: 1; position:relative; overflow:hidden; background:#0f172a; cursor:grab; user-select:none;" class="graph-canvas" id="dialog-nodes-viewport">
           
-          <!-- Fixed Top Toolbar Overlay for Dialogue Title & Start Node -->
-          <div id="dialog-tree-header-bar" style="position:absolute; top:16px; left:16px; display:flex; gap:12px; align-items:center; z-index:100; background:rgba(15,23,42,0.92); padding:8px 14px; border-radius:8px; border:1px solid var(--panel-border); box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+          <!-- Fixed Top Toolbar Overlay for Dialogue Title & Start Node & Delete -->
+          <div id="dialog-tree-header-bar" style="position:absolute; top:16px; left:16px; display:flex; gap:10px; align-items:center; z-index:100; background:rgba(15,23,42,0.92); padding:8px 14px; border-radius:8px; border:1px solid var(--panel-border); box-shadow:0 4px 16px rgba(0,0,0,0.6);">
             <label style="font-size:0.8rem; color:var(--accent-gold); font-weight:700;">Sequence Title:</label>
-            <input type="text" id="tree-title-input" class="form-input" value="" style="width:240px;" />
+            <input type="text" id="tree-title-input" class="form-input" value="" style="width:220px;" />
             <label style="font-size:0.8rem; color:var(--accent-gold); font-weight:700;">Start Beat ID:</label>
-            <input type="text" id="tree-start-node-input" class="form-input" value="" style="width:120px;" />
+            <input type="text" id="tree-start-node-input" class="form-input" value="" style="width:110px;" />
+            <button class="btn btn-primary" id="btn-delete-tree" style="font-size:0.75rem; padding:4px 10px; color:#ef4444; border-color:rgba(239,68,68,0.4);" title="Delete this sequence graph">🗑️ Delete Sequence</button>
           </div>
 
           <div id="dialog-graph-transform-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; overflow:visible; transform-origin: 0 0;">
@@ -227,6 +583,12 @@ export class DialogEditor {
       this.hide();
     });
 
+    this.element.querySelector('#btn-delete-tree')?.addEventListener('click', () => {
+      if (this.selectedTreeId) {
+        this.deleteSequence(this.selectedTreeId);
+      }
+    });
+
     this.element.querySelector('#btn-add-tree')?.addEventListener('click', () => {
       if (!this.project) return;
       const newTree: DialogTree = {
@@ -236,7 +598,7 @@ export class DialogEditor {
         nodes: {
           beat_1: {
             id: 'beat_1',
-            speaker: 'NPC',
+            speaker: 'Hero',
             text: 'Greetings, adventurer! What news do you bring?',
             position: { x: 60, y: 60 }
           }
@@ -248,7 +610,7 @@ export class DialogEditor {
       EventBus.getInstance().emit('editor:project_updated');
     });
 
-    this.element.querySelector('#btn-add-dialog-node')?.addEventListener('click', () => {
+    this.element.querySelector('#btn-add-beat-node')?.addEventListener('click', () => {
       if (!this.project || !this.selectedTreeId) return;
       const tree = this.project.dialogs.find(d => d.id === this.selectedTreeId);
       if (!tree) return;
@@ -258,6 +620,7 @@ export class DialogEditor {
 
       tree.nodes[newNodeId] = {
         id: newNodeId,
+        nodeType: 'beat',
         speaker: 'Hero',
         text: 'Character speech or narrative line.',
         directives: [],
@@ -278,14 +641,62 @@ export class DialogEditor {
 
       tree.nodes[newNodeId] = {
         id: newNodeId,
+        nodeType: 'router',
         speaker: 'Router',
         text: '',
         isRouterNode: true,
         choices: [
           { id: 'branch_1', text: 'If Has Flag...', nextNodeId: '' },
-          { id: 'branch_2', text: 'Otherwise Fallback...', nextNodeId: '' }
+          { id: 'branch_2', text: 'Else (Fallback)', nextNodeId: '' }
         ],
         position: { x: 120 + (nodeCount * 30), y: 120 + (nodeCount * 40) }
+      };
+
+      this.renderTree();
+      EventBus.getInstance().emit('editor:project_updated');
+    });
+
+    this.element.querySelector('#btn-add-event-node')?.addEventListener('click', () => {
+      if (!this.project || !this.selectedTreeId) return;
+      const tree = this.project.dialogs.find(d => d.id === this.selectedTreeId);
+      if (!tree) return;
+
+      const nodeCount = Object.keys(tree.nodes).length + 1;
+      const newNodeId = `event_${nodeCount}`;
+
+      tree.nodes[newNodeId] = {
+        id: newNodeId,
+        nodeType: 'event_listener',
+        eventScope: 'scene',
+        eventTargetId: this.project.scenes[0]?.id || '',
+        eventName: 'enter',
+        speaker: 'Event Trigger',
+        text: '',
+        position: { x: 100 + (nodeCount * 30), y: 100 + (nodeCount * 40) }
+      };
+
+      this.renderTree();
+      EventBus.getInstance().emit('editor:project_updated');
+    });
+
+    this.element.querySelector('#btn-add-action-node')?.addEventListener('click', () => {
+      if (!this.project || !this.selectedTreeId) return;
+      const tree = this.project.dialogs.find(d => d.id === this.selectedTreeId);
+      if (!tree) return;
+
+      const nodeCount = Object.keys(tree.nodes).length + 1;
+      const newNodeId = `action_${nodeCount}`;
+
+      tree.nodes[newNodeId] = {
+        id: newNodeId,
+        nodeType: 'action',
+        actionCategory: 'screen_effect',
+        screenEffectType: 'fade_in',
+        screenEffectDuration: 1.0,
+        screenEffectColor: '#000000',
+        speaker: 'Action',
+        text: '',
+        position: { x: 100 + (nodeCount * 30), y: 100 + (nodeCount * 40) }
       };
 
       this.renderTree();
@@ -317,6 +728,8 @@ export class DialogEditor {
       const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
       if (tree && svgEl) this.renderConnectionLines(tree, svgEl);
     });
+
+    this.initGlobalEvents();
   }
 
   private updateTransform(): void {
@@ -394,19 +807,19 @@ export class DialogEditor {
     const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
 
     if (treeList) {
-      treeList.innerHTML = '';
-      for (const dlg of this.project.dialogs) {
-        const btn = document.createElement('button');
-        btn.className = `btn ${dlg.id === this.selectedTreeId ? 'btn-primary' : ''}`;
-        btn.style.width = '100%';
-        btn.style.textAlign = 'left';
-        btn.innerHTML = `🎬 <b>${dlg.title}</b><br/><span style="font-size:0.65rem; color:var(--text-muted);">ID: ${dlg.id} (${Object.keys(dlg.nodes).length} beats)</span>`;
-        btn.addEventListener('click', () => {
-          this.selectedTreeId = dlg.id;
-          this.renderTree();
-        });
-        treeList.appendChild(btn);
-      }
+      treeList.innerHTML = this.project.dialogs.map(dlg => {
+        const isSel = dlg.id === this.selectedTreeId;
+        const nodeCount = Object.keys(dlg.nodes || {}).length;
+        return `
+          <div class="dialog-tree-item ${isSel ? 'active' : ''}" data-treeid="${dlg.id}" style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:6px; background:${isSel ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isSel ? 'var(--accent-gold)' : 'transparent'}; cursor:pointer; transition:all 0.15s ease;">
+            <div class="tree-item-select" data-treeid="${dlg.id}" style="flex:1; overflow:hidden;">
+              <div style="font-weight:${isSel ? '700' : '500'}; color:${isSel ? 'var(--accent-gold)' : 'var(--text-main)'}; font-size:0.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🎬 ${this.escapeHtml(dlg.title || dlg.id)}</div>
+              <div style="font-size:0.65rem; color:var(--text-muted);">ID: ${dlg.id} (${nodeCount} node${nodeCount !== 1 ? 's' : ''})</div>
+            </div>
+            <button class="btn btn-del-tree-item" data-treeid="${dlg.id}" style="padding:2px 5px; font-size:0.7rem; color:#ef4444; background:transparent; border:none; opacity:0.7; cursor:pointer;" title="Delete Sequence">🗑️</button>
+          </div>
+        `;
+      }).join('');
     }
 
     if (nodesContainer && this.selectedTreeId) {
@@ -418,9 +831,11 @@ export class DialogEditor {
       }
 
       const actorsList = this.getAllProjectActors();
-      const allChoreoGroups = [
-        ...(this.project.choreographyGroups || [])
-      ];
+      const scenesList = this.getAllScenes();
+      const hotspotsList = this.getAllHotspots();
+      const charactersList = this.getAllCharacters();
+      const itemsList = this.getAllItems();
+      const allChoreoGroups = [...(this.project.choreographyGroups || [])];
 
       // Auto-assign grid positions to nodes missing coordinates
       let idx = 0;
@@ -439,61 +854,315 @@ export class DialogEditor {
       nodesContainer.innerHTML = `
         ${Object.values(tree.nodes).map(node => {
           const isStartNode = node.id === tree.startNodeId;
-          const isRouter = Boolean(node.isRouterNode);
+          const rawType = node.nodeType || (node.isRouterNode ? 'router' : 'beat');
+          const nodeType: 'beat' | 'router' | 'event_listener' | 'action' = rawType;
+          const isRouter = nodeType === 'router';
+          const isEvent = nodeType === 'event_listener';
+          const isAction = nodeType === 'action';
+          const isBeat = nodeType === 'beat';
+
           const choiceCount = node.choices?.length || 0;
           const hasMultipleOutgoing = choiceCount > 1;
           const isInteractive = node.isChoiceInteractive !== false;
           const directives = node.directives || [];
 
-          const cardBg = isRouter
-            ? 'linear-gradient(135deg, rgba(76,29,149,0.95), rgba(30,41,59,0.96))'
-            : 'rgba(30,41,59,0.96)';
+          let cardBg = 'rgba(30,41,59,0.96)';
+          let cardBorder = isStartNode ? 'var(--accent-gold)' : 'var(--panel-border)';
+          let portInColor = '#38bdf8';
+          let headerColor = '#38bdf8';
+          let typeBadge = '🎬 BEAT:';
 
-          const cardBorder = isRouter
-            ? '#c084fc'
-            : (isStartNode ? 'var(--accent-gold)' : 'var(--panel-border)');
+          if (isRouter) {
+            cardBg = 'linear-gradient(135deg, rgba(76,29,149,0.95), rgba(30,41,59,0.96))';
+            cardBorder = '#c084fc';
+            portInColor = '#c084fc';
+            headerColor = '#c084fc';
+            typeBadge = '🔀 ROUTER:';
+          } else if (isEvent) {
+            cardBg = 'linear-gradient(135deg, rgba(120,53,15,0.95), rgba(30,41,59,0.96))';
+            cardBorder = '#f59e0b';
+            portInColor = '#f59e0b';
+            headerColor = '#f59e0b';
+            typeBadge = '⚡ EVENT:';
+          } else if (isAction) {
+            cardBg = 'linear-gradient(135deg, rgba(6,78,59,0.95), rgba(30,41,59,0.96))';
+            cardBorder = '#10b981';
+            portInColor = '#10b981';
+            headerColor = '#10b981';
+            typeBadge = '✨ ACTION:';
+          }
 
           return `
             <div class="dialog-graph-card" data-nodeid="${node.id}" style="position:absolute; left:${node.position?.x ?? 50}px; top:${node.position?.y ?? 50}px; width:380px; background:${cardBg}; border:1px solid ${cardBorder}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
               
               <!-- Left Input Port -->
-              <div class="node-port node-port-in" data-nodeid="${node.id}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:${isRouter ? '#c084fc' : '#38bdf8'}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${isRouter ? 'rgba(192,132,252,0.9)' : 'rgba(56,189,248,0.9)'}; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
+              <div class="node-port node-port-in" data-nodeid="${node.id}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:${portInColor}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${portInColor}aa; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
 
               <!-- Header -->
               <div class="node-drag-handle" data-nodeid="${node.id}" style="display:flex; justify-content:space-between; align-items:center; cursor:move; padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1);">
                 <div style="display:flex; gap:6px; align-items:center;">
-                  <span style="font-weight:700; color:${isRouter ? '#c084fc' : (isStartNode ? 'var(--accent-gold)' : '#38bdf8')};">${isRouter ? '🔀 ROUTER:' : '🎬 BEAT:'} ${node.id}</span>
+                  <span style="font-weight:700; color:${isStartNode ? 'var(--accent-gold)' : headerColor};">${typeBadge} ${node.id}</span>
                   ${isStartNode ? '<span style="background:var(--accent-gold); color:#000; font-size:0.6rem; font-weight:800; padding:1px 5px; border-radius:4px;">START</span>' : ''}
                 </div>
-                <div style="display:flex; gap:4px;">
-                  <button class="btn btn-toggle-router" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 5px;" title="Toggle Logic Router Node">${isRouter ? '🎬 Beat' : '🔀 Router'}</button>
-                  ${!isStartNode ? `<button class="btn btn-make-start" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;" title="Set as Start Beat">🚩 Start</button>` : ''}
-                  <button class="btn btn-del-node" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px; color:#ef4444;" title="Delete Beat">✕</button>
+                <div style="display:flex; gap:4px; align-items:center;">
+                  <select class="form-input node-type-select" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 4px; font-weight:700; background:rgba(0,0,0,0.5);">
+                    <option value="beat" ${nodeType === 'beat' ? 'selected' : ''}>🎬 Beat</option>
+                    <option value="router" ${nodeType === 'router' ? 'selected' : ''}>🔀 Router</option>
+                    <option value="event_listener" ${nodeType === 'event_listener' ? 'selected' : ''}>⚡ Event</option>
+                    <option value="action" ${nodeType === 'action' ? 'selected' : ''}>✨ Action</option>
+                  </select>
+                  ${!isStartNode ? `<button class="btn btn-make-start" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;" title="Set as Start Node">🚩 Start</button>` : ''}
+                  <button class="btn btn-del-node" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px; color:#ef4444;" title="Delete Node">✕</button>
                 </div>
               </div>
 
-              ${!isRouter ? `
-                <!-- Primary Driver: Speaker & Speech -->
+              <!-- ⚡ EVENT TRIGGER NODE BODY -->
+              ${isEvent ? `
+                <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(245,158,11,0.25); border-radius:6px; padding:8px; margin-bottom:8px;">
+                  <div style="margin-bottom:6px;">
+                    <label style="font-size:0.65rem; color:#f59e0b; font-weight:700;">🎯 Target Object Scope</label>
+                    <select class="form-input node-event-scope" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem; font-weight:600; color:#f59e0b;">
+                      <option value="game" ${node.eventScope === 'game' ? 'selected' : ''}>🎮 Entire Game / Global</option>
+                      <option value="scene" ${(node.eventScope === 'scene' || !node.eventScope) ? 'selected' : ''}>🌄 Scene</option>
+                      <option value="hotspot" ${node.eventScope === 'hotspot' ? 'selected' : ''}>📦 Hotspot / Object</option>
+                      <option value="character" ${node.eventScope === 'character' ? 'selected' : ''}>🎭 Character / NPC</option>
+                      <option value="item" ${node.eventScope === 'item' ? 'selected' : ''}>🎒 Inventory Item</option>
+                    </select>
+                  </div>
+
+                  ${(node.eventScope === 'scene' || !node.eventScope) ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">🌄 Target Scene</label>
+                      <select class="form-input node-event-target" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem;">
+                        ${scenesList.map(sc => `<option value="${sc.id}" ${(node.eventTargetId === sc.id || (!node.eventTargetId && sc === scenesList[0])) ? 'selected' : ''}>🏰 ${sc.name} (${sc.id})</option>`).join('')}
+                      </select>
+                    </div>
+                  ` : ''}
+
+                  ${node.eventScope === 'hotspot' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">📦 Target Hotspot / Object</label>
+                      <select class="form-input node-event-target" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem;">
+                        ${hotspotsList.map(hs => `<option value="${hs.id}" ${node.eventTargetId === hs.id ? 'selected' : ''}>📦 ${hs.sceneName} ➔ ${hs.name} (${hs.id})</option>`).join('')}
+                      </select>
+                    </div>
+                  ` : ''}
+
+                  ${node.eventScope === 'character' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">🎭 Target Character / NPC</label>
+                      <select class="form-input node-event-target" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem;">
+                        ${charactersList.map(ch => `<option value="${ch.id}" ${node.eventTargetId === ch.id ? 'selected' : ''}>🎭 ${ch.sceneName} ➔ ${ch.name} (${ch.id})</option>`).join('')}
+                      </select>
+                    </div>
+                  ` : ''}
+
+                  ${node.eventScope === 'item' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">🎒 Target Item</label>
+                      <select class="form-input node-event-target" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem;">
+                        ${itemsList.map(it => `<option value="${it.id}" ${node.eventTargetId === it.id ? 'selected' : ''}>🎁 ${it.name} (${it.id})</option>`).join('')}
+                      </select>
+                    </div>
+                  ` : ''}
+
+                  <div>
+                    <label style="font-size:0.65rem; color:#f59e0b; font-weight:700;">⚡ Event Trigger</label>
+                    <select class="form-input node-event-name" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem; font-weight:700; color:#38bdf8;">
+                      ${this.getEventsForScope(node.eventScope || 'scene').map(ev => `<option value="${ev.id}" ${(node.eventName === ev.id || (!node.eventName && ev.id === 'enter')) ? 'selected' : ''}>${ev.label}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px; border:1px solid rgba(245,158,11,0.2); position:relative;">
+                  <span style="font-size:0.7rem; color:#f59e0b; font-weight:700;">⚡ Trigger Flow:</span>
+                  <span style="font-size:0.72rem; color:${node.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:700;">
+                    ${node.nextNodeId ? `➔ ${node.nextNodeId}` : '(Drag Port to Target)'}
+                  </span>
+                  <div class="node-port node-port-out" data-nodeid="${node.id}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#f59e0b; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(245,158,11,0.9); z-index:10;" title="⚡ Trigger Port: Drag arrow to connect to target node"></div>
+                </div>
+              ` : ''}
+
+              <!-- ✨ ACTION / CINEMATIC FX NODE BODY -->
+              ${isAction ? `
+                <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(16,185,129,0.25); border-radius:6px; padding:8px; margin-bottom:8px;">
+                  <div style="margin-bottom:6px;">
+                    <label style="font-size:0.65rem; color:#10b981; font-weight:700;">🎬 Action / FX Type</label>
+                    <select class="form-input node-action-category" data-nodeid="${node.id}" style="width:100%; font-size:0.75rem; font-weight:700; color:#10b981;">
+                      <option value="screen_effect" ${(node.actionCategory === 'screen_effect' || !node.actionCategory) ? 'selected' : ''}>✨ Screen Effect / Fade</option>
+                      <option value="video" ${node.actionCategory === 'video' ? 'selected' : ''}>🎥 Video Cutscene</option>
+                      <option value="camera" ${node.actionCategory === 'camera' ? 'selected' : ''}>🎬 Camera Action</option>
+                      <option value="audio" ${node.actionCategory === 'audio' ? 'selected' : ''}>🎵 Audio / Music Cue</option>
+                      <option value="delay" ${node.actionCategory === 'delay' ? 'selected' : ''}>⏳ Timed Delay / Wait</option>
+                      <option value="scene_change" ${node.actionCategory === 'scene_change' ? 'selected' : ''}>🏰 Scene Transition</option>
+                      <option value="mutation" ${node.actionCategory === 'mutation' ? 'selected' : ''}>📦 Inventory & State Mutation</option>
+                    </select>
+                  </div>
+
+                  ${(node.actionCategory === 'screen_effect' || !node.actionCategory) ? `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+                      <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted);">Effect Type</label>
+                        <select class="form-input node-screen-fx-type" data-nodeid="${node.id}" style="font-size:0.7rem;">
+                          <option value="fade_in" ${(node.screenEffectType === 'fade_in' || !node.screenEffectType) ? 'selected' : ''}>Fade In (Reveal)</option>
+                          <option value="fade_out" ${node.screenEffectType === 'fade_out' ? 'selected' : ''}>Fade Out (To Black)</option>
+                          <option value="flash" ${node.screenEffectType === 'flash' ? 'selected' : ''}>Flash White</option>
+                          <option value="shake" ${node.screenEffectType === 'shake' ? 'selected' : ''}>Screen Shake</option>
+                          <option value="tint" ${node.screenEffectType === 'tint' ? 'selected' : ''}>Color Tint</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted);">Duration (sec)</label>
+                        <input type="number" step="0.1" class="form-input node-screen-fx-duration" data-nodeid="${node.id}" value="${node.screenEffectDuration ?? 1.0}" style="font-size:0.7rem;" />
+                      </div>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">Fade / Tint Color:</label>
+                      <input type="color" class="node-screen-fx-color" data-nodeid="${node.id}" value="${node.screenEffectColor || '#000000'}" style="width:36px; height:24px; border:none; cursor:pointer;" />
+                    </div>
+                  ` : ''}
+
+                  ${node.actionCategory === 'video' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">🎥 Video File (MP4/WebM)</label>
+                      <div style="display:flex; gap:4px; align-items:center;">
+                        <input type="text" class="form-input node-video-url" data-nodeid="${node.id}" value="${node.videoUrl || ''}" placeholder="e.g. assets/videos/intro.mp4" style="flex:1; font-size:0.7rem;" />
+                        <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Video File">
+                          📁
+                          <input type="file" class="node-video-file" data-nodeid="${node.id}" accept="video/*" style="display:none;" />
+                        </label>
+                      </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <input type="checkbox" class="node-video-skippable" data-nodeid="${node.id}" ${node.videoSkippable !== false ? 'checked' : ''} id="vid_skip_${node.id}" />
+                      <label for="vid_skip_${node.id}" style="font-size:0.68rem; color:var(--text-muted); cursor:pointer;">Show Skip Button (Allow Player to Skip)</label>
+                    </div>
+                  ` : ''}
+
+                  ${node.actionCategory === 'camera' ? `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+                      <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted);">Camera Action</label>
+                        <select class="form-input node-camera-action" data-nodeid="${node.id}" style="font-size:0.7rem;">
+                          <option value="pan" ${node.cameraAction === 'pan' ? 'selected' : ''}>Pan to Target (X, Y)</option>
+                          <option value="zoom" ${node.cameraAction === 'zoom' ? 'selected' : ''}>Zoom In / Out</option>
+                          <option value="follow" ${node.cameraAction === 'follow' ? 'selected' : ''}>Follow Actor</option>
+                          <option value="shake" ${node.cameraAction === 'shake' ? 'selected' : ''}>Screen Shake</option>
+                          <option value="reset" ${node.cameraAction === 'reset' ? 'selected' : ''}>Reset Camera (1.0)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style="font-size:0.65rem; color:var(--text-muted);">Zoom Scale</label>
+                        <input type="number" step="0.1" class="form-input node-camera-zoom" data-nodeid="${node.id}" value="${node.cameraZoom ?? 1.5}" style="font-size:0.7rem;" />
+                      </div>
+                    </div>
+                    ${node.cameraAction === 'pan' ? `
+                      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                        <input type="number" class="form-input node-camera-x" data-nodeid="${node.id}" value="${node.targetPosition?.x ?? 500}" placeholder="Target X" style="font-size:0.7rem;" />
+                        <input type="number" class="form-input node-camera-y" data-nodeid="${node.id}" value="${node.targetPosition?.y ?? 500}" placeholder="Target Y" style="font-size:0.7rem;" />
+                      </div>
+                    ` : ''}
+                    ${node.cameraAction === 'follow' ? `
+                      <select class="form-input node-camera-actor" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem;">
+                        ${actorsList.map(a => `<option value="${a.id}" ${node.targetActorId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
+                      </select>
+                    ` : ''}
+                  ` : ''}
+
+                  ${node.actionCategory === 'audio' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">Audio Action</label>
+                      <select class="form-input node-audio-action" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem;">
+                        <option value="play_bgm" ${node.audioAction === 'play_bgm' ? 'selected' : ''}>🎵 Play Background Music</option>
+                        <option value="stop_bgm" ${node.audioAction === 'stop_bgm' ? 'selected' : ''}>⏹️ Stop Background Music</option>
+                        <option value="play_sfx" ${node.audioAction === 'play_sfx' ? 'selected' : ''}>🔊 Play Sound FX (SFX)</option>
+                      </select>
+                    </div>
+                    <div style="margin-bottom:6px; display:flex; gap:4px; align-items:center;">
+                      <input type="text" class="form-input node-audio-url" data-nodeid="${node.id}" value="${node.audioUrl || ''}" placeholder="e.g. assets/audio/magic.mp3" style="flex:1; font-size:0.7rem;" />
+                      <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Audio File">
+                        📁
+                        <input type="file" class="node-audio-file" data-nodeid="${node.id}" accept="audio/*" style="display:none;" />
+                      </label>
+                    </div>
+                  ` : ''}
+
+                  ${node.actionCategory === 'delay' ? `
+                    <div>
+                      <label style="font-size:0.65rem; color:var(--text-muted);">Wait Duration (seconds)</label>
+                      <input type="number" step="0.1" class="form-input node-delay-seconds" data-nodeid="${node.id}" value="${node.waitDurationSeconds ?? 1.0}" style="width:100%; font-size:0.75rem;" />
+                    </div>
+                  ` : ''}
+
+                  ${node.actionCategory === 'scene_change' ? `
+                    <div style="margin-bottom:6px;">
+                      <label style="font-size:0.65rem; color:var(--text-muted);">Target Scene</label>
+                      <select class="form-input node-scene-target" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem;">
+                        ${scenesList.map(sc => `<option value="${sc.id}" ${node.targetSceneId === sc.id ? 'selected' : ''}>🏰 ${sc.name} (${sc.id})</option>`).join('')}
+                      </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                      <input type="number" class="form-input node-scene-spawn-x" data-nodeid="${node.id}" value="${node.targetSpawnPoint?.x ?? 300}" placeholder="Spawn X" style="font-size:0.7rem;" />
+                      <input type="number" class="form-input node-scene-spawn-y" data-nodeid="${node.id}" value="${node.targetSpawnPoint?.y ?? 750}" placeholder="Spawn Y" style="font-size:0.7rem;" />
+                    </div>
+                  ` : ''}
+
+                  ${node.actionCategory === 'mutation' ? `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+                      <div>
+                        <label style="font-size:0.65rem; color:#22c55e;">🚩 Set Flag</label>
+                        <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlag || ''}" placeholder="flag_name" style="font-size:0.7rem;" />
+                      </div>
+                      <div>
+                        <label style="font-size:0.65rem; color:#ef4444;">❌ Clear Flag</label>
+                        <input type="text" class="form-input node-clear-flag" data-nodeid="${node.id}" value="${node.clearFlag || ''}" placeholder="flag_name" style="font-size:0.7rem;" />
+                      </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                      <div>
+                        <label style="font-size:0.65rem; color:#fbbf24;">🎁 Give Item</label>
+                        <select class="form-input node-give-item" data-nodeid="${node.id}" style="font-size:0.7rem;">
+                          <option value="">-- None --</option>
+                          ${itemsList.map(it => `<option value="${it.id}" ${node.giveItem === it.id ? 'selected' : ''}>${it.name}</option>`).join('')}
+                        </select>
+                      </div>
+                      <div>
+                        <label style="font-size:0.65rem; color:#ef4444;">🎒 Take Item</label>
+                        <select class="form-input node-take-item" data-nodeid="${node.id}" style="font-size:0.7rem;">
+                          <option value="">-- None --</option>
+                          ${itemsList.map(it => `<option value="${it.id}" ${(node.takeItems && node.takeItems[0] === it.id) ? 'selected' : ''}>${it.name}</option>`).join('')}
+                        </select>
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.2); position:relative;">
+                  <span style="font-size:0.7rem; color:#10b981; font-weight:700;">▶ On Complete:</span>
+                  <span style="font-size:0.72rem; color:${node.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:700;">
+                    ${node.nextNodeId ? `➔ ${node.nextNodeId}` : '(End Sequence)'}
+                  </span>
+                  <div class="node-port node-port-out" data-nodeid="${node.id}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#10b981; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(16,185,129,0.9); z-index:10;" title="▶ On Complete: Drag arrow to connect to target node"></div>
+                </div>
+              ` : ''}
+
+              <!-- 🎬 BEAT / DIALOGUE NODE BODY -->
+              ${isBeat ? `
                 <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; margin-bottom:8px;">
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; position:relative;">
                     <div>
                       <label style="font-size:0.65rem; color:var(--text-muted);">🗣️ Speaker Name</label>
-                      <input type="text" class="form-input node-speaker" data-nodeid="${node.id}" value="${node.speaker}" placeholder="e.g. Hero, Guard, Merchant" style="width:100%; font-weight:600; font-size:0.75rem;" />
+                      <input type="text" class="form-input node-speaker" data-nodeid="${node.id}" value="${node.speaker || ''}" placeholder="e.g. Hero, Guard, Merchant" style="width:100%; font-weight:600; font-size:0.75rem;" />
                     </div>
                     <div>
                       <label style="font-size:0.65rem; color:#f59e0b;">🎭 Speaker Talk Anim</label>
                       <input type="text" class="form-input node-speaker-anim" data-nodeid="${node.id}" value="${node.speakerAnimation || ''}" placeholder="e.g. talk, gesture" style="width:100%; font-size:0.75rem;" />
                     </div>
-                    
-                    <!-- Main Node Output Port (if NO response choices exist) -->
-                    ${choiceCount === 0 ? `
-                      <div class="node-port node-port-out" data-nodeid="${node.id}" style="position:absolute; right:-27px; top:18px; width:18px; height:18px; border-radius:50%; background:#fbbf24; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(251,191,36,0.9); z-index:10;" title="Click & Drag arrow to connect to target node Input Port"></div>
-                    ` : ''}
                   </div>
 
                   <div style="margin-bottom:6px;">
                     <label style="font-size:0.65rem; color:var(--text-muted);">💬 Spoken Dialogue Text</label>
-                    <textarea class="form-input node-text" data-nodeid="${node.id}" style="width:100%; height:44px; font-size:0.8rem;">${node.text}</textarea>
+                    <textarea class="form-input node-text" data-nodeid="${node.id}" style="width:100%; height:44px; font-size:0.8rem;">${node.text || ''}</textarea>
                   </div>
 
                   <!-- Voiceover Audio URL -->
@@ -573,7 +1242,7 @@ export class DialogEditor {
                             ${(dir.type === 'give_item' || dir.type === 'take_item') ? `
                               <select class="form-input dir-item-select" data-nodeid="${node.id}" data-didx="${dIdx}" style="width:100%; font-size:0.7rem;">
                                 <option value="">-- Select Item --</option>
-                                ${(this.project?.items || []).map(it => `<option value="${it.id}" ${dir.itemId === it.id ? 'selected' : ''}>🎁 ${it.name} (${it.id})</option>`).join('')}
+                                ${itemsList.map(it => `<option value="${it.id}" ${dir.itemId === it.id ? 'selected' : ''}>🎁 ${it.name} (${it.id})</option>`).join('')}
                               </select>
                             ` : ''}
 
@@ -641,13 +1310,7 @@ export class DialogEditor {
                     </div>
                   `}
                 </div>
-              ` : `
-                <div style="background:rgba(192, 132, 252, 0.15); border:1px dashed #c084fc; border-radius:6px; padding:6px; margin-bottom:8px; font-size:0.7rem; color:#e9d5ff;">
-                  ⚡ <b>Invisible Logic Router Node</b>: Evaluates outgoing conditions in order. The first matching branch is automatically selected!
-                </div>
-              `}
 
-              ${!isRouter ? `
                 <!-- Condition Section (Beats Only) -->
                 ${this.renderConditionPicker({ nodeId: node.id, requiredFlag: node.requiredFlag, notFlag: node.notFlag })}
 
@@ -660,26 +1323,71 @@ export class DialogEditor {
                     </label>
                   </div>
                 ` : ''}
+
+                <!-- Outgoing Choices / Responses -->
+                <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:0.7rem; font-weight:700; color:var(--accent-gold);">Outgoing Responses (${choiceCount}):</span>
+                    <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;">+ Response</button>
+                  </div>
+
+                  ${node.choices && node.choices.length > 0 ? `
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                      ${node.choices.map((c, cIdx) => `
+                        <div class="choice-card" data-nodeid="${node.id}" data-cidx="${cIdx}" draggable="true" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid var(--panel-border); padding:6px; border-radius:6px; cursor:grab;">
+                          <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+                            <span class="choice-drag-handle" style="cursor:grab; color:var(--text-muted); font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="Drag & drop to re-order response">⠿</span>
+                            <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.text}" placeholder="Response Text..." style="flex:1; font-size:0.75rem; font-weight:600;" />
+                            <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Response">✕</button>
+                          </div>
+                          
+                          ${this.renderConditionPicker({ nodeId: node.id, choiceIdx: cIdx, requiredFlag: c.requiredFlag, notFlag: c.notFlag, allowFallback: false })}
+
+                          <div style="display:flex; gap:6px; align-items:center;">
+                            <input type="text" class="form-input choice-voice-url" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.voiceAudioUrl || ''}" placeholder="🎙️ Response Voiceover URL..." style="flex:1; font-size:0.68rem;" />
+                            <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Audio File">
+                              📁
+                              <input type="file" class="choice-voice-file" data-nodeid="${node.id}" data-cidx="${cIdx}" accept="audio/*" style="display:none;" />
+                            </label>
+                          </div>
+                          
+                          <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#fbbf24; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(251,191,36,0.9); z-index:10;" title="Click & Drag arrow to connect to target node Input Port"></div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px; border:1px solid rgba(56,189,248,0.2); position:relative;">
+                      <span style="font-size:0.7rem; color:#38bdf8; font-weight:700;">▶ Next Beat:</span>
+                      <span style="font-size:0.72rem; color:${node.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:700;">
+                        ${node.nextNodeId ? `➔ ${node.nextNodeId}` : '(End Sequence)'}
+                      </span>
+                      <div class="node-port node-port-out" data-nodeid="${node.id}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#38bdf8; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(56,189,248,0.9); z-index:10;" title="▶ Next Beat: Drag arrow to connect to target node Input Port"></div>
+                    </div>
+                  `}
+                </div>
               ` : ''}
 
-              <!-- Outgoing Choices / Router Branches -->
-              <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                  <span style="font-size:0.7rem; font-weight:700; color:${isRouter ? '#c084fc' : 'var(--accent-gold)'};">${isRouter ? 'Branch Rules' : 'Outgoing Responses'} (${choiceCount}):</span>
-                  <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;">+ ${isRouter ? 'Rule' : 'Response'}</button>
+              <!-- 🔀 LOGIC ROUTER NODE BODY -->
+              ${isRouter ? `
+                <div style="background:rgba(192, 132, 252, 0.15); border:1px dashed #c084fc; border-radius:6px; padding:6px; margin-bottom:8px; font-size:0.7rem; color:#e9d5ff;">
+                  ⚡ <b>Invisible Logic Router Node</b>: Evaluates outgoing conditions in order. The first matching branch is automatically selected!
                 </div>
 
-                ${node.choices && node.choices.length > 0 ? `
-                  <div style="display:flex; flex-direction:column; gap:6px;">
-                    ${node.choices.map((c, cIdx) => {
-                      if (isRouter) {
+                <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:0.7rem; font-weight:700; color:#c084fc;">Branch Rules (${choiceCount}):</span>
+                    <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;">+ Rule</button>
+                  </div>
+
+                  ${node.choices && node.choices.length > 0 ? `
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                      ${node.choices.map((c, cIdx) => {
                         const isFallback = c.requiredFlag === undefined && c.notFlag === undefined;
                         const isDraggable = !isFallback;
 
                         return `
                           <div class="router-branch-card" data-nodeid="${node.id}" data-cidx="${cIdx}" draggable="${isDraggable}" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid rgba(192, 132, 252, 0.3); padding:6px 8px; border-radius:6px; cursor:${isDraggable ? 'grab' : 'default'};">
                             <div style="display:flex; gap:5px; align-items:center;">
-                              <!-- Native Drag Handle -->
                               <span class="choice-drag-handle" style="cursor:${isDraggable ? 'grab' : 'not-allowed'}; color:${isDraggable ? '#c084fc' : '#64748b'}; font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="${isDraggable ? 'Drag & drop to re-order rule' : 'Fallback rule is pinned at the bottom'}">⠿</span>
 
                               <div style="flex:1;">
@@ -689,49 +1397,15 @@ export class DialogEditor {
                               <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Rule">✕</button>
                             </div>
 
-                            <!-- Router Choice Output Port -->
-                            <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#c084fc; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(192,132,252,0.9); z-index:10;" title="Click & Drag arrow to connect to target Beat or Router node"></div>
+                            <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#c084fc; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(192,132,252,0.9); z-index:10;" title="Click & Drag arrow to connect to target node"></div>
                           </div>
                         `;
-                      }
+                      }).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
 
-                      return `
-                        <div class="choice-card" data-nodeid="${node.id}" data-cidx="${cIdx}" draggable="true" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid var(--panel-border); padding:6px; border-radius:6px; cursor:grab;">
-                          <!-- Row 1: Drag handle + Choice text + Delete -->
-                          <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
-                            <span class="choice-drag-handle" style="cursor:grab; color:var(--text-muted); font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="Drag & drop to re-order response">⠿</span>
-                            <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.text}" placeholder="Response Text..." style="flex:1; font-size:0.75rem; font-weight:600;" />
-                            <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Response">✕</button>
-                          </div>
-                          
-                          <!-- Row 2: Unified Reusable Condition Component -->
-                          ${this.renderConditionPicker({ nodeId: node.id, choiceIdx: cIdx, requiredFlag: c.requiredFlag, notFlag: c.notFlag, allowFallback: false })}
-
-                          <!-- Row 3: Voiceover audio -->
-                          <div style="display:flex; gap:6px; align-items:center;">
-                            <input type="text" class="form-input choice-voice-url" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.voiceAudioUrl || ''}" placeholder="🎙️ Response Voiceover URL..." style="flex:1; font-size:0.68rem;" />
-                            <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Audio File">
-                              📁
-                              <input type="file" class="choice-voice-file" data-nodeid="${node.id}" data-cidx="${cIdx}" accept="audio/*" style="display:none;" />
-                            </label>
-                          </div>
-                          
-                          <!-- Response Choice Output Port -->
-                          <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#fbbf24; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(251,191,36,0.9); z-index:10;" title="Click & Drag arrow to connect or reconnect to any target node Input Port"></div>
-                        </div>
-                      `;
-                    }).join('')}
-                  </div>
-                ` : `
-                  <div style="display:flex; gap:6px; align-items:center; background:rgba(0,0,0,0.2); padding:4px 8px; border-radius:5px;">
-                    <span style="font-size:0.68rem; color:var(--text-muted); white-space:nowrap;">Default Next Beat:</span>
-                    <span style="font-size:0.72rem; color:${node.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:700;">
-                      ${node.nextNodeId ? `➔ ${node.nextNodeId}` : '(End Sequence)'}
-                    </span>
-                    <span style="font-size:0.65rem; color:var(--text-muted); margin-left:auto;">(Drag top-right port to connect)</span>
-                  </div>
-                `}
-              </div>
             </div>
           `;
         }).join('')}
@@ -762,6 +1436,12 @@ export class DialogEditor {
         <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#c084fc"/>
         </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981"/>
+        </marker>
         <marker id="arrow-red" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444"/>
         </marker>
@@ -770,7 +1450,7 @@ export class DialogEditor {
 
     const nodes = tree.nodes;
     for (const sourceNode of Object.values(nodes)) {
-      const isRouter = Boolean(sourceNode.isRouterNode);
+      const isRouter = Boolean(sourceNode.isRouterNode || sourceNode.nodeType === 'router');
 
       if (sourceNode.choices && sourceNode.choices.length > 0) {
         sourceNode.choices.forEach((c, cIdx) => {
@@ -824,6 +1504,19 @@ export class DialogEditor {
           const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
           const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
+          let strokeColor = '#38bdf8';
+          let markerId = 'arrow-blue';
+          if (sourceNode.nodeType === 'event_listener') {
+            strokeColor = '#f59e0b';
+            markerId = 'arrow-amber';
+          } else if (sourceNode.nodeType === 'action') {
+            strokeColor = '#10b981';
+            markerId = 'arrow-emerald';
+          } else if (sourceNode.nodeType === 'router' || sourceNode.isRouterNode) {
+            strokeColor = '#c084fc';
+            markerId = 'arrow-purple';
+          }
+
           // Position disconnect button at 15% along the Bezier curve
           const t = 0.15;
           const t1 = 1 - t;
@@ -832,7 +1525,7 @@ export class DialogEditor {
 
           pathsHTML += `
             <g class="wire-group" data-srcnode="${sourceNode.id}" data-targetnode="${sourceNode.nextNodeId}">
-              <path d="${pathData}" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow-blue)" style="filter: drop-shadow(0 0 4px #38bdf888);" />
+              <path d="${pathData}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" marker-end="url(#${markerId})" style="filter: drop-shadow(0 0 4px ${strokeColor}88);" />
               <circle cx="${btnX}" cy="${btnY}" r="9" fill="#0f172a" stroke="#ef4444" stroke-width="1.5" style="cursor:pointer; pointer-events:auto;" class="wire-delete-btn" data-srcnode="${sourceNode.id}" />
               <text x="${btnX}" y="${btnY + 3}" fill="#ef4444" font-size="10" font-weight="900" text-anchor="middle" style="pointer-events:none; user-select:none;">✕</text>
             </g>
@@ -881,53 +1574,33 @@ export class DialogEditor {
     const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
     const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
 
-    // --- Pan & Zoom Events ---
-    if (viewport) {
-      viewport.addEventListener('wheel', (e: WheelEvent) => {
-        e.preventDefault();
-        const delta = e.deltaY < 0 ? 1.12 : 0.88;
-        const newZoom = Math.max(0.2, Math.min(2.5, this.zoomLevel * delta));
-
-        const vRect = viewport.getBoundingClientRect();
-        const mouseX = e.clientX - vRect.left;
-        const mouseY = e.clientY - vRect.top;
-
-        this.panOffset.x = mouseX - (mouseX - this.panOffset.x) * (newZoom / this.zoomLevel);
-        this.panOffset.y = mouseY - (mouseY - this.panOffset.y) * (newZoom / this.zoomLevel);
-        this.zoomLevel = newZoom;
-
-        this.updateTransform();
-        if (svgEl) this.renderConnectionLines(tree, svgEl);
-      }, { passive: false });
-
-      viewport.addEventListener('mousedown', (e: MouseEvent) => {
-        if (this.isWiring || this.isDraggingNode) return;
-        const target = e.target as HTMLElement;
-        const isCanvasBackground = target.id === 'dialog-nodes-viewport' ||
-                                    target.id === 'dialog-nodes-container' ||
-                                    target.id === 'dialog-graph-transform-layer' ||
-                                    target.tagName.toLowerCase() === 'svg';
-
-        if (e.button === 1 || e.button === 2 || isCanvasBackground) {
-          this.isPanning = true;
-          this.panStart = { x: e.clientX - this.panOffset.x, y: e.clientY - this.panOffset.y };
-          viewport.style.cursor = 'grabbing';
-          e.preventDefault();
-        }
+    // --- Sidebar Sequence List Selection & Deletion ---
+    this.element.querySelectorAll('.tree-item-select').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const treeId = (e.currentTarget as HTMLElement).dataset.treeid!;
+        this.selectedTreeId = treeId;
+        this.renderTree();
       });
+    });
 
-      viewport.addEventListener('contextmenu', (e) => e.preventDefault());
-    }
+    this.element.querySelectorAll('.btn-del-tree-item').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const treeId = (e.currentTarget as HTMLElement).dataset.treeid!;
+        this.deleteSequence(treeId);
+      });
+    });
 
     // --- Interactive Drag-to-Connect Wiring ---
     this.element.querySelectorAll('.node-port-out').forEach(port => {
       port.addEventListener('mousedown', (e: Event) => {
         e.stopPropagation();
+        e.preventDefault();
         const mouseEv = e as MouseEvent;
         this.isWiring = true;
         this.wireSourceNodeId = (port as HTMLElement).dataset.nodeid!;
         const cIdxStr = (port as HTMLElement).dataset.cidx;
-        this.wireSourceCIdx = cIdxStr !== undefined ? parseInt(cIdxStr) : null;
+        this.wireSourceCIdx = cIdxStr !== undefined && cIdxStr !== '' ? parseInt(cIdxStr) : null;
         this.lastClientX = mouseEv.clientX;
         this.lastClientY = mouseEv.clientY;
 
@@ -967,104 +1640,342 @@ export class DialogEditor {
       });
     });
 
-    if (viewport && transformLayer) {
-      viewport.addEventListener('mousemove', (e: MouseEvent) => {
-        this.lastClientX = e.clientX;
-        this.lastClientY = e.clientY;
+    // --- Node Type Selector Handler ---
+    this.element.querySelectorAll('.node-type-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const newType = (e.target as HTMLSelectElement).value as 'beat' | 'router' | 'event_listener' | 'action';
+        const node = tree.nodes[nid];
+        if (!node) return;
 
-        if (this.isPanning) {
-          this.panOffset.x = e.clientX - this.panStart.x;
-          this.panOffset.y = e.clientY - this.panStart.y;
-          this.updateTransform();
-          return;
-        }
+        node.nodeType = newType;
+        node.isRouterNode = newType === 'router';
 
-        if (this.isWiring || this.isDraggingNode) {
-          this.updateEdgePanVelocity(e, viewport);
-        }
-
-        const lRect = transformLayer.getBoundingClientRect();
-
-        if (this.isWiring) {
-          const currentX = (e.clientX - lRect.left) / this.zoomLevel;
-          const currentY = (e.clientY - lRect.top) / this.zoomLevel;
-
-          const dx = Math.max(30, Math.abs(currentX - this.wireStartPt.x) * 0.5);
-          this.tempWirePath = `M ${this.wireStartPt.x} ${this.wireStartPt.y} C ${this.wireStartPt.x + dx} ${this.wireStartPt.y}, ${currentX - dx} ${currentY}, ${currentX} ${currentY}`;
-          if (svgEl) this.renderConnectionLines(tree, svgEl);
-          return;
-        }
-
-        if (this.isDraggingNode && this.draggedNodeId && tree.nodes[this.draggedNodeId]) {
-          const node = tree.nodes[this.draggedNodeId];
-          node.position = {
-            x: (e.clientX - lRect.left) / this.zoomLevel - this.dragOffset.x,
-            y: (e.clientY - lRect.top) / this.zoomLevel - this.dragOffset.y
-          };
-
-          const card = transformLayer.querySelector(`.dialog-graph-card[data-nodeid="${this.draggedNodeId}"]`) as HTMLElement;
-          if (card) {
-            card.style.left = `${node.position.x}px`;
-            card.style.top = `${node.position.y}px`;
+        if (newType === 'event_listener') {
+          if (!node.eventScope) node.eventScope = 'scene';
+          if (!node.eventTargetId) node.eventTargetId = this.project?.scenes[0]?.id || '';
+          if (!node.eventName) node.eventName = 'enter';
+        } else if (newType === 'action') {
+          if (!node.actionCategory) node.actionCategory = 'screen_effect';
+          if (!node.screenEffectType) node.screenEffectType = 'fade_in';
+          if (node.screenEffectDuration === undefined) node.screenEffectDuration = 1.0;
+        } else if (newType === 'router') {
+          if (!node.choices || node.choices.length === 0) {
+            node.choices = [
+              { id: 'branch_1', text: 'If Has Flag...', nextNodeId: '' },
+              { id: 'branch_2', text: 'Else (Fallback)', nextNodeId: '' }
+            ];
           }
-
-          if (svgEl) this.renderConnectionLines(tree, svgEl);
         }
+
+        this.renderTree();
+        emitUpdate();
       });
+    });
 
-      viewport.addEventListener('mouseup', (e: MouseEvent) => {
-        this.stopAutoPan();
+    // --- ⚡ Event Listener Card Event Handlers ---
+    this.element.querySelectorAll('.node-event-scope').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const scope = (e.target as HTMLSelectElement).value as any;
+        const node = tree.nodes[nid];
+        if (node) {
+          node.eventScope = scope;
+          if (scope === 'scene') node.eventTargetId = this.project?.scenes[0]?.id || '';
+          else if (scope === 'hotspot') node.eventTargetId = this.getAllHotspots()[0]?.id || '';
+          else if (scope === 'character') node.eventTargetId = this.getAllCharacters()[0]?.id || '';
+          else if (scope === 'item') node.eventTargetId = this.getAllItems()[0]?.id || '';
+          else node.eventTargetId = 'game';
 
-        if (this.isPanning) {
-          this.isPanning = false;
-          viewport.style.cursor = 'grab';
-          return;
-        }
-
-        if (this.isWiring) {
-          this.isWiring = false;
-          this.tempWirePath = null;
-
-          const dropTarget = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
-          const inPort = dropTarget?.closest('.node-port-in') as HTMLElement;
-
-          if (inPort && this.wireSourceNodeId) {
-            const targetNodeId = inPort.dataset.nodeid!;
-            if (targetNodeId !== this.wireSourceNodeId) {
-              const srcNode = tree.nodes[this.wireSourceNodeId];
-              if (srcNode) {
-                if (this.wireSourceCIdx !== null && srcNode.choices && srcNode.choices[this.wireSourceCIdx]) {
-                  srcNode.choices[this.wireSourceCIdx].nextNodeId = targetNodeId;
-                } else {
-                  srcNode.nextNodeId = targetNodeId;
-                }
-                this.renderTree();
-                emitUpdate();
-              }
-            }
-          }
-
-          this.wireSourceNodeId = null;
-          this.wireSourceCIdx = null;
-          if (svgEl) this.renderConnectionLines(tree, svgEl);
-          return;
-        }
-
-        if (this.isDraggingNode) {
-          this.isDraggingNode = false;
-          this.draggedNodeId = null;
+          const availableEvents = this.getEventsForScope(scope);
+          node.eventName = availableEvents[0]?.id || 'enter';
+          this.renderTree();
           emitUpdate();
         }
       });
-    }
+    });
 
-    // Toggle Router Node
-    this.element.querySelectorAll('.btn-toggle-router').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const nid = (e.currentTarget as HTMLElement).dataset.nodeid!;
+    this.element.querySelectorAll('.node-event-target').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const targetId = (e.target as HTMLSelectElement).value;
         if (tree.nodes[nid]) {
-          tree.nodes[nid].isRouterNode = !tree.nodes[nid].isRouterNode;
+          tree.nodes[nid].eventTargetId = targetId;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-event-name').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const evName = (e.target as HTMLSelectElement).value;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].eventName = evName;
+          emitUpdate();
+        }
+      });
+    });
+
+    // --- ✨ Action / FX Card Event Handlers ---
+    this.element.querySelectorAll('.node-action-category').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const cat = (e.target as HTMLSelectElement).value as any;
+        const node = tree.nodes[nid];
+        if (node) {
+          node.actionCategory = cat;
+          if (cat === 'screen_effect' && !node.screenEffectType) {
+            node.screenEffectType = 'fade_in';
+            node.screenEffectDuration = 1.0;
+          }
           this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-screen-fx-type').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].screenEffectType = (e.target as HTMLSelectElement).value as any;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-screen-fx-duration').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].screenEffectDuration = parseFloat((e.target as HTMLInputElement).value) || 0;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-screen-fx-color').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].screenEffectColor = (e.target as HTMLInputElement).value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-video-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].videoUrl = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-video-file').forEach(fileInput => {
+      fileInput.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const file = target.files?.[0];
+        const nid = target.dataset.nodeid!;
+        if (file && tree.nodes[nid]) {
+          const targetScene = this.findDialogScene(tree);
+          const relPath = resolvePickedAssetPath(file, 'video', targetScene, this.project);
+          tree.nodes[nid].videoUrl = relPath;
+          const urlInput = this.element.querySelector(`.node-video-url[data-nodeid="${nid}"]`) as HTMLInputElement;
+          if (urlInput) urlInput.value = relPath;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-video-skippable').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const nid = (chk as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].videoSkippable = (chk as HTMLInputElement).checked;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-camera-action').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].cameraAction = (e.target as HTMLSelectElement).value as any;
+          this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-camera-zoom').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].cameraZoom = parseFloat((e.target as HTMLInputElement).value) || 1.0;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-camera-x').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetPosition = {
+            x: parseFloat((e.target as HTMLInputElement).value) || 0,
+            y: tree.nodes[nid].targetPosition?.y ?? 500
+          };
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-camera-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetPosition = {
+            x: tree.nodes[nid].targetPosition?.x ?? 500,
+            y: parseFloat((e.target as HTMLInputElement).value) || 0
+          };
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-camera-actor').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetActorId = (e.target as HTMLSelectElement).value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-audio-action').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].audioAction = (e.target as HTMLSelectElement).value as any;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-audio-url').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].audioUrl = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-audio-file').forEach(fileInput => {
+      fileInput.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const file = target.files?.[0];
+        const nid = target.dataset.nodeid!;
+        if (file && tree.nodes[nid]) {
+          const targetScene = this.findDialogScene(tree);
+          const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
+          tree.nodes[nid].audioUrl = relPath;
+          const urlInput = this.element.querySelector(`.node-audio-url[data-nodeid="${nid}"]`) as HTMLInputElement;
+          if (urlInput) urlInput.value = relPath;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-delay-seconds').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].waitDurationSeconds = parseFloat((e.target as HTMLInputElement).value) || 0;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-scene-target').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetSceneId = (e.target as HTMLSelectElement).value;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-scene-spawn-x').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetSpawnPoint = {
+            x: parseFloat((e.target as HTMLInputElement).value) || 0,
+            y: tree.nodes[nid].targetSpawnPoint?.y ?? 750
+          };
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-scene-spawn-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].targetSpawnPoint = {
+            x: tree.nodes[nid].targetSpawnPoint?.x ?? 300,
+            y: parseFloat((e.target as HTMLInputElement).value) || 0
+          };
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-set-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].setFlag = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-clear-flag').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].clearFlag = (e.target as HTMLInputElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-give-item').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].giveItem = (e.target as HTMLSelectElement).value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.node-take-item').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (e.target as HTMLElement).dataset.nodeid!;
+        const val = (e.target as HTMLSelectElement).value.trim();
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].takeItems = val ? [val] : undefined;
           emitUpdate();
         }
       });
@@ -1357,25 +2268,6 @@ export class DialogEditor {
       });
     });
 
-    // Helper to find associated scene for base asset path resolution
-    const findDialogScene = (dTree: DialogTree): SceneData | null => {
-      if (this.project?.scenes) {
-        for (const sc of this.project.scenes) {
-          for (const c of sc.characters) {
-            if (c.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && dTree.id.includes(c.id.replace(/^npc_/, '')))) {
-              return sc;
-            }
-          }
-          for (const hs of sc.hotspots) {
-            if (hs.actions?.some(a => a.dialogId === dTree.id)) {
-              return sc;
-            }
-          }
-        }
-      }
-      return null;
-    };
-
     // Directive SFX File Picker
     this.element.querySelectorAll('.dir-sfx-file').forEach(fileInput => {
       fileInput.addEventListener('change', (e) => {
@@ -1385,7 +2277,7 @@ export class DialogEditor {
         const didx = parseInt(target.dataset.didx!);
 
         if (file && tree.nodes[nid]?.directives?.[didx]) {
-          const targetScene = findDialogScene(tree);
+          const targetScene = this.findDialogScene(tree);
           const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
           tree.nodes[nid].directives![didx].sfxUrl = relPath;
           const urlInput = this.element.querySelector(`.dir-sfx-url[data-nodeid="${nid}"][data-didx="${didx}"]`) as HTMLInputElement;
@@ -1745,7 +2637,7 @@ export class DialogEditor {
         const nid = target.dataset.nodeid!;
 
         if (file && tree.nodes[nid]) {
-          const targetScene = findDialogScene(tree);
+          const targetScene = this.findDialogScene(tree);
           const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
           tree.nodes[nid].voiceAudioUrl = relPath;
           const urlInput = this.element.querySelector(`.node-voice-url[data-nodeid="${nid}"]`) as HTMLInputElement;
@@ -1764,7 +2656,7 @@ export class DialogEditor {
         const cIdx = parseInt(target.dataset.cidx!);
 
         if (file && tree.nodes[nid]?.choices?.[cIdx]) {
-          const targetScene = findDialogScene(tree);
+          const targetScene = this.findDialogScene(tree);
           const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
           tree.nodes[nid].choices![cIdx].voiceAudioUrl = relPath;
           const urlInput = this.element.querySelector(`.choice-voice-url[data-nodeid="${nid}"][data-cidx="${cIdx}"]`) as HTMLInputElement;

@@ -1215,7 +1215,7 @@
   "dialogs": [
     {
       "id": "dlg_eldrin",
-      "title": "Conversation with Master Eldrin",
+      "title": "Start Game",
       "startNodeId": "router_5",
       "nodes": {
         "node_1": {
@@ -1338,6 +1338,79 @@
             }
           ],
           "voiceAudioUrl": "assets/c1s2/audio/Yes, Sir Ronald.mp3"
+        }
+      }
+    },
+    {
+      "id": "dlg_1787942558368",
+      "title": "End Game",
+      "startNodeId": "event_2",
+      "nodes": {
+        "beat_1": {
+          "id": "beat_1",
+          "speaker": "Hero",
+          "text": "Greetings, adventurer! What news do you bring?",
+          "position": {
+            "x": 758,
+            "y": 201.39061737060547
+          },
+          "nodeType": "action",
+          "isRouterNode": false,
+          "eventScope": "scene",
+          "eventTargetId": "scene_gates",
+          "eventName": "enter",
+          "actionCategory": "screen_effect",
+          "screenEffectType": "fade_in",
+          "screenEffectDuration": 1
+        },
+        "event_2": {
+          "id": "event_2",
+          "nodeType": "event_listener",
+          "eventScope": "game",
+          "eventTargetId": "game",
+          "eventName": "start",
+          "speaker": "Event Trigger",
+          "text": "",
+          "position": {
+            "x": 160,
+            "y": 180
+          },
+          "nextNodeId": "beat_1"
+        }
+      }
+    },
+    {
+      "id": "dlg_1787942640060",
+      "title": "End Game",
+      "startNodeId": "event_1",
+      "nodes": {
+        "event_1": {
+          "id": "event_1",
+          "nodeType": "event_listener",
+          "eventScope": "item",
+          "eventTargetId": "item_potion",
+          "eventName": "obtained",
+          "speaker": "Event Trigger",
+          "text": "",
+          "position": {
+            "x": 130,
+            "y": 140
+          },
+          "nextNodeId": "action_2"
+        },
+        "action_2": {
+          "id": "action_2",
+          "nodeType": "action",
+          "actionCategory": "screen_effect",
+          "screenEffectType": "fade_out",
+          "screenEffectDuration": 1,
+          "screenEffectColor": "#000000",
+          "speaker": "Action",
+          "text": "",
+          "position": {
+            "x": 621,
+            "y": 175.00000762939453
+          }
         }
       }
     }

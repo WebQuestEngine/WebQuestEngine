@@ -231,10 +231,17 @@ export interface DialogChoice {
   takeItems?: string[];
 }
 
+export type DialogNodeType = 'beat' | 'router' | 'event_listener' | 'action';
+
+export type EventScopeType = 'game' | 'scene' | 'hotspot' | 'character' | 'item';
+
+export type ActionCategoryType = 'video' | 'screen_effect' | 'camera' | 'audio' | 'delay' | 'scene_change' | 'mutation';
+
 export interface DialogNode {
   id: string;
   speaker: string;
   text: string;
+  nodeType?: DialogNodeType;
   portraitUrl?: string;
   voiceAudioUrl?: string;
   speakerAnimation?: string;     // Active talk animation for speaker
@@ -255,6 +262,29 @@ export interface DialogNode {
   isChoiceInteractive?: boolean;
   isRouterNode?: boolean;
   waitDurationSeconds?: number;  // Optional timed wait duration
+
+  // Event Listener Node Properties
+  eventScope?: EventScopeType;
+  eventTargetId?: string;
+  eventName?: string;
+
+  // Action / Cinematic Node Properties
+  actionCategory?: ActionCategoryType;
+  videoUrl?: string;
+  videoSkippable?: boolean;
+  screenEffectType?: 'fade_in' | 'fade_out' | 'flash' | 'shake' | 'tint';
+  screenEffectDuration?: number;
+  screenEffectColor?: string;
+  cameraAction?: 'pan' | 'zoom' | 'shake' | 'follow' | 'reset';
+  cameraZoom?: number;
+  cameraDuration?: number;
+  targetPosition?: Vector2D;
+  targetActorId?: string;
+  audioAction?: 'play_bgm' | 'stop_bgm' | 'play_sfx';
+  audioUrl?: string;
+  audioVolume?: number;
+  targetSceneId?: string;
+  targetSpawnPoint?: Vector2D;
 }
 
 export interface DialogTree {

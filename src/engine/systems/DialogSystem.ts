@@ -44,7 +44,7 @@ export class DialogSystem {
     this.dialogs.set(tree.id, tree);
   }
 
-  public startDialog(dialogId: string, getFlagState?: (flag: string) => boolean): boolean {
+  public startDialog(dialogId: string, getFlagState?: (flag: string) => boolean, startNodeId?: string): boolean {
     const tree = this.dialogs.get(dialogId);
     if (!tree) {
       console.warn(`[DialogSystem] ⚠️ Dialog ID '${dialogId}' not found.`);
@@ -56,11 +56,12 @@ export class DialogSystem {
     }
 
     this.currentTree = tree;
-    this.currentNode = tree.nodes[tree.startNodeId];
+    const initialNodeId = (startNodeId && tree.nodes[startNodeId]) ? startNodeId : tree.startNodeId;
+    this.currentNode = tree.nodes[initialNodeId] || Object.values(tree.nodes)[0];
     this.autoAdvanceChoiceId = null;
     this.isExecuting = true;
 
-    console.group(`%c[DialogSystem] 💬 Started Dialog: "%c${tree.id}%c" (Start Node: "${tree.startNodeId}")`, 'color: #8b5cf6; font-weight: bold;', 'color: #38bdf8; font-weight: bold;', 'color: #8b5cf6; font-weight: bold;');
+    console.group(`%c[DialogSystem] 💬 Started Sequence: "%c${tree.id}%c" (Node: "${initialNodeId}")`, 'color: #8b5cf6; font-weight: bold;', 'color: #38bdf8; font-weight: bold;', 'color: #8b5cf6; font-weight: bold;');
 
     EventBus.getInstance().emit('dialog:start', { tree, node: this.currentNode });
     this.presentNode(getFlagState || this.activeFlagGetter || undefined);
@@ -132,8 +133,54 @@ export class DialogSystem {
       }
     }
 
-    // 2. Router Node Processing (Invisible logic router: selects first matching condition & auto-starts conversation)
-    if (this.currentNode.isRouterNode) {
+    // 2. Event Listener Node (Trigger anchor: immediately passes control to next connected node)
+    if (this.currentNode.nodeType === 'event_listener') {
+      if (this.currentNode.setFlag) EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
+      if (this.currentNode.setFlags) this.currentNode.setFlags.forEach(f => EventBus.getInstance().emit('flag:set', f));
+      if (this.currentNode.clearFlag) EventBus.getInstance().emit('flag:clear', this.currentNode.clearFlag);
+      if (this.currentNode.clearFlags) this.currentNode.clearFlags.forEach(f => EventBus.getInstance().emit('flag:clear', f));
+      if (this.currentNode.giveItem) EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
+
+      const nextId = this.currentNode.nextNodeId;
+      if (nextId && this.currentTree.nodes[nextId]) {
+        console.log(`%c[DialogSystem] ⚡ Event Node triggered, advancing to "${nextId}"`, 'color: #f59e0b;');
+        this.currentNode = this.currentTree.nodes[nextId];
+        this.presentNode(flagGetter);
+      } else {
+        this.endDialog();
+      }
+      return;
+    }
+
+    // 3. Action Node (Video, Screen FX, Camera, Audio, Delay, Scene Change)
+    if (this.currentNode.nodeType === 'action') {
+      const node = this.currentNode;
+      if (node.setFlag) EventBus.getInstance().emit('flag:set', node.setFlag);
+      if (node.setFlags) node.setFlags.forEach(f => EventBus.getInstance().emit('flag:set', f));
+      if (node.clearFlag) EventBus.getInstance().emit('flag:clear', node.clearFlag);
+      if (node.clearFlags) node.clearFlags.forEach(f => EventBus.getInstance().emit('flag:clear', f));
+      if (node.giveItem) EventBus.getInstance().emit('inventory:give', node.giveItem);
+      if (node.giveItems) node.giveItems.forEach(it => EventBus.getInstance().emit('inventory:give', it));
+      if (node.takeItems) node.takeItems.forEach(it => EventBus.getInstance().emit('inventory:take', it));
+
+      console.log(`%c[DialogSystem] ✨ Executing Action Node "${node.id}" (Category: ${node.actionCategory || 'screen_effect'})`, 'color: #10b981; font-weight: bold;');
+
+      EventBus.getInstance().emit('dialog:action', {
+        node,
+        onComplete: () => {
+          if (node.nextNodeId && this.currentTree?.nodes[node.nextNodeId]) {
+            this.currentNode = this.currentTree.nodes[node.nextNodeId];
+            this.presentNode(flagGetter);
+          } else {
+            this.endDialog();
+          }
+        }
+      });
+      return;
+    }
+
+    // 4. Router Node Processing (Invisible logic router: selects first matching condition & auto-starts conversation)
+    if (this.currentNode.isRouterNode || this.currentNode.nodeType === 'router') {
       if (this.currentNode.setFlag) {
         console.log(`  🚩 Router Node setting flag: "${this.currentNode.setFlag}"`);
         EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);

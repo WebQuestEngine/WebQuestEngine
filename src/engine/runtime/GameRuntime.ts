@@ -1,5 +1,5 @@
 import { Application, Graphics, Container, FederatedPointerEvent } from 'pixi.js';
-import { ProjectData, SceneData, Vector2D, VerbType, HotspotAction } from '../types';
+import { ProjectData, SceneData, Vector2D, VerbType, HotspotAction, DialogNode } from '../types';
 import { Camera } from '../core/Camera';
 import { Scene } from '../scene/Scene';
 import { Character } from '../scene/Character';
@@ -129,6 +129,17 @@ export class GameRuntime {
       })
     );
 
+    // Cinematic action execution (Video, Screen FX, Camera, Delay, Audio)
+    this.unsubscribers.push(
+      EventBus.getInstance().on('dialog:action', (payload: { node: any; onComplete: () => void }) => {
+        if (this.isDestroyed) {
+          payload?.onComplete?.();
+          return;
+        }
+        this.executeCinematicAction(payload.node, payload.onComplete);
+      })
+    );
+
     // Dialogue presentation
     this.unsubscribers.push(
       EventBus.getInstance().on('dialog:node', (data: any) => {
@@ -233,40 +244,26 @@ export class GameRuntime {
 
       // Refresh inventory UI on scene load
       this.context.ui.renderInventoryItems(this.context.inventory.getItems());
+
+      // Trigger Scene Events (First Enter and Enter)
+      const visitedFlag = `scene_visited_${sceneData.id}`;
+      const isFirstEnter = !this.context.story.getFlag(visitedFlag);
+      if (isFirstEnter) {
+        this.context.story.setFlag(visitedFlag, true);
+        this.checkAndTriggerEvent('scene', sceneData.id, 'first_enter');
+      }
+      this.checkAndTriggerEvent('scene', sceneData.id, 'enter');
     } finally {
       this.isLoadingScene = false;
     }
   }
 
-  private registerSceneDialogs(sceneData: SceneData): void {
+  private registerSceneDialogs(_sceneData: SceneData): void {
     this.context.dialog.clear();
     if (!this.context.project || !this.context.project.dialogs) return;
 
-    const sceneDialogIds = new Set<string>();
-    if (sceneData.characters) {
-      for (const char of sceneData.characters) {
-        if (char.actions) {
-          for (const act of char.actions) {
-            if (act.dialogId) sceneDialogIds.add(act.dialogId);
-          }
-        }
-      }
-    }
-    if (sceneData.hotspots) {
-      for (const hs of sceneData.hotspots) {
-        if (hs.actions) {
-          for (const act of hs.actions) {
-            if (act.dialogId) sceneDialogIds.add(act.dialogId);
-          }
-        }
-      }
-    }
-
-    for (const dialogId of sceneDialogIds) {
-      const tree = this.context.project.dialogs.find(d => d.id === dialogId);
-      if (tree) {
-        this.context.dialog.registerDialog(tree);
-      }
+    for (const tree of this.context.project.dialogs) {
+      this.context.dialog.registerDialog(tree);
     }
   }
 
@@ -383,8 +380,16 @@ export class GameRuntime {
 
       if (action) {
         if (player) {
-          player.walkTo(charNPC.position, walkPath, () => this.executeAction(action, charNPC.position));
+          player.walkTo(charNPC.position, walkPath, () => {
+            const triggered = this.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
+                              this.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
+            if (triggered) return;
+            this.executeAction(action, charNPC.position);
+          });
         } else {
+          const triggered = this.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
+                            this.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
+          if (triggered) return;
           this.executeAction(action, charNPC.position);
         }
         return;
@@ -393,12 +398,18 @@ export class GameRuntime {
         const dialogId = charNPC.data.actions[0].dialogId;
         if (player) {
           player.walkTo(charNPC.position, walkPath, () => {
+            const triggered = this.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
+                              this.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
+            if (triggered) return;
             if (this.currentScene?.playerCharacter?.data.name) {
               this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
             }
             this.context.dialog.startDialog(dialogId, (flag) => this.context.story.getFlag(flag));
           });
         } else {
+          const triggered = this.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
+                            this.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
+          if (triggered) return;
           if (this.currentScene?.playerCharacter?.data.name) {
             this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
           }
@@ -408,6 +419,9 @@ export class GameRuntime {
       }
       if (player) {
         player.walkTo(charNPC.position, walkPath, () => {
+          const triggered = this.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
+                            this.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
+          if (triggered) return;
           if (chosen.verb === 'talk') this.context.ui.showSubtitle("They don't have much to say.");
           else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${charNPC.data.name}.`);
           else this.context.ui.showSubtitle("That doesn't seem to work.");
@@ -440,18 +454,32 @@ export class GameRuntime {
       const targetCenter = hotspot.getCenter();
       if (action) {
         if (player) {
-          player.walkTo(targetCenter, walkPath, () => this.executeAction(action, targetCenter));
+          player.walkTo(targetCenter, walkPath, () => {
+            const triggered = this.checkAndTriggerEvent('hotspot', hotspot.data.id, chosen.verb) ||
+                              this.checkAndTriggerEvent('hotspot', hotspot.data.id, 'interact');
+            if (triggered) return;
+            this.executeAction(action, targetCenter);
+          });
         } else {
+          const triggered = this.checkAndTriggerEvent('hotspot', hotspot.data.id, chosen.verb) ||
+                            this.checkAndTriggerEvent('hotspot', hotspot.data.id, 'interact');
+          if (triggered) return;
           this.executeAction(action, targetCenter);
         }
       } else {
         if (player) {
           player.walkTo(targetCenter, walkPath, () => {
+            const triggered = this.checkAndTriggerEvent('hotspot', hotspot.data.id, chosen.verb) ||
+                              this.checkAndTriggerEvent('hotspot', hotspot.data.id, 'interact');
+            if (triggered) return;
             if (chosen.verb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
             else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
             else this.context.ui.showSubtitle("That doesn't seem to work.");
           });
         } else {
+          const triggered = this.checkAndTriggerEvent('hotspot', hotspot.data.id, chosen.verb) ||
+                            this.checkAndTriggerEvent('hotspot', hotspot.data.id, 'interact');
+          if (triggered) return;
           if (chosen.verb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
           else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
           else this.context.ui.showSubtitle("That doesn't seem to work.");
@@ -1079,6 +1107,217 @@ export class GameRuntime {
       x: Math.round(vpX + (screenX - offsetX) / playScale),
       y: Math.round(vpY + (screenY - offsetY) / playScale)
     };
+  }
+
+  public checkAndTriggerEvent(scope: 'game' | 'scene' | 'hotspot' | 'character' | 'item', targetId: string, eventName: string): boolean {
+    if (!this.context.project?.dialogs || this.context.dialog.isActive()) return false;
+
+    for (const tree of this.context.project.dialogs) {
+      for (const node of Object.values(tree.nodes)) {
+        if (node.nodeType === 'event_listener') {
+          const matchScope = node.eventScope === scope;
+          const matchTarget = !node.eventTargetId || node.eventTargetId === targetId || (scope === 'game' && targetId === 'game');
+          const matchEvent = node.eventName === eventName || node.eventName === 'interact';
+
+          if (matchScope && matchTarget && matchEvent) {
+            console.log(`%c[GameRuntime] ⚡ Event Trigger Matched: [${scope}:${targetId}:${eventName}] -> Sequence "${tree.id}", Node "${node.id}"`, 'color: #f59e0b; font-weight: bold;');
+            if (this.currentScene?.playerCharacter?.data.name) {
+              this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
+            }
+            this.context.dialog.startDialog(tree.id, (flag) => this.context.story.getFlag(flag), node.nextNodeId || node.id);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private executeCinematicAction(node: DialogNode, onComplete: () => void): void {
+    const category = node.actionCategory || 'screen_effect';
+
+    if (category === 'video' && node.videoUrl) {
+      if (!this.containerElement) {
+        onComplete();
+        return;
+      }
+
+      const videoOverlay = document.createElement('div');
+      videoOverlay.className = 'cinematic-video-overlay';
+      videoOverlay.style.cssText = `
+        position: absolute;
+        inset: 0;
+        background: #000000;
+        z-index: 9000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      `;
+
+      const videoEl = document.createElement('video');
+      videoEl.src = node.videoUrl;
+      videoEl.autoplay = true;
+      videoEl.controls = false;
+      videoEl.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain; width: 100%; height: 100%;';
+
+      let isFinished = false;
+      const finish = () => {
+        if (isFinished) return;
+        isFinished = true;
+        videoOverlay.remove();
+        onComplete();
+      };
+
+      if (node.videoSkippable !== false) {
+        const skipBtn = document.createElement('button');
+        skipBtn.className = 'btn btn-gold';
+        skipBtn.innerText = 'Skip ⏭️';
+        skipBtn.style.cssText = `
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          z-index: 9001;
+          background: rgba(15, 23, 42, 0.85);
+          border: 1px solid var(--accent-gold);
+          color: var(--accent-gold);
+          font-weight: 700;
+          font-size: 0.85rem;
+          padding: 6px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+        `;
+        skipBtn.onclick = finish;
+        videoOverlay.appendChild(skipBtn);
+      }
+
+      videoEl.onended = finish;
+      videoEl.onerror = () => {
+        console.warn(`[GameRuntime] ⚠️ Video cutscene failed to load: ${node.videoUrl}`);
+        finish();
+      };
+
+      videoOverlay.appendChild(videoEl);
+      this.containerElement.appendChild(videoOverlay);
+      videoEl.play().catch(() => {
+        finish();
+      });
+      return;
+    }
+
+    if (category === 'screen_effect') {
+      const effect = node.screenEffectType || 'fade_in';
+      const duration = node.screenEffectDuration ?? 1.0;
+      const color = node.screenEffectColor || '#000000';
+
+      if (effect === 'shake') {
+        this.camera.shake(duration, 12);
+        setTimeout(onComplete, duration * 1000);
+        return;
+      }
+
+      if (!this.containerElement) {
+        onComplete();
+        return;
+      }
+
+      const fxOverlay = document.createElement('div');
+      fxOverlay.className = 'screen-fx-overlay';
+      fxOverlay.style.cssText = `
+        position: absolute;
+        inset: 0;
+        background: ${color};
+        z-index: 8999;
+        pointer-events: none;
+        transition: opacity ${duration}s ease;
+      `;
+
+      if (effect === 'fade_out') {
+        fxOverlay.style.opacity = '0';
+        this.containerElement.appendChild(fxOverlay);
+        requestAnimationFrame(() => {
+          fxOverlay.style.opacity = '1';
+        });
+        setTimeout(onComplete, duration * 1000);
+      } else if (effect === 'fade_in') {
+        fxOverlay.style.opacity = '1';
+        this.containerElement.appendChild(fxOverlay);
+        requestAnimationFrame(() => {
+          fxOverlay.style.opacity = '0';
+        });
+        setTimeout(() => {
+          fxOverlay.remove();
+          onComplete();
+        }, duration * 1000);
+      } else if (effect === 'flash') {
+        fxOverlay.style.background = '#ffffff';
+        fxOverlay.style.opacity = '1';
+        this.containerElement.appendChild(fxOverlay);
+        setTimeout(() => {
+          fxOverlay.style.opacity = '0';
+          setTimeout(() => {
+            fxOverlay.remove();
+            onComplete();
+          }, 300);
+        }, 150);
+      } else if (effect === 'tint') {
+        fxOverlay.style.opacity = '0.4';
+        this.containerElement.appendChild(fxOverlay);
+        setTimeout(onComplete, duration * 1000);
+      } else {
+        onComplete();
+      }
+      return;
+    }
+
+    if (category === 'camera') {
+      const action = node.cameraAction || 'reset';
+      const duration = node.cameraDuration ?? 0.5;
+
+      if (action === 'zoom') {
+        this.camera.zoom = node.cameraZoom ?? 1.5;
+      } else if (action === 'shake') {
+        this.camera.shake(duration, 10);
+      } else if (action === 'pan' && node.targetPosition) {
+        this.camera.panOffset = { x: node.targetPosition.x, y: node.targetPosition.y };
+      } else if (action === 'follow' && node.targetActorId) {
+        const actor = this.getCharacterByNameOrId(node.targetActorId);
+        if (actor) this.camera.follow(actor.container);
+      } else if (action === 'reset') {
+        this.camera.resetZoom();
+      }
+
+      setTimeout(onComplete, duration * 1000);
+      return;
+    }
+
+    if (category === 'audio') {
+      const audioAction = node.audioAction || 'play_sfx';
+      if (audioAction === 'play_bgm' && node.audioUrl) {
+        this.context.audio.playMusic(node.audioUrl);
+      } else if (audioAction === 'stop_bgm') {
+        this.context.audio.stopMusic(500);
+      } else if (audioAction === 'play_sfx' && node.audioUrl) {
+        this.context.audio.playSFX(node.audioUrl);
+      }
+      onComplete();
+      return;
+    }
+
+    if (category === 'delay') {
+      const delaySec = node.waitDurationSeconds ?? 1.0;
+      setTimeout(onComplete, delaySec * 1000);
+      return;
+    }
+
+    if (category === 'scene_change' && node.targetSceneId) {
+      this.context.story.changeScene(node.targetSceneId, node.targetSpawnPoint);
+      onComplete();
+      return;
+    }
+
+    // Default fallback
+    onComplete();
   }
 
   public destroy(): void {

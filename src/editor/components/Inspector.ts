@@ -24,7 +24,7 @@ export function normalizeImagePath(pathStr: string): string {
   return normalized;
 }
 
-export type AssetCategory = 'audio' | 'characters' | 'cursors' | 'items' | 'images' | 'layers';
+export type AssetCategory = 'audio' | 'characters' | 'cursors' | 'items' | 'images' | 'layers' | 'video';
 
 /**
  * Combines the active base folder of the scene or project with the asset category folder and filename.
