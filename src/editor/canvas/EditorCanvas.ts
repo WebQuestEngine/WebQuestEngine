@@ -904,8 +904,8 @@ export class EditorCanvas {
   }
 
   public renderDebugOverlay(): void {
+    if (!this.debugOverlay || (this.debugOverlay as any).destroyed || (this.debugOverlay as any).context === null || !this.currentScene) return;
     this.debugOverlay.clear();
-    if (!this.currentScene) return;
 
     const scene = this.currentScene.data;
 

@@ -156,19 +156,24 @@ export class Scene {
   }
 
   public update(delta: number, camera: Camera): void {
+    if (!this.container || (this.container as any).destroyed) return;
     const activeWalkPath = this.getWalkPath();
 
-    for (const char of this.characters.values()) {
+    for (const char of Array.from(this.characters.values())) {
       char.update(delta, activeWalkPath);
+      if (!this.container || (this.container as any).destroyed) return;
     }
 
     for (const hs of this.hotspots) {
       hs.update();
+      if (!this.container || (this.container as any).destroyed) return;
     }
 
+    if (!this.entityContainer || (this.entityContainer as any).destroyed) return;
+
     this.entityContainer.children.sort((a, b) => {
-      const depthA = (a as any).depthY !== undefined ? (a as any).depthY : a.y;
-      const depthB = (b as any).depthY !== undefined ? (b as any).depthY : b.y;
+      const depthA = (a as any).depthY !== undefined ? (a as any).depthY : ((a as any).position ? a.y : 0);
+      const depthB = (b as any).depthY !== undefined ? (b as any).depthY : ((b as any).position ? b.y : 0);
       return depthA - depthB;
     });
 

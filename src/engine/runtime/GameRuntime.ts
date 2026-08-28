@@ -59,13 +59,10 @@ export class GameRuntime {
     }
   }
 
+  private isLoadingScene = false;
+
   private setupEventHandlers(): void {
     // Scene change
-    this.context.eventBus.on('scene:change', async (payload: any) => {
-      const sceneData = payload.scene || payload;
-      await this.loadScene(sceneData, payload.spawnPoint);
-    });
-
     EventBus.getInstance().on('scene:change', async (payload: any) => {
       const sceneData = payload.scene || payload;
       await this.loadScene(sceneData, payload.spawnPoint);
@@ -128,40 +125,47 @@ export class GameRuntime {
   }
 
   public async loadScene(sceneData: SceneData, spawnPoint?: Vector2D): Promise<void> {
-    if (this.currentScene) {
-      this.app.stage.removeChild(this.currentScene.container);
-      this.currentScene.destroy();
-      this.currentScene = null;
-    }
+    if (this.isLoadingScene) return;
+    this.isLoadingScene = true;
 
-    // Deselect held item when switching scenes
-    this.context.inventory.selectItem(null);
-    this.context.ui.setActiveVerb('walk');
+    try {
+      if (this.currentScene) {
+        this.app.stage.removeChild(this.currentScene.container);
+        this.currentScene.destroy();
+        this.currentScene = null;
+      }
 
-    // Register required scene dialogues
-    this.registerSceneDialogs(sceneData);
+      // Deselect held item when switching scenes
+      this.context.inventory.selectItem(null);
+      this.context.ui.setActiveVerb('walk');
 
-    this.currentScene = new Scene(sceneData);
-    await this.currentScene.init(this.camera);
+      this.currentScene = new Scene(sceneData);
+      await this.currentScene.init(this.camera);
 
-    // Position player
-    if (spawnPoint && this.currentScene.playerCharacter) {
-      this.currentScene.playerCharacter.container.x = spawnPoint.x;
-      this.currentScene.playerCharacter.container.y = spawnPoint.y;
-    }
+      // Position player
+      if (spawnPoint && this.currentScene.playerCharacter) {
+        this.currentScene.playerCharacter.container.x = spawnPoint.x;
+        this.currentScene.playerCharacter.container.y = spawnPoint.y;
+      }
 
-    if (this.currentScene.playerCharacter) {
-      this.camera.follow(this.currentScene.playerCharacter.container);
-    }
+      if (this.currentScene.playerCharacter) {
+        this.camera.follow(this.currentScene.playerCharacter.container);
+      }
 
-    this.app.stage.addChild(this.currentScene.container);
-    this.currentScene.container.addChild(this.viewportMask);
+      this.app.stage.addChild(this.currentScene.container);
+      this.currentScene.container.addChild(this.viewportMask);
 
-    // Play scene BGM
-    if (sceneData.backgroundMusicUrl) {
-      this.context.audio.playMusic(sceneData.backgroundMusicUrl);
-    } else {
-      this.context.audio.stopMusic(500);
+      // Play scene BGM
+      if (sceneData.backgroundMusicUrl) {
+        this.context.audio.playMusic(sceneData.backgroundMusicUrl);
+      } else {
+        this.context.audio.stopMusic(500);
+      }
+
+      // Refresh inventory UI on scene load
+      this.context.ui.renderInventoryItems(this.context.inventory.getItems());
+    } finally {
+      this.isLoadingScene = false;
     }
   }
 
@@ -636,8 +640,12 @@ export class GameRuntime {
     overlay.className = `dialog-box-overlay ${screenPos ? 'in-world-bubble' : ''}`;
 
     if (screenPos) {
-      overlay.style.left = `${screenPos.x}px`;
-      overlay.style.top = `${screenPos.y}px`;
+      const viewW = this.camera.viewport.width || window.innerWidth;
+      const viewH = this.camera.viewport.height || window.innerHeight;
+      const clampedX = Math.max(180, Math.min(viewW - 180, screenPos.x));
+      const clampedY = Math.max(140, Math.min(viewH - 40, screenPos.y));
+      overlay.style.left = `${clampedX}px`;
+      overlay.style.top = `${clampedY}px`;
       overlay.style.transform = 'translate(-50%, -100%)';
       overlay.style.bottom = 'auto';
     }
@@ -653,22 +661,25 @@ export class GameRuntime {
               <button class="dialog-choice-btn" data-choiceid="${c.id}">${c.text}</button>
             `).join('')}
           </div>
-        ` : (data.hasNext ? `<button class="btn btn-primary" id="btn-dlg-next">Continue ➔</button>` : `<button class="btn btn-primary" id="btn-dlg-end">Close</button>`)}
+        ` : (data.hasNext ? `<button class="btn btn-gold" id="btn-dlg-next" style="margin-top:8px;">Continue ➔</button>` : `<button class="btn btn-primary" id="btn-dlg-end" style="margin-top:8px;">Close</button>`)}
       </div>
     `;
 
     overlay.querySelectorAll('.dialog-choice-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const id = (e.currentTarget as HTMLElement).dataset.choiceid!;
         this.context.dialog.selectChoice(id, (flag) => this.context.story.getFlag(flag));
       });
     });
 
-    overlay.querySelector('#btn-dlg-next')?.addEventListener('click', () => {
+    overlay.querySelector('#btn-dlg-next')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.context.dialog.advanceNextNode((flag) => this.context.story.getFlag(flag));
     });
 
-    overlay.querySelector('#btn-dlg-end')?.addEventListener('click', () => {
+    overlay.querySelector('#btn-dlg-end')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.context.dialog.endDialog();
     });
 

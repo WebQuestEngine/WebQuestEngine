@@ -43,12 +43,21 @@ export class RuntimeContext {
       }
     }
 
+    if (project.dialogs) {
+      for (const tree of project.dialogs) {
+        this.dialog.registerDialog(tree);
+      }
+    }
+
     // Set active singleton proxies for play mode
     StoryGraphSystem.setInstance(this.story);
     InventorySystem.setInstance(this.inventory);
     DialogSystem.setInstance(this.dialog);
     UISystem.setInstance(this.ui);
     AudioSystem.setInstance(this.audio);
+
+    // Initialize UI system in DOM container
+    this.ui.init(uiContainerElement, project.uiConfig);
   }
 
   public destroy(): void {

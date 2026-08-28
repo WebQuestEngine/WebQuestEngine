@@ -76,6 +76,9 @@ export class UISystem {
     EventBus.getInstance().on('inventory:selected', (item: any) => {
       this.updateCustomCursor(item ? item.iconUrl : null);
     });
+    EventBus.getInstance().on('inventory:updated', (items: any) => {
+      this.renderInventoryItems(items || InventorySystem.getInstance().getItems());
+    });
   }
 
   public setPreset(preset: UIPresetType): void {

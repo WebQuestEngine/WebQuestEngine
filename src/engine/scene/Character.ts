@@ -140,6 +140,8 @@ export class Character extends MovableElement {
   }
 
   public update(delta: number, walkPath?: WalkPath): void {
+    if (!this.container || (this.container as any).destroyed || !this.container.position) return;
+
     // Movement logic
     if (this.state === 'walking' && this.path.length > 0) {
       const target = this.path[this.currentPathIndex];
@@ -159,6 +161,7 @@ export class Character extends MovableElement {
             const cb = this.onWalkCompleteCallback;
             this.onWalkCompleteCallback = null;
             cb();
+            return;
           }
         } else {
           this.faceTarget(this.path[this.currentPathIndex]);
@@ -176,6 +179,8 @@ export class Character extends MovableElement {
         this.isFacingLeft = this.direction8Way === 'left' || this.direction8Way === 'up_left' || this.direction8Way === 'down_left';
       }
     }
+
+    if (!this.container || (this.container as any).destroyed || !this.container.position) return;
 
     // Perspective scaling based on WalkPath Y position
     if (walkPath) {
@@ -199,6 +204,7 @@ export class Character extends MovableElement {
 
   public getDepthY(): number {
     if (this.data.depthY !== undefined) return this.data.depthY;
+    if (!this.container || (this.container as any).destroyed || !this.container.position) return 0;
     return this.container.y;
   }
 
@@ -298,6 +304,7 @@ export class Character extends MovableElement {
   }
 
   public freezeFrame(walkPath?: WalkPath): void {
+    if (!this.container || (this.container as any).destroyed || !this.container.position) return;
     this.state = 'idle';
     this.animFrame = 0;
     this.container.x = this.data.position.x;
