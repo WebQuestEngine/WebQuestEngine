@@ -19,19 +19,29 @@
     "showVerbText": true,
     "customCursors": {
       "walk": {
-        "url": "assets/cursors/walk.png"
+        "url": "assets/cursors/walk.png",
+        "hotspotX": 39,
+        "hotspotY": 14
       },
       "look": {
-        "url": "assets/cursors/look.png"
+        "url": "assets/cursors/look.png",
+        "hotspotX": 129,
+        "hotspotY": 125
       },
       "interact": {
-        "url": "assets/cursors/use.png"
+        "url": "assets/cursors/use.png",
+        "hotspotX": 31,
+        "hotspotY": 48
       },
       "talk": {
-        "url": "assets/cursors/talk.png"
+        "url": "assets/cursors/talk.png",
+        "hotspotX": 49,
+        "hotspotY": 62
       },
       "pick_up": {
-        "url": "assets/cursors/use.png"
+        "url": "assets/cursors/use.png",
+        "hotspotX": 34,
+        "hotspotY": 57
       }
     }
   },
@@ -861,43 +871,47 @@
           "enabled": true,
           "imageUrl": "assets/c1s2/cauldron.png",
           "position": {
-            "x": 757.125,
-            "y": 591.625
+            "x": 752.8888888888889,
+            "y": 599.7777777777778
           },
           "scaleX": 0.3,
           "scaleY": 0.3,
           "points": [
             {
-              "x": 637,
-              "y": 514
+              "x": 653,
+              "y": 501
             },
             {
-              "x": 716,
-              "y": 485
+              "x": 698,
+              "y": 478
             },
             {
-              "x": 829,
-              "y": 502
+              "x": 830,
+              "y": 465
             },
             {
-              "x": 858,
-              "y": 539
+              "x": 882,
+              "y": 533
             },
             {
-              "x": 829,
-              "y": 652
+              "x": 911,
+              "y": 633
             },
             {
               "x": 847,
-              "y": 681
+              "y": 726
             },
             {
-              "x": 712,
-              "y": 708
+              "x": 724,
+              "y": 758
             },
             {
-              "x": 629,
-              "y": 652
+              "x": 621,
+              "y": 702
+            },
+            {
+              "x": 610,
+              "y": 602
             }
           ],
           "actions": [
@@ -1221,7 +1235,7 @@
             "y": 10
           },
           "isRouterNode": false,
-          "setFlag": "eldrin:firstTime"
+          "setFlag": "eldrinFirstTalkDone"
         },
         "node_2": {
           "id": "node_2",
@@ -1273,7 +1287,7 @@
               "id": "branch_1",
               "text": "If Has Flag...",
               "nextNodeId": "node_1",
-              "notFlag": "eldrin:firstTime"
+              "notFlag": "eldrinFirstTalkDone"
             },
             {
               "id": "branch_2",

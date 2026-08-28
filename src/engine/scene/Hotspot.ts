@@ -79,9 +79,10 @@ export class Hotspot extends InteractableElement {
     return this.data.actions.find(a => a.requireItemId === itemId && this.isActionValid(a, itemId));
   }
 
-  private isActionValid(action: HotspotAction, selectedItemId?: string | null): boolean {
-    if (action.requireItemId && selectedItemId !== undefined && action.requireItemId !== selectedItemId) {
-      return false;
+  public isActionValid(action: HotspotAction, selectedItemId?: string | null): boolean {
+    if (action.requireItemId) {
+      if (selectedItemId === undefined || selectedItemId === null) return false;
+      if (action.requireItemId !== selectedItemId) return false;
     }
     const storySystem = StoryGraphSystem.getInstance();
     if (storySystem) {
@@ -93,22 +94,22 @@ export class Hotspot extends InteractableElement {
 
   public isExamined = false;
 
-  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+  public getBestAction(activeVerb?: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+    // 1. If an item is selected, prioritize matching item action
     if (selectedItemId) {
       const itemAction = this.getActionForItemId(selectedItemId);
       if (itemAction) return itemAction;
     }
 
+    // 2. If a specific verb is active (and not default walk), match verb action
     if (activeVerb && activeVerb !== 'walk') {
       const verbAction = this.getActionForVerb(activeVerb);
       if (verbAction) return verbAction;
     }
 
+    // 3. Otherwise return the FIRST valid action in user-defined order
     const validActions = this.data.actions.filter(a => this.isActionValid(a, selectedItemId));
-    const nonLookAction = validActions.find(a => a.verb !== 'look');
-    const lookAction = validActions.find(a => a.verb === 'look');
-
-    return nonLookAction || lookAction || validActions[0];
+    return validActions[0];
   }
 
   private createProceduralHotspotTexture(type: string): PIXI.Texture {

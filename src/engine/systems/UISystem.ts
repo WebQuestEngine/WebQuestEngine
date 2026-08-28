@@ -32,8 +32,15 @@ export class UISystem {
   }
 
   private cursorFollowerElement: HTMLElement | null = null;
+  private currentCursorHotspotX = 0;
+  private currentCursorHotspotY = 0;
+  private lastClientX = window.innerWidth / 2;
+  private lastClientY = window.innerHeight / 2;
 
-  public updateCustomCursor(iconUrl?: string | null): void {
+  public updateCustomCursor(iconUrl?: string | null, hotspotX?: number, hotspotY?: number): void {
+    this.currentCursorHotspotX = hotspotX ?? 0;
+    this.currentCursorHotspotY = hotspotY ?? 0;
+
     if (!this.cursorFollowerElement) {
       this.cursorFollowerElement = document.createElement('div');
       this.cursorFollowerElement.id = 'custom-cursor-follower';
@@ -43,26 +50,48 @@ export class UISystem {
         left: 0;
         pointer-events: none;
         z-index: 99999;
-        transform: translate(-50%, -50%);
         display: none;
       `;
       document.body.appendChild(this.cursorFollowerElement);
 
       window.addEventListener('mousemove', (e) => {
+        this.lastClientX = e.clientX;
+        this.lastClientY = e.clientY;
         if (this.cursorFollowerElement) {
-          this.cursorFollowerElement.style.left = `${e.clientX}px`;
-          this.cursorFollowerElement.style.top = `${e.clientY}px`;
+          this.cursorFollowerElement.style.left = `${e.clientX - this.currentCursorHotspotX}px`;
+          this.cursorFollowerElement.style.top = `${e.clientY - this.currentCursorHotspotY}px`;
         }
       });
     }
 
     if (iconUrl) {
       const resolved = AssetManager.getInstance().resolveImageSrc(iconUrl);
-      this.cursorFollowerElement.innerHTML = `<img src="${resolved}" style="max-width:44px; max-height:44px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,0.7));" />`;
-      this.cursorFollowerElement.style.display = 'block';
-      document.body.classList.add('custom-cursor-active');
+      const img = new Image();
+      img.onload = () => {
+        const natW = img.naturalWidth || 48;
+        const natH = img.naturalHeight || 48;
+        const scale = Math.min(48 / natW, 48 / natH, 1);
+        const actualW = Math.round(natW * scale);
+        const actualH = Math.round(natH * scale);
+        const effectiveHX = (hotspotX ?? 0) * scale;
+        const effectiveHY = (hotspotY ?? 0) * scale;
+
+        this.currentCursorHotspotX = effectiveHX;
+        this.currentCursorHotspotY = effectiveHY;
+
+        if (this.cursorFollowerElement) {
+          this.cursorFollowerElement.innerHTML = `<img src="${resolved}" style="width:${actualW}px; height:${actualH}px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,0.7)); display:block;" />`;
+          this.cursorFollowerElement.style.left = `${this.lastClientX - this.currentCursorHotspotX}px`;
+          this.cursorFollowerElement.style.top = `${this.lastClientY - this.currentCursorHotspotY}px`;
+          this.cursorFollowerElement.style.display = 'block';
+          document.body.classList.add('custom-cursor-active');
+        }
+      };
+      img.src = resolved;
     } else {
-      this.cursorFollowerElement.style.display = 'none';
+      if (this.cursorFollowerElement) {
+        this.cursorFollowerElement.style.display = 'none';
+      }
       document.body.classList.remove('custom-cursor-active');
     }
   }

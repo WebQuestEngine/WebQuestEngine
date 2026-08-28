@@ -3,6 +3,7 @@ import { ProjectData, SceneData, Vector2D, VerbType, HotspotAction } from '../ty
 import { Camera } from '../core/Camera';
 import { Scene } from '../scene/Scene';
 import { Character } from '../scene/Character';
+import { Hotspot } from '../scene/Hotspot';
 import { RuntimeContext } from './RuntimeContext';
 import { EventBus } from '../core/EventBus';
 
@@ -60,6 +61,9 @@ export class GameRuntime {
   }
 
   private isLoadingScene = false;
+  private currentHoverTarget: Hotspot | Character | null = null;
+  private targetActionIndex = 0;
+  private lastMouseWorldPos: Vector2D | null = null;
 
   private setupEventHandlers(): void {
     // Scene change
@@ -305,10 +309,20 @@ export class GameRuntime {
 
     // 3. NPC Interaction with Walk-to-Actor
     if (charNPC && charNPC !== player) {
-      let action = charNPC.getBestAction(activeVerb);
-      if (!action && activeVerb === 'walk') {
-        action = charNPC.getBestAction('talk') || charNPC.getBestAction('interact');
+      const available = this.getAvailableActionsForTarget(charNPC);
+      const chosen = available[this.targetActionIndex % available.length] || available[0];
+
+      let action: HotspotAction | undefined;
+      if (chosen.itemId) {
+        action = charNPC.getActionForItemId(chosen.itemId);
+      } else {
+        action = charNPC.getBestAction(chosen.verb);
       }
+
+      if (!action) {
+        action = charNPC.getBestAction();
+      }
+
       if (action) {
         if (player) {
           player.walkTo(charNPC.position, walkPath, () => this.executeAction(action, charNPC.position));
@@ -330,8 +344,8 @@ export class GameRuntime {
       }
       if (player) {
         player.walkTo(charNPC.position, walkPath, () => {
-          if (activeVerb === 'talk') this.context.ui.showSubtitle("They don't have much to say.");
-          else if (activeVerb === 'look') this.context.ui.showSubtitle(`It's ${charNPC.data.name}.`);
+          if (chosen.verb === 'talk') this.context.ui.showSubtitle("They don't have much to say.");
+          else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${charNPC.data.name}.`);
           else this.context.ui.showSubtitle("That doesn't seem to work.");
         });
       }
@@ -340,14 +354,23 @@ export class GameRuntime {
 
     // 4. Hotspot Interaction with Walk-to-Object
     if (hotspot) {
-      if (activeVerb === 'look') {
+      const available = this.getAvailableActionsForTarget(hotspot);
+      const chosen = available[this.targetActionIndex % available.length] || available[0];
+
+      let action: HotspotAction | undefined;
+      if (chosen.itemId) {
+        action = hotspot.getActionForItemId(chosen.itemId);
+      } else {
+        action = hotspot.getBestAction(chosen.verb);
+      }
+
+      if (!action) {
+        action = hotspot.getBestAction();
+      }
+
+      if (action?.verb === 'look' || chosen.verb === 'look') {
         hotspot.isExamined = true;
         hotspot.data.examined = true;
-      }
-      let action = hotspot.getBestAction(activeVerb);
-      if (!action && activeVerb === 'walk') {
-        const cursorVerb = (hotspot.data.cursor as VerbType) || 'interact';
-        action = hotspot.getBestAction(cursorVerb) || hotspot.getBestAction('interact');
       }
 
       const targetCenter = hotspot.getCenter();
@@ -360,13 +383,13 @@ export class GameRuntime {
       } else {
         if (player) {
           player.walkTo(targetCenter, walkPath, () => {
-            if (activeVerb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
-            else if (activeVerb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
+            if (chosen.verb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
+            else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
             else this.context.ui.showSubtitle("That doesn't seem to work.");
           });
         } else {
-          if (activeVerb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
-          else if (activeVerb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
+          if (chosen.verb === 'talk') this.context.ui.showSubtitle("It doesn't talk.");
+          else if (chosen.verb === 'look') this.context.ui.showSubtitle(`It's ${hotspot.data.name}.`);
           else this.context.ui.showSubtitle("That doesn't seem to work.");
         }
       }
@@ -379,20 +402,85 @@ export class GameRuntime {
     }
   }
 
+  private getAvailableActionsForTarget(target: Hotspot | Character): { verb: VerbType; itemId?: string; label: string; action?: HotspotAction }[] {
+    const list: { verb: VerbType; itemId?: string; label: string; action?: HotspotAction }[] = [];
+    const storySystem = this.context.story;
+    const inventory = this.context.inventory;
+    const heldItems = inventory.getItems();
+    const seenKeys = new Set<string>();
+
+    if (target.data.actions && target.data.actions.length > 0) {
+      for (const act of target.data.actions) {
+        // Check flag requirements
+        if (act.requiredFlag && !storySystem.getFlag(act.requiredFlag)) continue;
+        if (act.notFlag && storySystem.getFlag(act.notFlag)) continue;
+
+        if (act.requireItemId) {
+          // Only available if player currently possesses this item
+          const hasItem = heldItems.some(i => i.id === act.requireItemId);
+          if (hasItem) {
+            const item = heldItems.find(i => i.id === act.requireItemId)!;
+            const key = `item:${item.id}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              list.push({
+                verb: 'use',
+                itemId: item.id,
+                label: `Use ${item.name} on`,
+                action: act
+              });
+            }
+          }
+        } else {
+          const actVerb = (act.verb === 'use' ? 'interact' : act.verb) as VerbType;
+          if (!seenKeys.has(actVerb)) {
+            seenKeys.add(actVerb);
+            const verbLabels: Record<string, string> = {
+              walk: 'Walk to',
+              look: 'Look at',
+              interact: 'Use',
+              talk: 'Talk to',
+              pick_up: 'Pick up'
+            };
+            list.push({
+              verb: actVerb,
+              label: verbLabels[actVerb] || actVerb,
+              action: act
+            });
+          }
+        }
+      }
+    }
+
+    // Fallback if no specific actions matched
+    if (list.length === 0) {
+      const fallbackVerb = (target.data.cursor as VerbType) || (target instanceof Character ? 'talk' : 'interact');
+      list.push({
+        verb: fallbackVerb,
+        label: fallbackVerb === 'talk' ? 'Talk to' : (fallbackVerb === 'look' ? 'Look at' : 'Use')
+      });
+    }
+
+    return list;
+  }
+
   private handleCanvasRightClick(e: MouseEvent): void {
     if (this.isDestroyed || !this.currentScene) return;
+
+    const selectedItem = this.context.inventory.getSelectedItem();
+
+    // 1. Right-click with held item or manual tool selection -> reset to walk / default
+    if (selectedItem || this.targetActionIndex !== 0) {
+      this.context.inventory.selectItem(null);
+      this.targetActionIndex = 0;
+      this.context.ui.setActiveVerb('walk');
+      this.updateCursorAndHover(this.lastMouseWorldPos);
+      return;
+    }
 
     const worldPoint = this.getWorldPoint(e);
     const hotspot = this.currentScene.findHotspotAt(worldPoint);
     const charNPC = this.currentScene.findCharacterAt(worldPoint);
-    const selectedItem = this.context.inventory.getSelectedItem();
-
-    // 1. Right-click while holding an item -> Deselect item
-    if (selectedItem) {
-      this.context.inventory.selectItem(null);
-      this.context.ui.setActiveVerb('walk');
-      return;
-    }
 
     // 2. Right-click in Context Coin mode -> Open coin
     if ((hotspot || charNPC) && this.context.project.uiConfig.preset === 'context_coin') {
@@ -403,7 +491,11 @@ export class GameRuntime {
 
     // 3. Right-click on Hotspot / NPC -> Trigger Look At
     if (hotspot || charNPC) {
-      this.context.ui.setActiveVerb('look');
+      const available = this.getAvailableActionsForTarget(hotspot || charNPC!);
+      const lookIdx = available.findIndex(a => a.verb === 'look');
+      if (lookIdx !== -1) {
+        this.targetActionIndex = lookIdx;
+      }
       this.handleCanvasClick(e);
     }
   }
@@ -411,74 +503,86 @@ export class GameRuntime {
   private handleCanvasMouseMove(e: MouseEvent): void {
     if (this.isDestroyed || !this.currentScene) return;
     const worldPt = this.getWorldPoint(e);
+    this.lastMouseWorldPos = worldPt;
 
     const hotspot = this.currentScene.findHotspotAt(worldPt);
     const charNPC = this.currentScene.findCharacterAt(worldPt);
+    const targetElem = hotspot || charNPC || null;
+
+    if (targetElem !== this.currentHoverTarget) {
+      this.currentHoverTarget = targetElem;
+      this.targetActionIndex = 0;
+    }
+
+    this.updateCursorAndHover(worldPt);
+  }
+
+  private updateCursorAndHover(worldPt: Vector2D | null): void {
+    if (this.isDestroyed || !this.currentScene) return;
+    const pt = worldPt || { x: 0, y: 0 };
+
+    const hotspot = this.currentScene.findHotspotAt(pt);
+    const charNPC = this.currentScene.findCharacterAt(pt);
+    const targetElem = hotspot || charNPC;
     const selectedItem = this.context.inventory.getSelectedItem();
-    const preset = this.context.project.uiConfig.preset;
-
-    // Direct cursor automatic verb resolution
-    if (preset === 'direct_cursor' && !selectedItem) {
-      if (charNPC) {
-        if (this.context.ui.activeVerb !== 'talk') this.context.ui.setActiveVerb('talk');
-      } else if (hotspot) {
-        if (this.context.ui.activeVerb !== 'interact') this.context.ui.setActiveVerb('interact');
-      } else {
-        if (this.context.ui.activeVerb !== 'walk') this.context.ui.setActiveVerb('walk');
-      }
-    }
-
-    const activeVerb = this.context.ui.activeVerb;
     const uiConfig = this.context.project.uiConfig;
-    let effectiveVerb: VerbType = activeVerb;
 
     if (selectedItem) {
-      effectiveVerb = 'use';
-    } else if (hotspot) {
-      const act = hotspot.getBestAction(activeVerb);
-      effectiveVerb = act?.verb || (hotspot.data.cursor as VerbType) || 'interact';
-    } else if (charNPC) {
-      const act = charNPC.getBestAction(activeVerb) || charNPC.getBestAction('talk');
-      effectiveVerb = act?.verb || 'talk';
-    } else {
-      effectiveVerb = 'walk';
+      this.app.canvas.style.cursor = 'none';
+      this.context.ui.updateCustomCursor(selectedItem.iconUrl, 16, 16);
+      if (targetElem) {
+        this.context.ui.updateHoverTitle(`Use ${selectedItem.name} on ${targetElem.data.name}`);
+      } else {
+        this.context.ui.clearHoverTitle();
+      }
+      return;
     }
 
-    // 1. Custom Cursor Follower Graphic
-    if (selectedItem) {
+    if (!targetElem) {
+      // Outside any object: default to Walk
+      this.context.ui.setActiveVerb('walk');
+      const walkCursor = uiConfig?.customCursors?.['walk'];
+      if (walkCursor?.url) {
+        this.app.canvas.style.cursor = 'none';
+        this.context.ui.updateCustomCursor(walkCursor.url, walkCursor.hotspotX ?? 0, walkCursor.hotspotY ?? 0);
+      } else {
+        this.context.ui.updateCustomCursor(null);
+        this.app.canvas.style.cursor = 'default';
+      }
+      this.context.ui.clearHoverTitle();
+      return;
+    }
+
+    // Over an object: resolve currently selected available action
+    const available = this.getAvailableActionsForTarget(targetElem);
+    const chosen = available[this.targetActionIndex % available.length] || available[0];
+
+    this.context.ui.setActiveVerb(chosen.verb);
+
+    // Custom cursor follower
+    if (chosen.itemId) {
+      const item = this.context.inventory.getItems().find(i => i.id === chosen.itemId);
       this.app.canvas.style.cursor = 'none';
-      this.context.ui.updateCustomCursor(selectedItem.iconUrl);
-    } else if (hotspot?.data.customCursorUrl) {
+      this.context.ui.updateCustomCursor(item?.iconUrl || null, 16, 16);
+    } else if ((targetElem.data as any).customCursorUrl) {
       this.app.canvas.style.cursor = 'none';
-      this.context.ui.updateCustomCursor(hotspot.data.customCursorUrl);
-    } else if (uiConfig?.customCursors?.[effectiveVerb]?.url) {
+      this.context.ui.updateCustomCursor(
+        (targetElem.data as any).customCursorUrl,
+        (targetElem.data as any).customCursorHotspotX ?? 0,
+        (targetElem.data as any).customCursorHotspotY ?? 0
+      );
+    } else if (uiConfig?.customCursors?.[chosen.verb]?.url) {
+      const cConfig = uiConfig.customCursors[chosen.verb]!;
       this.app.canvas.style.cursor = 'none';
-      this.context.ui.updateCustomCursor(uiConfig.customCursors[effectiveVerb]!.url);
+      this.context.ui.updateCustomCursor(cConfig.url, cConfig.hotspotX ?? 0, cConfig.hotspotY ?? 0);
     } else {
       this.context.ui.updateCustomCursor(null);
-      this.app.canvas.style.cursor = (hotspot || charNPC) ? 'pointer' : 'default';
+      this.app.canvas.style.cursor = 'pointer';
     }
 
-    // 2. Contextual Hover Label
-    const targetElem = hotspot || charNPC;
-    if (targetElem) {
-      let label = targetElem.data.name;
-      if (selectedItem) {
-        label = `Use ${selectedItem.name} on ${targetElem.data.name}`;
-      } else {
-        const verbLabels: Record<string, string> = {
-          walk: 'Walk to',
-          look: 'Look at',
-          interact: 'Use',
-          talk: 'Talk to',
-          pick_up: 'Pick up'
-        };
-        label = `${verbLabels[effectiveVerb] || effectiveVerb.toUpperCase()} ${targetElem.data.name}`;
-      }
-      this.context.ui.updateHoverTitle(label);
-    } else {
-      this.context.ui.clearHoverTitle();
-    }
+    // Contextual hover label
+    const label = `${chosen.label} ${targetElem.data.name}`;
+    this.context.ui.updateHoverTitle(label);
   }
 
   private handleCanvasDrop(e: DragEvent): void {
@@ -519,25 +623,42 @@ export class GameRuntime {
     }
 
     this.context.inventory.selectItem(null);
+    this.targetActionIndex = 0;
     this.context.ui.setActiveVerb('walk');
   }
 
   private handleCanvasWheel(e: WheelEvent): void {
     e.preventDefault();
-    const items = this.context.inventory.getItems();
-    const currentItem = this.context.inventory.getSelectedItem();
+    if (this.isDestroyed || !this.currentScene) return;
 
-    if (items.length > 0) {
-      const itemIds: (string | null)[] = [null, ...items.map(i => i.id)];
-      const currentId = currentItem ? currentItem.id : null;
-      const idx = itemIds.indexOf(currentId);
-      const nextIdx = e.deltaY > 0 ? (idx + 1) % itemIds.length : (idx - 1 + itemIds.length) % itemIds.length;
-      const nextItemId = itemIds[nextIdx];
-      this.context.inventory.selectItem(nextItemId);
-      if (!nextItemId) {
-        this.context.ui.setActiveVerb('walk');
+    const worldPt = this.lastMouseWorldPos || { x: 0, y: 0 };
+    const hotspot = this.currentScene.findHotspotAt(worldPt);
+    const charNPC = this.currentScene.findCharacterAt(worldPt);
+    const targetElem = hotspot || charNPC;
+
+    if (targetElem) {
+      // Over an object: cycle ONLY through available actions defined on this target
+      const available = this.getAvailableActionsForTarget(targetElem);
+      if (available.length > 1) {
+        const step = e.deltaY > 0 ? 1 : -1;
+        this.targetActionIndex = (this.targetActionIndex + step + available.length) % available.length;
+      }
+    } else {
+      // Outside any object: cycle through held inventory items or return to Walk
+      const items = this.context.inventory.getItems();
+      if (items.length > 0) {
+        const itemIds: (string | null)[] = [null, ...items.map(i => i.id)];
+        const currentSelected = this.context.inventory.getSelectedItem()?.id || null;
+        const currentIdx = itemIds.indexOf(currentSelected);
+        const step = e.deltaY > 0 ? 1 : -1;
+        const nextIdx = (currentIdx + step + itemIds.length) % itemIds.length;
+        const nextId = itemIds[nextIdx];
+        this.context.inventory.selectItem(nextId);
+        this.context.ui.setActiveVerb(nextId ? 'use' : 'walk');
       }
     }
+
+    this.updateCursorAndHover(this.lastMouseWorldPos);
   }
 
   public executeAction(action: any, targetPos?: Vector2D): void {

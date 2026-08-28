@@ -2,6 +2,7 @@ import { ProjectData, SceneData, HotspotData, LayerData, CharacterData, Inventor
 import { AssetManager } from '../../engine/core/AssetManager';
 import { EventBus } from '../../engine/core/EventBus';
 import { VisualSpawnPickerModal } from './VisualSpawnPickerModal';
+import { VisualCursorHotspotModal } from './VisualCursorHotspotModal';
 
 export interface SelectionTarget {
   type: 'project' | 'chapter' | 'scene' | 'walkpath' | 'layer' | 'hotspot' | 'character' | 'item';
@@ -527,8 +528,34 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Custom Cursor Graphic (URL)</label>
-          <input type="text" class="form-input single-hs-custom-cursor" data-hidx="${hIdx}" value="${hs.customCursorUrl || ''}" placeholder="Optional custom mouse cursor PNG" />
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${hs.customCursorUrl ? `
+              <div style="width:32px; height:32px; min-width:32px; background:#1e293b; border:1px solid var(--border-color); border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                <img src="${AssetManager.getInstance().resolveImageSrc(hs.customCursorUrl)}" style="max-width:28px; max-height:28px; object-fit:contain;" />
+              </div>
+            ` : ''}
+            <input type="text" class="form-input single-hs-custom-cursor" data-hidx="${hIdx}" value="${hs.customCursorUrl || ''}" placeholder="Optional custom mouse cursor PNG" style="flex:1;" />
+            <label class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem; cursor:pointer; margin:0;" title="Browse cursor file">
+              📁
+              <input type="file" class="single-hs-custom-cursor-file" data-hidx="${hIdx}" accept="image/*" style="display:none;" />
+            </label>
+          </div>
         </div>
+        ${hs.customCursorUrl ? `
+          <div style="display:flex; gap:6px; align-items:flex-end; margin-bottom:8px;">
+            <div style="flex:1;">
+              <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot X (px)</label>
+              <input type="number" class="form-input single-hs-cursor-hx" data-hidx="${hIdx}" value="${hs.customCursorHotspotX ?? 0}" placeholder="0" style="font-size:0.75rem;" />
+            </div>
+            <div style="flex:1;">
+              <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot Y (px)</label>
+              <input type="number" class="form-input single-hs-cursor-hy" data-hidx="${hIdx}" value="${hs.customCursorHotspotY ?? 0}" placeholder="0" style="font-size:0.75rem;" />
+            </div>
+            <button class="btn btn-primary btn-open-hs-cursor-hotspot-modal" data-hidx="${hIdx}" style="padding:4px 8px; font-size:0.7rem; white-space:nowrap; height:28px; background:#059669; border:none; color:white;" title="Visually drag and select hotspot">
+              🎯 Visual Pick
+            </button>
+          </div>
+        ` : ''}
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
           <div>
             <label style="font-size:0.65rem; color:var(--text-muted);">Required Flag</label>
@@ -669,7 +696,11 @@ export class Inspector {
             <div class="flow-group">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <span class="flow-group-title">⚡ WHEN USER PERFORMS</span>
-                <button class="btn btn-del-action" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕ Delete</button>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <button class="btn btn-move-action-up" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" ${aIdx === 0 ? 'disabled style="opacity:0.3;"' : ''} style="padding:2px 6px; font-size:0.65rem;" title="Move Rule Up (Higher Priority)">⬆️</button>
+                  <button class="btn btn-move-action-down" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" ${aIdx === actions.length - 1 ? 'disabled style="opacity:0.3;"' : ''} style="padding:2px 6px; font-size:0.65rem;" title="Move Rule Down (Lower Priority)">⬇️</button>
+                  <button class="btn btn-del-action" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;" title="Delete Action Rule">✕ Delete</button>
+                </div>
               </div>
               <select class="form-select act-verb" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharacter ? 'true' : 'false'}" style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">
                 <option value="look" ${act.verb === 'look' ? 'selected' : ''}>👁️ Look At</option>
@@ -1005,27 +1036,61 @@ export class Inspector {
       </div>
 
       <div class="sidebar-section">
-        <div class="sidebar-section-title" style="color:var(--accent-gold);">🖱️ Custom Verb Cursors</div>
-        <div class="form-group">
-          <label>🥾 Walk Cursor Graphic</label>
-          <input type="text" class="form-input proj-cursor-input" data-verb="walk" value="${this.project.uiConfig.customCursors?.walk?.url || ''}" placeholder="e.g. assets/cursors/walk.png" />
-        </div>
-        <div class="form-group">
-          <label>👁️ Look Cursor Graphic</label>
-          <input type="text" class="form-input proj-cursor-input" data-verb="look" value="${this.project.uiConfig.customCursors?.look?.url || ''}" placeholder="e.g. assets/cursors/look.png" />
-        </div>
-        <div class="form-group">
-          <label>✋ Interact/Use Cursor Graphic</label>
-          <input type="text" class="form-input proj-cursor-input" data-verb="interact" value="${this.project.uiConfig.customCursors?.interact?.url || ''}" placeholder="e.g. assets/cursors/use.png" />
-        </div>
-        <div class="form-group">
-          <label>💬 Talk Cursor Graphic</label>
-          <input type="text" class="form-input proj-cursor-input" data-verb="talk" value="${this.project.uiConfig.customCursors?.talk?.url || ''}" placeholder="e.g. assets/cursors/talk.png" />
-        </div>
-        <div class="form-group">
-          <label>🎒 Pick Up Cursor Graphic</label>
-          <input type="text" class="form-input proj-cursor-input" data-verb="pick_up" value="${this.project.uiConfig.customCursors?.pick_up?.url || ''}" placeholder="e.g. assets/cursors/pickup.png" />
-        </div>
+        <div class="sidebar-section-title" style="color:var(--accent-gold);">🖱️ Custom Verb Cursors & Hotspots</div>
+        ${([
+          { id: 'walk', name: 'Walk', icon: '🥾' },
+          { id: 'look', name: 'Look', icon: '👁️' },
+          { id: 'interact', name: 'Interact / Touch', icon: '🖐️' },
+          { id: 'talk', name: 'Talk', icon: '💬' },
+          { id: 'pick_up', name: 'Pick Up', icon: '🎒' }
+        ] as { id: VerbType; name: string; icon: string }[]).map(v => {
+          const cfg = this.project?.uiConfig?.customCursors?.[v.id];
+          const resolved = cfg?.url ? AssetManager.getInstance().resolveImageSrc(cfg.url) : '';
+          return `
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:8px; margin-bottom:8px;">
+              <div style="font-size:0.75rem; font-weight:700; color:var(--text-main); margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span>${v.icon}</span> <span>${v.name} Cursor</span>
+                </div>
+                ${cfg?.url ? `
+                  <button class="btn btn-primary btn-open-cursor-hotspot-modal" data-verb="${v.id}" style="padding:2px 8px; font-size:0.68rem; font-weight:700; background:#059669; border:none; color:white;" title="Open visual interactive hotspot editor">
+                    🎯 Calibrate Hotspot
+                  </button>
+                ` : ''}
+              </div>
+              <div style="margin-bottom:6px;">
+                <label style="font-size:0.65rem; color:var(--text-muted);">Graphic URL</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  ${resolved ? `
+                    <div style="width:30px; height:30px; min-width:30px; background:#1e293b; border:1px solid var(--border-color); border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                      <img src="${resolved}" style="max-width:26px; max-height:26px; object-fit:contain;" />
+                    </div>
+                  ` : ''}
+                  <input type="text" class="form-input proj-cursor-input" data-verb="${v.id}" value="${cfg?.url || ''}" placeholder="e.g. assets/cursors/${v.id}.png" style="flex:1; font-size:0.75rem;" />
+                  <label class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem; cursor:pointer; margin:0;" title="Browse cursor file">
+                    📁
+                    <input type="file" class="proj-cursor-file" data-verb="${v.id}" accept="image/*" style="display:none;" />
+                  </label>
+                </div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-end;">
+                <div style="flex:1;">
+                  <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot X (px)</label>
+                  <input type="number" class="form-input proj-cursor-hx" data-verb="${v.id}" value="${cfg?.hotspotX ?? 0}" placeholder="0" style="font-size:0.75rem;" />
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot Y (px)</label>
+                  <input type="number" class="form-input proj-cursor-hy" data-verb="${v.id}" value="${cfg?.hotspotY ?? 0}" placeholder="0" style="font-size:0.75rem;" />
+                </div>
+                ${cfg?.url ? `
+                  <button class="btn btn-secondary btn-open-cursor-hotspot-modal" data-verb="${v.id}" style="padding:4px 8px; font-size:0.75rem; height:28px;" title="Visually drag hotspot">
+                    🎯
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   }
@@ -1045,7 +1110,53 @@ export class Inspector {
       }
     });
 
-    // Project Custom Verb Cursors
+    // Project Custom Verb Cursors: Visual Modal Opener
+    this.element.querySelectorAll('.btn-open-cursor-hotspot-modal').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        const verb = target.dataset.verb as VerbType;
+        const cfg = this.project?.uiConfig?.customCursors?.[verb];
+        if (this.project && verb && cfg?.url) {
+          new VisualCursorHotspotModal(
+            `${verb.toUpperCase()} Cursor`,
+            cfg.url,
+            { x: cfg.hotspotX ?? 0, y: cfg.hotspotY ?? 0 },
+            (res) => {
+              if (this.project?.uiConfig?.customCursors?.[verb]) {
+                this.project.uiConfig.customCursors[verb]!.hotspotX = res.hotspotX;
+                this.project.uiConfig.customCursors[verb]!.hotspotY = res.hotspotY;
+                this.renderContent();
+                emitUpdate();
+              }
+            }
+          );
+        }
+      });
+    });
+
+    // Hotspot Custom Cursor: Visual Modal Opener
+    this.element.querySelectorAll('.btn-open-hs-cursor-hotspot-modal').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        const hIdx = parseInt(target.dataset.hidx!);
+        const hs = this.currentScene?.hotspots[hIdx];
+        if (hs && hs.customCursorUrl) {
+          new VisualCursorHotspotModal(
+            `${hs.name} Cursor`,
+            hs.customCursorUrl,
+            { x: hs.customCursorHotspotX ?? 0, y: hs.customCursorHotspotY ?? 0 },
+            (res) => {
+              hs.customCursorHotspotX = res.hotspotX;
+              hs.customCursorHotspotY = res.hotspotY;
+              this.renderContent();
+              emitUpdate();
+            }
+          );
+        }
+      });
+    });
+
+    // Project Custom Verb Cursors: URL input
     this.element.querySelectorAll('.proj-cursor-input').forEach(input => {
       input.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
@@ -1054,11 +1165,61 @@ export class Inspector {
           if (!this.project.uiConfig.customCursors) {
             this.project.uiConfig.customCursors = {};
           }
-          if (target.value.trim()) {
-            this.project.uiConfig.customCursors[verb] = { url: target.value.trim() };
+          const val = target.value.trim();
+          if (val) {
+            if (!this.project.uiConfig.customCursors[verb]) {
+              this.project.uiConfig.customCursors[verb] = { url: val, hotspotX: 0, hotspotY: 0 };
+            } else {
+              this.project.uiConfig.customCursors[verb]!.url = val;
+            }
           } else {
             delete this.project.uiConfig.customCursors[verb];
           }
+          emitUpdate();
+        }
+      });
+    });
+
+    // Project Custom Verb Cursors: File Browse
+    this.element.querySelectorAll('.proj-cursor-file').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const verb = target.dataset.verb as VerbType;
+        if (target.files && target.files[0] && this.project && verb) {
+          const relPath = getRelativeFilePath(target.files[0]);
+          if (!this.project.uiConfig.customCursors) {
+            this.project.uiConfig.customCursors = {};
+          }
+          if (!this.project.uiConfig.customCursors[verb]) {
+            this.project.uiConfig.customCursors[verb] = { url: relPath, hotspotX: 0, hotspotY: 0 };
+          } else {
+            this.project.uiConfig.customCursors[verb]!.url = relPath;
+          }
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Project Custom Verb Cursors: Hotspot X
+    this.element.querySelectorAll('.proj-cursor-hx').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const verb = target.dataset.verb as VerbType;
+        if (this.project && verb && this.project.uiConfig.customCursors?.[verb]) {
+          this.project.uiConfig.customCursors[verb]!.hotspotX = parseFloat(target.value) || 0;
+          emitUpdate();
+        }
+      });
+    });
+
+    // Project Custom Verb Cursors: Hotspot Y
+    this.element.querySelectorAll('.proj-cursor-hy').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const verb = target.dataset.verb as VerbType;
+        if (this.project && verb && this.project.uiConfig.customCursors?.[verb]) {
+          this.project.uiConfig.customCursors[verb]!.hotspotY = parseFloat(target.value) || 0;
           emitUpdate();
         }
       });
@@ -1072,6 +1233,43 @@ export class Inspector {
         const hs = this.currentScene?.hotspots[hIdx];
         if (hs) {
           hs.customCursorUrl = target.value.trim() || undefined;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.single-hs-custom-cursor-file').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        const hIdx = parseInt(target.dataset.hidx!);
+        const hs = this.currentScene?.hotspots[hIdx];
+        if (hs && target.files && target.files[0]) {
+          hs.customCursorUrl = getRelativeFilePath(target.files[0]);
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.single-hs-cursor-hx').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const hIdx = parseInt(target.dataset.hidx!);
+        const hs = this.currentScene?.hotspots[hIdx];
+        if (hs) {
+          hs.customCursorHotspotX = parseFloat(target.value) || 0;
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.single-hs-cursor-hy').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const hIdx = parseInt(target.dataset.hidx!);
+        const hs = this.currentScene?.hotspots[hIdx];
+        if (hs) {
+          hs.customCursorHotspotY = parseFloat(target.value) || 0;
           emitUpdate();
         }
       });
@@ -1480,6 +1678,42 @@ export class Inspector {
         const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
         if (actions && actions[aIdx]) {
           actions[aIdx].dialogId = targetEl.value;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-move-action-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.currentTarget as HTMLElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && aIdx > 0) {
+          const temp = actions[aIdx];
+          actions[aIdx] = actions[aIdx - 1];
+          actions[aIdx - 1] = temp;
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.btn-move-action-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEl = e.currentTarget as HTMLElement;
+        const hIdx = parseInt(targetEl.dataset.hidx!);
+        const aIdx = parseInt(targetEl.dataset.aidx!);
+        const isChar = targetEl.dataset.ischar === 'true';
+
+        const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
+        if (actions && aIdx < actions.length - 1) {
+          const temp = actions[aIdx];
+          actions[aIdx] = actions[aIdx + 1];
+          actions[aIdx + 1] = temp;
           this.renderContent();
           emitUpdate();
         }

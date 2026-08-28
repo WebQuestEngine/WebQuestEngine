@@ -77,6 +77,8 @@ export interface HotspotData {
   locked?: boolean;
   depthY?: number;
   customCursorUrl?: string;
+  customCursorHotspotX?: number;
+  customCursorHotspotY?: number;
   examined?: boolean;
 }
 
@@ -100,6 +102,9 @@ export interface CharacterData {
   scale: number;
   talkColor: string;
   cursor?: string;
+  customCursorUrl?: string;
+  customCursorHotspotX?: number;
+  customCursorHotspotY?: number;
   actions?: HotspotAction[];
   currentHoldingItemId?: string;
   animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;

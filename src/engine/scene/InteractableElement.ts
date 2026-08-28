@@ -93,12 +93,23 @@ export class InteractableElement extends GraphicalElement {
     });
   }
 
-  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+  public getBestAction(activeVerb?: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
     if (selectedItemId) {
       const itemAction = this.getActionForItemId(selectedItemId);
       if (itemAction) return itemAction;
     }
 
-    return this.getActionForVerb(activeVerb);
+    if (activeVerb && activeVerb !== 'walk') {
+      const verbAction = this.getActionForVerb(activeVerb);
+      if (verbAction) return verbAction;
+    }
+
+    const storySystem = StoryGraphSystem.getInstance();
+    return this.actions.find(a => {
+      if (a.requireItemId && !selectedItemId) return false;
+      if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
+      if (a.notFlag && storySystem?.getFlag(a.notFlag)) return false;
+      return true;
+    });
   }
 }

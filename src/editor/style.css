@@ -240,10 +240,24 @@ body {
   display: block;
 }
 
+#tree-slot,
+#inspector-slot {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
 /* Left Sidebar Tree View */
 .editor-tree-sidebar {
   width: 280px;
   min-width: 280px;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   flex-shrink: 0;
   background: var(--panel-bg);
   backdrop-filter: blur(16px);
@@ -251,7 +265,7 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 50;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .tree-header {
@@ -640,6 +654,9 @@ body {
 .editor-sidebar {
   width: 340px;
   min-width: 340px;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   flex-shrink: 0;
   background: var(--panel-bg);
   backdrop-filter: blur(16px);
@@ -647,7 +664,33 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 50;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+#inspector-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+/* Sleek Modern Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gold);
 }
 
 .inspector-header {

@@ -392,7 +392,7 @@ export class EditorCanvas {
       }
     }
 
-    // 3. Check Selected Layer Corner Handles (Aspect-Ratio Scale) & Body Drag
+    // 3. Check Selected Layer Corner Scale Handles (4 corners)
     if (this.selectedLayerId && this.currentScene) {
       const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
       const layerObj = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
@@ -422,19 +422,10 @@ export class EditorCanvas {
             return;
           }
         }
-
-        // Inside selected layer area -> Move position
-        if (worldPt.x >= lx && worldPt.x <= lx + lw && worldPt.y >= ly && worldPt.y <= ly + lh) {
-          this.isDragging = true;
-          this.dragTarget = { type: 'layer', id: layerData.id };
-          this.dragStartWorld = worldPt;
-          this.dragInitialPos = { x: lx, y: ly };
-          return;
-        }
       }
     }
 
-    // 4. Check Selected Character Corner Handles (Scale) & Body Drag
+    // 4. Check Selected Character Corner Handles (Scale)
     if (this.selectedCharacterId && this.currentScene && !this.isElementLocked('character', this.selectedCharacterId)) {
       const charObj = this.currentScene.characters.get(this.selectedCharacterId);
       if (charObj) {
@@ -486,7 +477,7 @@ export class EditorCanvas {
       }
     }
 
-    // 6. Check WalkPath Vertices
+    // 6. Check WalkPath Vertices (Precise handle click)
     if (!this.isElementLocked('walkpath') && this.currentScene.data.walkPaths) {
       for (const wp of this.currentScene.data.walkPaths) {
         for (let i = 0; i < wp.points.length; i++) {
@@ -502,7 +493,7 @@ export class EditorCanvas {
       }
     }
 
-    // 7. Check Hotspot Vertices & Hotspot Polygon Body Drag
+    // 7. Check Hotspot Vertices (Precise handle click)
     if (this.currentScene.data.hotspots) {
       for (let hIdx = 0; hIdx < this.currentScene.data.hotspots.length; hIdx++) {
         const hs = this.currentScene.data.hotspots[hIdx];
@@ -510,32 +501,20 @@ export class EditorCanvas {
           for (let i = 0; i < hs.points.length; i++) {
             const pt = hs.points[i];
             if (Math.hypot(worldPt.x - pt.x, worldPt.y - pt.y) < 12 / this.camera.zoom) {
+              this.selectedHotspotId = hs.id;
+              this.selectedLayerId = null;
+              this.selectedCharacterId = null;
+              this.selectedElement = { type: 'hotspot', id: hs.id };
               this.isDragging = true;
               this.dragTarget = { type: 'hotspot_vertex', hIdx, index: i };
               this.dragStartWorld = worldPt;
               this.dragInitialPos = { ...pt };
+              EventBus.getInstance().emit('editor:select_hotspot', hs.id);
+              EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
+              this.renderDebugOverlay();
               return;
             }
           }
-        }
-
-        const hsObj = this.currentScene.hotspots[hIdx];
-        if (hsObj && hsObj.containsPointInEditor(worldPt)) {
-          if (this.isElementLocked('hotspot', hs.id)) continue;
-
-          this.selectedHotspotId = hs.id;
-          this.selectedLayerId = null;
-          this.selectedCharacterId = null;
-          this.selectedElement = { type: 'hotspot', id: hs.id };
-          this.isDragging = true;
-          this.dragTarget = { type: 'hotspot_poly', hIdx };
-          this.dragStartWorld = worldPt;
-          this.dragInitialPos = { x: worldPt.x, y: worldPt.y };
-
-          EventBus.getInstance().emit('editor:select_hotspot', hs.id);
-          EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
-          this.renderDebugOverlay();
-          return;
         }
       }
     }
@@ -584,7 +563,32 @@ export class EditorCanvas {
       }
     }
 
-    // 10. Check Characters / NPCs
+    // 10. Check Hotspot Polygon Body Click / Drag
+    if (this.currentScene.data.hotspots) {
+      for (let hIdx = 0; hIdx < this.currentScene.data.hotspots.length; hIdx++) {
+        const hs = this.currentScene.data.hotspots[hIdx];
+        const hsObj = this.currentScene.hotspots[hIdx];
+        if (hsObj && hsObj.containsPointInEditor(worldPt)) {
+          if (this.isElementLocked('hotspot', hs.id)) continue;
+
+          this.selectedHotspotId = hs.id;
+          this.selectedLayerId = null;
+          this.selectedCharacterId = null;
+          this.selectedElement = { type: 'hotspot', id: hs.id };
+          this.isDragging = true;
+          this.dragTarget = { type: 'hotspot_poly', hIdx };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { x: worldPt.x, y: worldPt.y };
+
+          EventBus.getInstance().emit('editor:select_hotspot', hs.id);
+          EventBus.getInstance().emit('editor:element_selected', { type: 'hotspot', id: hs.id });
+          this.renderDebugOverlay();
+          return;
+        }
+      }
+    }
+
+    // 11. Check Characters / NPCs Click / Drag
     const char = this.currentScene.findCharacterAt(worldPt, true);
     if (char && !this.isElementLocked('character', char.data.id)) {
       this.selectedCharacterId = char.data.id;
@@ -601,7 +605,29 @@ export class EditorCanvas {
       return;
     }
 
-    // 11. Check Layers (Clicking background layer on canvas to select/move)
+    // 12. Check Selected Layer Body Drag (Move Layer position)
+    if (this.selectedLayerId && this.currentScene) {
+      const layerData = this.currentScene.data.layers.find(l => l.id === this.selectedLayerId);
+      const layerObj = this.currentScene.layers.find(l => l.data.id === this.selectedLayerId);
+      if (layerData && !this.isElementLocked('layer', layerData.id) && layerObj?.sprite) {
+        const lx = layerData.x || 0;
+        const ly = layerData.y || 0;
+        const baseW = layerObj.sprite.texture?.width > 1 ? layerObj.sprite.texture.width : 1920;
+        const baseH = layerObj.sprite.texture?.height > 1 ? layerObj.sprite.texture.height : 1080;
+        const lw = baseW * (layerData.scaleX ?? 1);
+        const lh = baseH * (layerData.scaleY ?? 1);
+
+        if (worldPt.x >= lx && worldPt.x <= lx + lw && worldPt.y >= ly && worldPt.y <= ly + lh) {
+          this.isDragging = true;
+          this.dragTarget = { type: 'layer', id: layerData.id };
+          this.dragStartWorld = worldPt;
+          this.dragInitialPos = { x: lx, y: ly };
+          return;
+        }
+      }
+    }
+
+    // 13. Check Layers Selection on Canvas Click
     if (this.currentScene && this.currentScene.data.layers) {
       const sortedLayers = [...this.currentScene.data.layers].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
       for (const lData of sortedLayers) {
@@ -912,6 +938,12 @@ export class EditorCanvas {
 
   public renderDebugOverlay(): void {
     if (!this.debugOverlay || (this.debugOverlay as any).destroyed || (this.debugOverlay as any).context === null || !this.currentScene) return;
+
+    // Always keep debug overlay on top of all layers and entity sprites (like the cauldron)
+    if (this.currentScene.container && this.debugOverlay.parent === this.currentScene.container) {
+      this.currentScene.container.setChildIndex(this.debugOverlay, this.currentScene.container.children.length - 1);
+    }
+
     this.debugOverlay.clear();
 
     const scene = this.currentScene.data;
@@ -1105,8 +1137,11 @@ export class EditorCanvas {
     // Check parent scene lock
     if (scene.locked) return true;
 
-    // Check parent chapter lock
-    const ch = this.project.chapters[0];
+    // Check containing chapter lock
+    const ch = this.project.chapters?.find(c => {
+      const node = this.project.storyNodes?.find(n => n.id === c.startStoryNodeId);
+      return node?.sceneId === scene.id;
+    });
     if (ch?.locked) return true;
 
     if (type === 'layer' && id) {

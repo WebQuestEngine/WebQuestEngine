@@ -274,31 +274,42 @@ export class Character extends MovableElement {
     });
   }
 
-  public getBestAction(activeVerb: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
+  public getBestAction(activeVerb?: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
     if (!this.data.actions || this.data.actions.length === 0) return undefined;
     const storySystem = StoryGraphSystem.getInstance();
-    const effectiveVerb = activeVerb === 'use' ? 'interact' : activeVerb;
 
     if (selectedItemId) {
       const itemAction = this.data.actions.find(a => {
         if (a.requireItemId !== selectedItemId) return false;
-        if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
-        if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+        if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
+        if (a.notFlag && storySystem?.getFlag(a.notFlag)) return false;
         return true;
       });
       if (itemAction) return itemAction;
     }
 
+    if (activeVerb && activeVerb !== 'walk') {
+      const effectiveVerb = activeVerb === 'use' ? 'interact' : activeVerb;
+      const matched = this.data.actions.find(a => {
+        if (a.requireItemId) return false;
+        const actVerb = a.verb === 'use' ? 'interact' : a.verb;
+        if (effectiveVerb === 'interact') {
+          if (actVerb !== 'interact') return false;
+        } else {
+          if (actVerb !== effectiveVerb) return false;
+        }
+        if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
+        if (a.notFlag && storySystem?.getFlag(a.notFlag)) return false;
+        return true;
+      });
+      if (matched) return matched;
+    }
+
+    // Default fallback: First valid action in user-defined order
     return this.data.actions.find(a => {
-      if (a.requireItemId) return false;
-      const actVerb = a.verb === 'use' ? 'interact' : a.verb;
-      if (effectiveVerb === 'interact') {
-        if (actVerb !== 'interact') return false;
-      } else {
-        if (actVerb !== effectiveVerb) return false;
-      }
-      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
-      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      if (a.requireItemId && !selectedItemId) return false;
+      if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
+      if (a.notFlag && storySystem?.getFlag(a.notFlag)) return false;
       return true;
     });
   }
