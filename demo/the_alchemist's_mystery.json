@@ -1259,8 +1259,8 @@
           ],
           "voiceAudioUrl": "assets/c1s2/audio/to brew the elixir you must.mp3",
           "position": {
-            "x": 1080,
-            "y": 265
+            "x": 1087.1815685107892,
+            "y": 157.28047176071425
           }
         },
         "node_3": {
@@ -1312,8 +1312,8 @@
           "speaker": "Master Eldrin",
           "text": "Yes, Sir Ronald?",
           "position": {
-            "x": 456.66849263435324,
-            "y": 781.0064209102745
+            "x": 442.2935997703344,
+            "y": 1007.2111105789451
           },
           "choices": [
             {

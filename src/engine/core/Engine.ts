@@ -1384,13 +1384,30 @@ export class Engine {
     UISystem.getInstance().setActiveVerb('walk');
   }
 
-  private executeAction(action: any, targetPos?: Vector2D): void {
+  private executeAction(action: any, targetPos?: Vector2D, targetElement?: any): void {
     if (action.requiredFlag && !StoryGraphSystem.getInstance().getFlag(action.requiredFlag)) {
       EventBus.getInstance().emit('ui:notify', `You cannot do that right now.`);
       return;
     }
+    if (action.notFlag && StoryGraphSystem.getInstance().getFlag(action.notFlag)) {
+      EventBus.getInstance().emit('ui:notify', `You cannot do that right now.`);
+      return;
+    }
 
-    // Play SFX sound effect
+    // 1. Emit universal action event
+    EventBus.getInstance().emit('action:executed', { action, targetPos, targetElement });
+
+    // 2. Custom event trigger
+    if (action.eventName) {
+      EventBus.getInstance().emit(action.eventName, {
+        action,
+        payload: action.eventPayload,
+        targetPos,
+        sceneId: this.currentScene?.data.id
+      });
+    }
+
+    // 3. Play SFX sound effect
     if (action.sfxUrl) {
       AudioSystem.getInstance().playSFX(action.sfxUrl);
     } else if (action.giveItemId) {
@@ -1409,9 +1426,22 @@ export class Engine {
         player.direction8Way = action.faceDirection;
         player.isFacingLeft = action.faceDirection === 'left' || action.faceDirection === 'up_left' || action.faceDirection === 'down_left';
       }
-      if (action.playAnimation) {
+    }
+
+    if (action.playAnimation) {
+      if (action.animationTarget === 'self' && targetElement && typeof targetElement.playCustomAnimation === 'function') {
+        targetElement.playCustomAnimation(action.playAnimation);
+      } else if (action.animationTarget && action.animationTarget !== 'player' && this.currentScene?.characters.has(action.animationTarget)) {
+        this.currentScene.characters.get(action.animationTarget)?.playCustomAnimation(action.playAnimation);
+      } else if (player) {
         player.playCustomAnimation(action.playAnimation);
-      } else if (action.verb === 'pick_up') {
+      }
+      EventBus.getInstance().emit('animation:started', {
+        animation: action.playAnimation,
+        target: action.animationTarget || 'player'
+      });
+    } else if (player) {
+      if (action.verb === 'pick_up') {
         player.playCustomAnimation('pick_up', 1200);
       } else if (action.verb === 'talk') {
         player.talk();
@@ -1426,6 +1456,9 @@ export class Engine {
     }
     if (action.setFlag) {
       StoryGraphSystem.getInstance().setFlag(action.setFlag, true);
+    }
+    if (action.clearFlag) {
+      StoryGraphSystem.getInstance().setFlag(action.clearFlag, false);
     }
     if (action.giveItemId) {
       InventorySystem.getInstance().addItem(action.giveItemId);

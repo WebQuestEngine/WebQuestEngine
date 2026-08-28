@@ -85,9 +85,47 @@ export class GameRuntime {
     );
 
     this.unsubscribers.push(
+      EventBus.getInstance().on('inventory:take', (itemId: string) => {
+        if (this.isDestroyed) return;
+        this.context.inventory.removeItem(itemId);
+      })
+    );
+
+    this.unsubscribers.push(
       EventBus.getInstance().on('flag:set', (flag: string) => {
         if (this.isDestroyed) return;
         this.context.story.setFlag(flag, true);
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('flag:clear', (flag: string) => {
+        if (this.isDestroyed) return;
+        this.context.story.setFlag(flag, false);
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('dialog:speaker_anim', (data: { speaker: string; animation?: string; gesture?: string }) => {
+        if (this.isDestroyed || !this.currentScene) return;
+        const speakerChar = this.getCharacterByNameOrId(data.speaker);
+        if (speakerChar) {
+          if (data.animation) {
+            speakerChar.playCustomAnimation(data.animation);
+          } else {
+            speakerChar.talk();
+          }
+          if (data.gesture) {
+            speakerChar.playCustomAnimation(data.gesture, 1200);
+          }
+        }
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('dialog:directive', (directive: any) => {
+        if (this.isDestroyed || !this.currentScene) return;
+        this.executeStageDirective(directive);
       })
     );
 
@@ -108,6 +146,7 @@ export class GameRuntime {
         }
         if (this.containerElement) {
           this.containerElement.querySelectorAll('.dialog-box-overlay').forEach(el => el.remove());
+          this.containerElement.querySelectorAll('.character-emote-bubble').forEach(el => el.remove());
         }
       })
     );
@@ -680,13 +719,31 @@ export class GameRuntime {
     this.updateCursorAndHover(this.lastMouseWorldPos);
   }
 
-  public executeAction(action: any, targetPos?: Vector2D): void {
+  public executeAction(action: any, targetPos?: Vector2D, targetElement?: any): void {
     if (action.requiredFlag && !this.context.story.getFlag(action.requiredFlag)) {
       EventBus.getInstance().emit('ui:notify', 'You cannot do that right now.');
       return;
     }
+    if (action.notFlag && this.context.story.getFlag(action.notFlag)) {
+      EventBus.getInstance().emit('ui:notify', 'You cannot do that right now.');
+      return;
+    }
 
-    // Audio SFX trigger
+    // 1. Emit universal action event
+    EventBus.getInstance().emit('action:executed', { action, targetPos, targetElement });
+
+    // 2. Custom event trigger if specified
+    if (action.eventName) {
+      console.log(`%c[GameRuntime] ⚡ Firing custom event: "${action.eventName}"`, 'color: #f59e0b; font-weight: bold;');
+      EventBus.getInstance().emit(action.eventName, {
+        action,
+        payload: action.eventPayload,
+        targetPos,
+        sceneId: this.currentScene?.data.id
+      });
+    }
+
+    // 3. Audio SFX trigger
     if (action.sfxUrl) {
       this.context.audio.playSFX(action.sfxUrl);
     } else if (action.giveItemId) {
@@ -695,6 +752,7 @@ export class GameRuntime {
       this.context.audio.playSFX(null, 'door');
     }
 
+    // 4. Character orientation & animation triggers
     const player = this.currentScene?.playerCharacter;
     if (player) {
       if (targetPos) {
@@ -704,9 +762,23 @@ export class GameRuntime {
         player.direction8Way = action.faceDirection;
         player.isFacingLeft = ['left', 'up_left', 'down_left'].includes(action.faceDirection);
       }
-      if (action.playAnimation) {
+    }
+
+    // Animation Event Trigger
+    if (action.playAnimation) {
+      if (action.animationTarget === 'self' && targetElement && typeof targetElement.playCustomAnimation === 'function') {
+        targetElement.playCustomAnimation(action.playAnimation);
+      } else if (action.animationTarget && action.animationTarget !== 'player' && this.currentScene?.characters.has(action.animationTarget)) {
+        this.currentScene.characters.get(action.animationTarget)?.playCustomAnimation(action.playAnimation);
+      } else if (player) {
         player.playCustomAnimation(action.playAnimation);
-      } else if (action.verb === 'pick_up') {
+      }
+      EventBus.getInstance().emit('animation:started', {
+        animation: action.playAnimation,
+        target: action.animationTarget || 'player'
+      });
+    } else if (player) {
+      if (action.verb === 'pick_up') {
         player.playCustomAnimation('pick_up', 1200);
       } else if (action.verb === 'talk') {
         player.talk();
@@ -715,29 +787,155 @@ export class GameRuntime {
       }
     }
 
+    // 5. Speech Event
     if (action.text) {
       EventBus.getInstance().emit('ui:notify', action.text);
       this.context.ui.showSubtitle(action.text);
     }
 
+    // 6. Story Flag Events
     if (action.setFlag) {
-      console.log(`%c[GameRuntime] ⚡ Action executing setFlag: "${action.setFlag}"`, 'color: #10b981; font-weight: bold;');
       this.context.story.setFlag(action.setFlag, true);
     }
-
-    if (action.giveItemId) {
-      console.log(`%c[GameRuntime] 🎒 Action giving itemId: "${action.giveItemId}"`, 'color: #38bdf8; font-weight: bold;');
-      this.context.inventory.addItem(action.giveItemId);
+    if (action.setFlags && Array.isArray(action.setFlags)) {
+      action.setFlags.forEach((f: string) => this.context.story.setFlag(f, true));
+    }
+    if (action.clearFlag) {
+      this.context.story.setFlag(action.clearFlag, false);
+    }
+    if (action.clearFlags && Array.isArray(action.clearFlags)) {
+      action.clearFlags.forEach((f: string) => this.context.story.setFlag(f, false));
     }
 
+    // 7. Inventory Event
+    if (action.giveItemId) {
+      this.context.inventory.addItem(action.giveItemId);
+    }
+    if (action.giveItems && Array.isArray(action.giveItems)) {
+      action.giveItems.forEach((it: string) => this.context.inventory.addItem(it));
+    }
+    if (action.takeItems && Array.isArray(action.takeItems)) {
+      action.takeItems.forEach((it: string) => this.context.inventory.removeItem(it));
+    }
+
+    // 8. Dialog Event
     if (action.dialogId) {
       console.log(`%c[GameRuntime] 💬 Action triggering dialog: "${action.dialogId}"`, 'color: #8b5cf6; font-weight: bold;');
       this.context.dialog.startDialog(action.dialogId, (flag) => this.context.story.getFlag(flag));
     }
 
+    // 9. Scene Transition Event
     if (action.targetSceneId) {
       this.context.story.changeScene(action.targetSceneId, action.targetSpawnPoint);
     }
+  }
+
+  public getCharacterByNameOrId(nameOrId?: string): Character | null {
+    if (!this.currentScene) return null;
+    if (!nameOrId || nameOrId === 'player' || nameOrId.toLowerCase() === 'sir ronald') {
+      return this.currentScene.playerCharacter;
+    }
+    const chars = Array.from(this.currentScene.characters.values());
+    return chars.find(c =>
+      c.data.id === nameOrId ||
+      c.data.name.toLowerCase() === nameOrId.toLowerCase()
+    ) || null;
+  }
+
+  private executeStageDirective(directive: any): void {
+    if (!this.currentScene) return;
+
+    if (directive.type === 'animation') {
+      const actor = this.getCharacterByNameOrId(directive.actorId);
+      if (actor && directive.animationName) {
+        actor.playCustomAnimation(directive.animationName, directive.loopAnimation ? undefined : 1500);
+      }
+    } else if (directive.type === 'emote') {
+      const actor = this.getCharacterByNameOrId(directive.actorId);
+      if (actor && directive.emoteText) {
+        this.showEmoteBubble(actor, directive.emoteText);
+      }
+    } else if (directive.type === 'look_at') {
+      const actor = this.getCharacterByNameOrId(directive.actorId);
+      if (actor) {
+        if (directive.targetActorId) {
+          const target = this.getCharacterByNameOrId(directive.targetActorId);
+          if (target) actor.faceTarget(target.position);
+        } else if (directive.targetPosition) {
+          actor.faceTarget(directive.targetPosition);
+        }
+      }
+    } else if (directive.type === 'walk_to') {
+      const actor = this.getCharacterByNameOrId(directive.actorId);
+      if (actor && directive.targetPosition) {
+        actor.walkTo(directive.targetPosition, this.currentScene.walkPaths[0]);
+      }
+    } else if (directive.type === 'choreography_group') {
+      const allGroups = [
+        ...(this.currentScene.data.choreographyGroups || []),
+        ...(this.context.project.choreographyGroups || [])
+      ];
+      const group = allGroups.find(g => g.id === directive.choreographyGroupId);
+      if (group) {
+        group.entries.forEach((entry: any) => {
+          const runEntry = () => {
+            const actor = this.getCharacterByNameOrId(entry.actorId);
+            if (actor) {
+              if (entry.animationName) actor.playCustomAnimation(entry.animationName, entry.loop ? undefined : 1500);
+              if (entry.faceTargetId) {
+                const target = this.getCharacterByNameOrId(entry.faceTargetId);
+                if (target) actor.faceTarget(target.position);
+              }
+            }
+          };
+          if (entry.delaySeconds && entry.delaySeconds > 0) {
+            setTimeout(runEntry, entry.delaySeconds * 1000);
+          } else {
+            runEntry();
+          }
+        });
+      }
+    } else if (directive.type === 'camera') {
+      if (directive.cameraAction === 'zoom' && directive.cameraZoom) {
+        this.camera.zoom = directive.cameraZoom;
+      } else if (directive.cameraAction === 'shake') {
+        this.camera.shake(0.5, 8);
+      } else if (directive.cameraAction === 'reset') {
+        this.camera.zoom = 1;
+      }
+    }
+  }
+
+  private showEmoteBubble(actor: Character, text: string): void {
+    if (!this.containerElement) return;
+    const screenPos = this.camera.worldToScreen(actor.position.x, actor.position.y - 120);
+    const bubble = document.createElement('div');
+    bubble.className = 'character-emote-bubble';
+    bubble.style.cssText = `
+      position: absolute;
+      left: ${screenPos.x}px;
+      top: ${screenPos.y}px;
+      transform: translate(-50%, -100%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 2px solid var(--accent-gold, #f59e0b);
+      color: #fff;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 14px;
+      font-size: 0.8rem;
+      pointer-events: none;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      animation: emotePop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    `;
+    bubble.innerHTML = text;
+    this.containerElement.appendChild(bubble);
+    setTimeout(() => {
+      bubble.style.transition = 'opacity 0.3s, transform 0.3s';
+      bubble.style.opacity = '0';
+      bubble.style.transform = 'translate(-50%, -120%)';
+      setTimeout(() => bubble.remove(), 350);
+    }, 2400);
   }
 
   public getCharacterScreenPos(speakerName?: string): Vector2D | null {

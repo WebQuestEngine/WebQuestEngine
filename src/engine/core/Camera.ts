@@ -83,6 +83,26 @@ export class Camera {
     };
   }
 
+  public shake(durationSec: number = 0.5, intensity: number = 8): void {
+    const startTime = performance.now();
+    const origPan = { ...this.panOffset };
+    const shakeInterval = setInterval(() => {
+      const elapsed = (performance.now() - startTime) / 1000;
+      if (elapsed >= durationSec) {
+        clearInterval(shakeInterval);
+        this.panOffset = origPan;
+      } else {
+        const decay = 1 - (elapsed / durationSec);
+        this.panOffset.x = origPan.x + (Math.random() * 2 - 1) * intensity * decay;
+        this.panOffset.y = origPan.y + (Math.random() * 2 - 1) * intensity * decay;
+      }
+    }, 16);
+  }
+
+  public worldToScreen(x: number, y: number): Vector2D {
+    return this.toScreenPoint({ x, y });
+  }
+
   public toScreenPoint(worldPt: Vector2D): Vector2D {
     return {
       x: (worldPt.x - this.position.x) * this.zoom + this.panOffset.x,

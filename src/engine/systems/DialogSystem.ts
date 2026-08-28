@@ -198,14 +198,61 @@ export class DialogSystem {
       return;
     }
 
-    // 3. Regular Speech Node Processing
+    // 3. Process Multi-Flag and Item Outcomes for this Beat
     if (this.currentNode.setFlag) {
-      console.log(`  🚩 Speech Node setting flag: "${this.currentNode.setFlag}"`);
       EventBus.getInstance().emit('flag:set', this.currentNode.setFlag);
     }
+    if (this.currentNode.setFlags && Array.isArray(this.currentNode.setFlags)) {
+      this.currentNode.setFlags.forEach(f => EventBus.getInstance().emit('flag:set', f));
+    }
+    if (this.currentNode.clearFlag) {
+      EventBus.getInstance().emit('flag:clear', this.currentNode.clearFlag);
+    }
+    if (this.currentNode.clearFlags && Array.isArray(this.currentNode.clearFlags)) {
+      this.currentNode.clearFlags.forEach(f => EventBus.getInstance().emit('flag:clear', f));
+    }
     if (this.currentNode.giveItem) {
-      console.log(`  🎒 Speech Node giving item: "${this.currentNode.giveItem}"`);
       EventBus.getInstance().emit('inventory:give', this.currentNode.giveItem);
+    }
+    if (this.currentNode.giveItems && Array.isArray(this.currentNode.giveItems)) {
+      this.currentNode.giveItems.forEach(it => EventBus.getInstance().emit('inventory:give', it));
+    }
+    if (this.currentNode.takeItems && Array.isArray(this.currentNode.takeItems)) {
+      this.currentNode.takeItems.forEach(it => EventBus.getInstance().emit('inventory:take', it));
+    }
+
+    // 4. Dispatch Stage Directives & Speaker Choreography
+    if (this.currentNode.speakerAnimation || this.currentNode.speakerGesture) {
+      EventBus.getInstance().emit('dialog:speaker_anim', {
+        speaker: this.currentNode.speaker,
+        animation: this.currentNode.speakerAnimation,
+        gesture: this.currentNode.speakerGesture
+      });
+    }
+
+    if (this.currentNode.directives && this.currentNode.directives.length > 0) {
+      console.log(`  🎭 Executing ${this.currentNode.directives.length} Stage Directives for Beat "${this.currentNode.id}"`);
+      this.currentNode.directives.forEach((directive) => {
+        const executeDirective = () => {
+          EventBus.getInstance().emit('dialog:directive', directive);
+
+          if (directive.type === 'sfx' && directive.sfxUrl) {
+            AudioSystem.getInstance().playSFX(directive.sfxUrl);
+          } else if (directive.type === 'give_item' && directive.itemId) {
+            EventBus.getInstance().emit('inventory:give', directive.itemId);
+          } else if (directive.type === 'take_item' && directive.itemId) {
+            EventBus.getInstance().emit('inventory:take', directive.itemId);
+          } else if (directive.type === 'custom_event' && directive.eventName) {
+            EventBus.getInstance().emit(directive.eventName, directive.eventPayload);
+          }
+        };
+
+        if (directive.delaySeconds && directive.delaySeconds > 0) {
+          setTimeout(executeDirective, directive.delaySeconds * 1000);
+        } else {
+          executeDirective();
+        }
+      });
     }
 
     // Filter available choices based on required & not flags
@@ -257,6 +304,8 @@ export class DialogSystem {
         speaker: this.currentNode.speaker,
         text: this.currentNode.text,
         portraitUrl: this.currentNode.portraitUrl,
+        speakerAnimation: this.currentNode.speakerAnimation,
+        directives: this.currentNode.directives,
         choices: [],
         hasNext: true
       });
@@ -266,6 +315,8 @@ export class DialogSystem {
         speaker: this.currentNode.speaker,
         text: this.currentNode.text,
         portraitUrl: this.currentNode.portraitUrl,
+        speakerAnimation: this.currentNode.speakerAnimation,
+        directives: this.currentNode.directives,
         choices: availableChoices,
         hasNext: Boolean(this.currentNode.nextNodeId)
       });
@@ -294,12 +345,25 @@ export class DialogSystem {
     );
 
     if (choice.setFlag) {
-      console.log(`  🚩 Choice setting flag: "${choice.setFlag}"`);
       EventBus.getInstance().emit('flag:set', choice.setFlag);
     }
+    if (choice.setFlags && Array.isArray(choice.setFlags)) {
+      choice.setFlags.forEach(f => EventBus.getInstance().emit('flag:set', f));
+    }
+    if (choice.clearFlag) {
+      EventBus.getInstance().emit('flag:clear', choice.clearFlag);
+    }
+    if (choice.clearFlags && Array.isArray(choice.clearFlags)) {
+      choice.clearFlags.forEach(f => EventBus.getInstance().emit('flag:clear', f));
+    }
     if (choice.giveItem) {
-      console.log(`  🎒 Choice giving item: "${choice.giveItem}"`);
       EventBus.getInstance().emit('inventory:give', choice.giveItem);
+    }
+    if (choice.giveItems && Array.isArray(choice.giveItems)) {
+      choice.giveItems.forEach(it => EventBus.getInstance().emit('inventory:give', it));
+    }
+    if (choice.takeItems && Array.isArray(choice.takeItems)) {
+      choice.takeItems.forEach(it => EventBus.getInstance().emit('inventory:take', it));
     }
 
     if (choice.voiceAudioUrl) {

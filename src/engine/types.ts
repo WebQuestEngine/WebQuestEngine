@@ -42,20 +42,76 @@ export interface AnimationClipConfig {
   loop?: boolean;
 }
 
+export type ActionEventType = 'dialog' | 'animation' | 'speech' | 'scene_change' | 'give_item' | 'set_flag' | 'custom_event' | 'mixed';
+
+export interface ChoreographyEntry {
+  actorId: string;           // Character or Hotspot ID
+  animationName: string;     // Animation clip from that actor's set
+  loop?: boolean;
+  delaySeconds?: number;     // Micro-delay offset
+  faceTargetId?: string;     // Optional direction to turn
+}
+
+export interface ChoreographyGroup {
+  id: string;
+  name: string;
+  entries: ChoreographyEntry[];
+}
+
+export type DirectiveActionType =
+  | 'animation'          // Single actor animation (selected from actor's animation set)
+  | 'choreography_group' // Synchronized multi-object animation cue
+  | 'give_item'          // Item transfer (synced with gesture/line)
+  | 'take_item'          // Consume item from inventory
+  | 'emote'              // Overhead comic emote bubble above character head
+  | 'look_at'            // Turn character to face target
+  | 'walk_to'            // Walk character to target coordinate
+  | 'sfx'                // Sound FX
+  | 'camera'             // Camera pan/zoom/shake
+  | 'custom_event';      // Custom game event signal
+
+export interface StageDirective {
+  id: string;
+  type: DirectiveActionType;
+  actorId?: string;             // Target Character or Object
+  animationName?: string;       // Chosen from the target actor's animation set
+  choreographyGroupId?: string; // If type === 'choreography_group'
+  itemId?: string;              // If type === 'give_item' | 'take_item'
+  itemCount?: number;
+  emoteText?: string;           // If type === 'emote'
+  targetActorId?: string;
+  targetPosition?: Vector2D;
+  sfxUrl?: string;
+  delaySeconds?: number;
+  loopAnimation?: boolean;
+  cameraAction?: 'pan' | 'zoom' | 'shake' | 'reset';
+  cameraZoom?: number;
+  eventName?: string;
+  eventPayload?: string;
+}
+
 export interface HotspotAction {
   verb: VerbType;
+  actionType?: ActionEventType;
+  eventName?: string;
+  eventPayload?: string;
   text?: string;
   targetSceneId?: string;
   targetSpawnPoint?: Vector2D;
   dialogId?: string;
   giveItemId?: string;
+  giveItems?: string[];
+  takeItems?: string[];
   requireItemId?: string;
   setFlag?: string;
   clearFlag?: string;
+  setFlags?: string[];
+  clearFlags?: string[];
   requiredFlag?: string;
   notFlag?: string;
   customScript?: string;
   playAnimation?: string;
+  animationTarget?: 'player' | 'self' | string;
   faceDirection?: Direction8Way;
   sfxUrl?: string;
 }
@@ -156,6 +212,7 @@ export interface SceneData {
   backgroundMusicUrl?: string;
   assetBasePath?: string;
   locked?: boolean;
+  choreographyGroups?: ChoreographyGroup[];
 }
 
 export interface DialogChoice {
@@ -166,7 +223,12 @@ export interface DialogChoice {
   requiredFlag?: string;
   notFlag?: string;
   setFlag?: string;
+  clearFlag?: string;
+  setFlags?: string[];
+  clearFlags?: string[];
   giveItem?: string;
+  giveItems?: string[];
+  takeItems?: string[];
 }
 
 export interface DialogNode {
@@ -175,15 +237,24 @@ export interface DialogNode {
   text: string;
   portraitUrl?: string;
   voiceAudioUrl?: string;
+  speakerAnimation?: string;     // Active talk animation for speaker
+  speakerGesture?: string;       // One-off gesture at start of line
+  directives?: StageDirective[]; // Stage directives during this beat
+  setFlags?: string[];           // List of flags to set
+  clearFlags?: string[];         // List of flags to clear
+  giveItems?: string[];          // List of items to award
+  takeItems?: string[];          // List of items to consume
   choices?: DialogChoice[];
   nextNodeId?: string;
   requiredFlag?: string;
   notFlag?: string;
   setFlag?: string;
+  clearFlag?: string;
   giveItem?: string;
   position?: Vector2D;
   isChoiceInteractive?: boolean;
   isRouterNode?: boolean;
+  waitDurationSeconds?: number;  // Optional timed wait duration
 }
 
 export interface DialogTree {
@@ -243,6 +314,7 @@ export interface ProjectData {
   scenes: SceneData[];
   items: InventoryItemData[];
   dialogs: DialogTree[];
+  choreographyGroups?: ChoreographyGroup[];
   initialFlags: Record<string, boolean>;
   startChapterId: string;
 }
