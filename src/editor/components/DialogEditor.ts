@@ -1,5 +1,6 @@
-import { ProjectData, DialogTree, DialogNode, DialogChoice, Vector2D } from '../../engine/types';
+import { ProjectData, DialogTree, DialogNode, DialogChoice, Vector2D, SceneData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
+import { resolvePickedAssetPath } from './Inspector';
 
 export class DialogEditor {
   public element: HTMLElement;
@@ -1154,6 +1155,25 @@ export class DialogEditor {
       });
     });
 
+    // Helper to find associated scene for base asset path resolution
+    const findDialogScene = (dTree: DialogTree): SceneData | null => {
+      if (this.project?.scenes) {
+        for (const sc of this.project.scenes) {
+          for (const c of sc.characters) {
+            if (c.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && dTree.id.includes(c.id.replace(/^npc_/, '')))) {
+              return sc;
+            }
+          }
+          for (const hs of sc.hotspots) {
+            if (hs.actions?.some(a => a.dialogId === dTree.id)) {
+              return sc;
+            }
+          }
+        }
+      }
+      return null;
+    };
+
     // Node Voiceover Audio File Picker
     this.element.querySelectorAll('.node-voice-file').forEach(fileInput => {
       fileInput.addEventListener('change', (e) => {
@@ -1162,12 +1182,8 @@ export class DialogEditor {
         const nid = target.dataset.nodeid!;
 
         if (file && tree.nodes[nid]) {
-          let relPath = file.name;
-          if ((file as any).path) {
-            relPath = (file as any).path.replace(/\\/g, '/');
-          } else {
-            relPath = `assets/audio/${file.name}`;
-          }
+          const targetScene = findDialogScene(tree);
+          const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
           tree.nodes[nid].voiceAudioUrl = relPath;
           const urlInput = this.element.querySelector(`.node-voice-url[data-nodeid="${nid}"]`) as HTMLInputElement;
           if (urlInput) urlInput.value = relPath;
@@ -1185,12 +1201,8 @@ export class DialogEditor {
         const cIdx = parseInt(target.dataset.cidx!);
 
         if (file && tree.nodes[nid]?.choices?.[cIdx]) {
-          let relPath = file.name;
-          if ((file as any).path) {
-            relPath = (file as any).path.replace(/\\/g, '/');
-          } else {
-            relPath = `assets/audio/${file.name}`;
-          }
+          const targetScene = findDialogScene(tree);
+          const relPath = resolvePickedAssetPath(file, 'audio', targetScene, this.project);
           tree.nodes[nid].choices![cIdx].voiceAudioUrl = relPath;
           const urlInput = this.element.querySelector(`.choice-voice-url[data-nodeid="${nid}"][data-cidx="${cIdx}"]`) as HTMLInputElement;
           if (urlInput) urlInput.value = relPath;

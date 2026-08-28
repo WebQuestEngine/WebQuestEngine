@@ -355,12 +355,14 @@
             {
               "verb": "look",
               "notFlag": "labUnlocked",
-              "text": "A heavy oak door reinforced with iron bands. It requires a brass key."
+              "text": "A heavy oak door reinforced with iron bands. It requires a brass key.",
+              "sfxUrl": "assets/c1s1/audio/A heavy oak door reinforced with iron bands It requires a brass key.mp3"
             },
             {
               "verb": "look",
               "requiredFlag": "labUnlocked",
-              "text": "A heavy oak door. It stands unlocked and slightly ajar."
+              "text": "A heavy oak door. It stands unlocked and slightly ajar.",
+              "sfxUrl": "assets/c1s1/audio/A heavy oak door It stands unlocked and slightly ajar.mp3"
             },
             {
               "verb": "interact",
@@ -375,7 +377,8 @@
             {
               "verb": "interact",
               "notFlag": "labUnlocked",
-              "text": "The door is locked tight. You need to use a brass key to unlock it."
+              "text": "The door is locked tight. I need to use a brass key to unlock it.",
+              "sfxUrl": "assets/c1s1/audio/The door is locked tight - I need to use a brass key to unlock it.mp3"
             },
             {
               "verb": "use",

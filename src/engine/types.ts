@@ -154,6 +154,7 @@ export interface SceneData {
   characters: CharacterData[];
   playerSpawn: Vector2D;
   backgroundMusicUrl?: string;
+  assetBasePath?: string;
   locked?: boolean;
 }
 

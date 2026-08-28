@@ -17,30 +17,98 @@ export function normalizeImagePath(pathStr: string): string {
   if (normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('data:') || normalized.startsWith('procedural:')) {
     return normalized;
   }
+  const assetsIndex = normalized.indexOf('/assets/');
+  if (assetsIndex !== -1) return normalized.substring(assetsIndex + 1);
   const demoIndex = normalized.indexOf('/demo/');
   if (demoIndex !== -1) return normalized.substring(demoIndex + 1);
   return normalized;
 }
 
-export function getRelativeFilePath(file: File): string {
+export type AssetCategory = 'audio' | 'characters' | 'cursors' | 'items' | 'images' | 'layers';
+
+/**
+ * Combines the active base folder of the scene or project with the asset category folder and filename.
+ * E.g., scene base `assets/c1s1` + audio + `looking at shrub.mp3` => `assets/c1s1/audio/looking at shrub.mp3`
+ */
+export function resolvePickedAssetPath(
+  file: File,
+  category: AssetCategory,
+  scene?: SceneData | null,
+  project?: ProjectData | null
+): string {
+  // 1. Try to extract relative path from path properties if available
   const fullPath = (file as any).path || '';
   if (fullPath) {
-    AssetManager.getInstance().trackFileFolder(fullPath);
-    return normalizeImagePath(fullPath);
+    const normalized = normalizeImagePath(fullPath);
+    if (normalized && normalized !== file.name) {
+      AssetManager.getInstance().trackFileFolder(fullPath);
+      return normalized;
+    }
   }
+
   if (file.webkitRelativePath && file.webkitRelativePath.trim() !== '') {
-    AssetManager.getInstance().trackFileFolder(file.webkitRelativePath);
-    return file.webkitRelativePath;
+    const normalized = normalizeImagePath(file.webkitRelativePath);
+    if (normalized && normalized !== file.name) {
+      AssetManager.getInstance().trackFileFolder(file.webkitRelativePath);
+      return normalized;
+    }
   }
-  return file.name;
+
+  // 2. Combine base folder + category folder + filename
+  const rawBase = scene?.assetBasePath?.trim() || project?.assetBasePath?.trim() || 'assets';
+  const cleanBase = rawBase.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  const fileName = file.name;
+
+  if (category === 'audio') {
+    if (cleanBase.endsWith('/audio') || cleanBase === 'audio') {
+      return `${cleanBase}/${fileName}`;
+    }
+    return `${cleanBase}/audio/${fileName}`;
+  }
+
+  if (category === 'characters') {
+    if (cleanBase.endsWith('/characters') || cleanBase === 'characters') {
+      return `${cleanBase}/${fileName}`;
+    }
+    return `assets/characters/${fileName}`;
+  }
+
+  if (category === 'cursors') {
+    if (cleanBase.endsWith('/cursors') || cleanBase === 'cursors') {
+      return `${cleanBase}/${fileName}`;
+    }
+    return `assets/cursors/${fileName}`;
+  }
+
+  if (category === 'items') {
+    if (cleanBase.endsWith('/items') || cleanBase === 'items') {
+      return `${cleanBase}/${fileName}`;
+    }
+    return `assets/items/${fileName}`;
+  }
+
+  // For images / layers:
+  return `${cleanBase}/${fileName}`;
 }
 
-export function handleFileInputChange(file: File, callback: (cleanUrl: string) => void): void {
+export function getRelativeFilePath(
+  file: File,
+  category: AssetCategory = 'images',
+  scene?: SceneData | null,
+  project?: ProjectData | null
+): string {
+  return resolvePickedAssetPath(file, category, scene, project);
+}
+
+export function handleFileInputChange(
+  file: File,
+  category: AssetCategory,
+  scene: SceneData | null | undefined,
+  project: ProjectData | null | undefined,
+  callback: (cleanUrl: string) => void
+): void {
   if (!file) return;
-  const relPath = getRelativeFilePath(file);
-  const cleanUrl = (relPath.startsWith('assets/') || relPath.startsWith('src/') || relPath.startsWith('http') || relPath.startsWith('/'))
-    ? relPath
-    : `assets/characters/${relPath}`;
+  const cleanUrl = resolvePickedAssetPath(file, category, scene, project);
 
   const reader = new FileReader();
   reader.onload = async (e) => {
@@ -392,8 +460,11 @@ export class Inspector {
           </div>
         </div>
         <div class="form-group">
-          <label>Base Asset Folder</label>
-          <input type="text" class="form-input" id="base-folder-input" value="${this.project?.assetBasePath || ''}" placeholder="e.g. demo or assets" />
+          <label>Scene Base Asset Folder</label>
+          <input type="text" class="form-input" id="sc-base-folder" value="${scene.assetBasePath || this.project?.assetBasePath || ''}" placeholder="e.g. assets/c1s1" />
+          <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
+            Base folder for this scene's assets (e.g. <code>assets/c1s1</code> ➔ audio in <code>assets/c1s1/audio/</code>).
+          </div>
         </div>
       </div>
       <div class="sidebar-section">
@@ -1186,7 +1257,7 @@ export class Inspector {
         const target = e.target as HTMLInputElement;
         const verb = target.dataset.verb as VerbType;
         if (target.files && target.files[0] && this.project && verb) {
-          const relPath = getRelativeFilePath(target.files[0]);
+          const relPath = resolvePickedAssetPath(target.files[0], 'cursors', this.currentScene, this.project);
           if (!this.project.uiConfig.customCursors) {
             this.project.uiConfig.customCursors = {};
           }
@@ -1244,7 +1315,7 @@ export class Inspector {
         const hIdx = parseInt(target.dataset.hidx!);
         const hs = this.currentScene?.hotspots[hIdx];
         if (hs && target.files && target.files[0]) {
-          hs.customCursorUrl = getRelativeFilePath(target.files[0]);
+          hs.customCursorUrl = resolvePickedAssetPath(target.files[0], 'cursors', this.currentScene, this.project);
           this.renderContent();
           emitUpdate();
         }
@@ -1322,7 +1393,7 @@ export class Inspector {
     if (scBgFile && this.currentScene) {
       scBgFile.addEventListener('change', () => {
         if (scBgFile.files && scBgFile.files[0]) {
-          const relPath = getRelativeFilePath(scBgFile.files[0]);
+          const relPath = resolvePickedAssetPath(scBgFile.files[0], 'images', this.currentScene, this.project);
           if (this.currentScene!.layers[0]) {
             this.currentScene!.layers[0].imageUrl = relPath;
           }
@@ -1347,12 +1418,7 @@ export class Inspector {
       scBgmFile.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {
-          let relPath = file.name;
-          if ((file as any).path) {
-            relPath = normalizeImagePath((file as any).path);
-          } else {
-            relPath = `assets/audio/${file.name}`;
-          }
+          const relPath = resolvePickedAssetPath(file, 'audio', this.currentScene, this.project);
           this.currentScene!.backgroundMusicUrl = relPath;
           if (scBgmUrl) scBgmUrl.value = relPath;
           emitUpdate();
@@ -1360,10 +1426,20 @@ export class Inspector {
       });
     }
 
-    const baseFolderInput = this.element.querySelector('#base-folder-input') as HTMLInputElement;
-    if (baseFolderInput && this.project) {
-      baseFolderInput.addEventListener('input', () => {
-        const val = baseFolderInput.value.trim();
+    const scBaseFolder = this.element.querySelector('#sc-base-folder') as HTMLInputElement;
+    if (scBaseFolder && this.currentScene) {
+      scBaseFolder.addEventListener('input', () => {
+        const val = scBaseFolder.value.trim();
+        this.currentScene!.assetBasePath = val || undefined;
+        if (val) AssetManager.getInstance().setBaseFolder(val);
+        emitUpdate();
+      });
+    }
+
+    const projBaseFolder = this.element.querySelector('#proj-base-folder') as HTMLInputElement;
+    if (projBaseFolder && this.project) {
+      projBaseFolder.addEventListener('input', () => {
+        const val = projBaseFolder.value.trim();
         this.project!.assetBasePath = val;
         if (val) AssetManager.getInstance().setBaseFolder(val);
         emitUpdate();
@@ -1548,12 +1624,7 @@ export class Inspector {
         const isChar = targetEl.dataset.ischar === 'true';
 
         if (file) {
-          let relPath = file.name;
-          if ((file as any).path) {
-            relPath = (file as any).path.replace(/\\/g, '/');
-          } else {
-            relPath = `assets/audio/${file.name}`;
-          }
+          const relPath = resolvePickedAssetPath(file, 'audio', this.currentScene, this.project);
           const actions = isChar ? this.currentScene?.characters[hIdx]?.actions : this.currentScene?.hotspots[hIdx]?.actions;
           if (actions && actions[aIdx]) {
             actions[aIdx].sfxUrl = relPath;
@@ -1861,7 +1932,7 @@ export class Inspector {
         const hIdx = parseInt((e.target as HTMLElement).dataset.hidx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0] && this.currentScene && this.currentScene.hotspots[hIdx]) {
-          const relPath = getRelativeFilePath(files[0]);
+          const relPath = resolvePickedAssetPath(files[0], 'images', this.currentScene, this.project);
           this.currentScene.hotspots[hIdx].imageUrl = relPath;
           this.renderContent();
           emitUpdate();
@@ -1971,13 +2042,10 @@ export class Inspector {
         const lIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0] && this.currentScene?.layers[lIdx]) {
-          handleFileInputChange(files[0], (dataUrl) => {
-            if (this.currentScene?.layers[lIdx]) {
-              this.currentScene.layers[lIdx].imageUrl = dataUrl;
-              this.renderContent();
-              emitUpdate();
-            }
-          });
+          const relPath = resolvePickedAssetPath(files[0], 'layers', this.currentScene, this.project);
+          this.currentScene.layers[lIdx].imageUrl = relPath;
+          this.renderContent();
+          emitUpdate();
         }
       });
     });
@@ -2083,6 +2151,20 @@ export class Inspector {
         const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (this.currentScene?.characters[cIdx]) {
           this.currentScene.characters[cIdx].spriteSheetUrl = normalizeImagePath((e.target as HTMLInputElement).value);
+          this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
+          this.renderContent();
+          emitUpdate();
+        }
+      });
+    });
+
+    this.element.querySelectorAll('.char-file-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const cIdx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const files = (e.target as HTMLInputElement).files;
+        if (files && files[0] && this.currentScene?.characters[cIdx]) {
+          const relPath = resolvePickedAssetPath(files[0], 'characters', this.currentScene, this.project);
+          this.currentScene.characters[cIdx].spriteSheetUrl = relPath;
           this.syncCharacterAcrossScenes(this.currentScene.characters[cIdx]);
           this.renderContent();
           emitUpdate();
@@ -2353,13 +2435,10 @@ export class Inspector {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         const files = (e.target as HTMLInputElement).files;
         if (files && files[0] && this.project?.items[idx]) {
-          handleFileInputChange(files[0], (dataUrl) => {
-            if (this.project?.items[idx]) {
-              this.project.items[idx].iconUrl = dataUrl;
-              this.renderContent();
-              emitUpdate();
-            }
-          });
+          const relPath = resolvePickedAssetPath(files[0], 'items', this.currentScene, this.project);
+          this.project.items[idx].iconUrl = relPath;
+          this.renderContent();
+          emitUpdate();
         }
       });
     });
