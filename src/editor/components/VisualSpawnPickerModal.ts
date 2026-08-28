@@ -233,10 +233,11 @@ export class VisualSpawnPickerModal {
       }
     }
 
-    // Render Character Sprite Preview (Sir Ronald or target character)
+    // Render Character Sprite Preview (Player or target character)
     const targetCharData = this.targetScene.characters?.find(c => c.id === 'player')
-      || this.project.scenes[0]?.characters?.find(c => c.id === 'player')
-      || { spriteSheetUrl: 'assets/characters/sir_ronald.png', frameWidth: 86, frameHeight: 156, scale: 1 };
+      || this.project.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player')
+      || this.targetScene.characters?.[0]
+      || null;
 
     const charContainer = new PIXI.Container();
     charContainer.x = this.currentPos.x;
@@ -244,32 +245,38 @@ export class VisualSpawnPickerModal {
     charContainer.scale.set(this.currentScale);
     sceneContainer.addChild(charContainer);
 
-    let charSprite: PIXI.Sprite;
-    try {
-      const sheetTexture = await assetManager.loadTexture(targetCharData.spriteSheetUrl);
-      const fw = targetCharData.frameWidth || 86;
-      const fh = targetCharData.frameHeight || 156;
+    let charSprite: PIXI.Sprite | null = null;
+    if (targetCharData?.spriteSheetUrl) {
+      try {
+        const sheetTexture = await assetManager.loadTexture(targetCharData.spriteSheetUrl);
+        const fw = targetCharData.frameWidth || 64;
+        const fh = targetCharData.frameHeight || 96;
 
-      const frameRect = new PIXI.Rectangle(0, 0, Math.min(fw, sheetTexture.width), Math.min(fh, sheetTexture.height));
-      const frameTexture = new PIXI.Texture({ source: sheetTexture.source, frame: frameRect });
-      charSprite = new PIXI.Sprite(frameTexture);
-    } catch {
-      // Fallback graphics rectangle if sprite fails
+        const frameRect = new PIXI.Rectangle(0, 0, Math.min(fw, sheetTexture.width), Math.min(fh, sheetTexture.height));
+        const frameTexture = new PIXI.Texture({ source: sheetTexture.source, frame: frameRect });
+        charSprite = new PIXI.Sprite(frameTexture);
+        charSprite.anchor.set(0.5, 0.9);
+        charContainer.addChild(charSprite);
+      } catch {
+        // Fallback graphics rectangle if texture load fails
+        const fallbackG = new PIXI.Graphics();
+        fallbackG.rect(-25, -90, 50, 90);
+        fallbackG.fill({ color: 0x8b5cf6, alpha: 0.8 });
+        fallbackG.stroke({ color: 0xffffff, width: 2 });
+        charContainer.addChild(fallbackG);
+      }
+    } else {
       const fallbackG = new PIXI.Graphics();
       fallbackG.rect(-25, -90, 50, 90);
       fallbackG.fill({ color: 0x8b5cf6, alpha: 0.8 });
       fallbackG.stroke({ color: 0xffffff, width: 2 });
       charContainer.addChild(fallbackG);
-      charSprite = new PIXI.Sprite();
     }
-
-    charSprite.anchor.set(0.5, 0.9);
-    charContainer.addChild(charSprite);
 
     // Draw Character Selection Bounding Box & Target Crosshair Indicator
     const charOverlay = new PIXI.Graphics();
-    const hw = (targetCharData.frameWidth || 86) / 2;
-    const hh = targetCharData.frameHeight || 156;
+    const hw = ((targetCharData?.frameWidth) || 64) / 2;
+    const hh = targetCharData?.frameHeight || 96;
     charOverlay.rect(-hw, -hh, hw * 2, hh);
     charOverlay.stroke({ color: 0xfbbf24, width: 2, alpha: 0.9 });
     charOverlay.fill({ color: 0xfbbf24, alpha: 0.15 });

@@ -100,7 +100,7 @@ export class Layer extends GraphicalElement {
       ctx.rect(640, 600, 120, 100);
       ctx.fill();
     } else if (type === 'lab_background') {
-      // Alchemist Lab interior
+      // Procedural laboratory interior
       const grad = ctx.createLinearGradient(0, 0, 0, 1080);
       grad.addColorStop(0, '#1c1917');
       grad.addColorStop(1, '#292524');

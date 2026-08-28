@@ -71,7 +71,7 @@ export class Scene {
     if (!hasPlayer) {
       const defaultPlayerData = {
         id: 'player',
-        name: 'Sir Ronald',
+        name: 'Hero',
         spriteSheetUrl: 'procedural_hero',
         frameWidth: 64,
         frameHeight: 96,

@@ -393,9 +393,15 @@ export class GameRuntime {
         const dialogId = charNPC.data.actions[0].dialogId;
         if (player) {
           player.walkTo(charNPC.position, walkPath, () => {
+            if (this.currentScene?.playerCharacter?.data.name) {
+              this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
+            }
             this.context.dialog.startDialog(dialogId, (flag) => this.context.story.getFlag(flag));
           });
         } else {
+          if (this.currentScene?.playerCharacter?.data.name) {
+            this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
+          }
           this.context.dialog.startDialog(dialogId, (flag) => this.context.story.getFlag(flag));
         }
         return;
@@ -821,6 +827,9 @@ export class GameRuntime {
     // 8. Dialog Event
     if (action.dialogId) {
       console.log(`%c[GameRuntime] 💬 Action triggering dialog: "${action.dialogId}"`, 'color: #8b5cf6; font-weight: bold;');
+      if (this.currentScene?.playerCharacter?.data.name) {
+        this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
+      }
       this.context.dialog.startDialog(action.dialogId, (flag) => this.context.story.getFlag(flag));
     }
 
@@ -832,8 +841,10 @@ export class GameRuntime {
 
   public getCharacterByNameOrId(nameOrId?: string): Character | null {
     if (!this.currentScene) return null;
-    if (!nameOrId || nameOrId === 'player' || nameOrId.toLowerCase() === 'sir ronald') {
-      return this.currentScene.playerCharacter;
+    const playerChar = this.currentScene.playerCharacter;
+    const playerName = playerChar?.data.name.toLowerCase();
+    if (!nameOrId || nameOrId === 'player' || nameOrId === 'hero' || (playerName && nameOrId.toLowerCase() === playerName)) {
+      return playerChar;
     }
     const chars = Array.from(this.currentScene.characters.values());
     return chars.find(c =>

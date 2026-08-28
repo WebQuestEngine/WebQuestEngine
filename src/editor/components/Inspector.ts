@@ -28,7 +28,7 @@ export type AssetCategory = 'audio' | 'characters' | 'cursors' | 'items' | 'imag
 
 /**
  * Combines the active base folder of the scene or project with the asset category folder and filename.
- * E.g., scene base `assets/c1s1` + audio + `looking at shrub.mp3` => `assets/c1s1/audio/looking at shrub.mp3`
+ * E.g., scene base `assets/scene1` + audio + `look_at_object.mp3` => `assets/scene1/audio/look_at_object.mp3`
  */
 export function resolvePickedAssetPath(
   file: File,
@@ -465,9 +465,9 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Scene Base Asset Folder</label>
-          <input type="text" class="form-input" id="sc-base-folder" value="${scene.assetBasePath || this.project?.assetBasePath || ''}" placeholder="e.g. assets/c1s1" />
+          <input type="text" class="form-input" id="sc-base-folder" value="${scene.assetBasePath || this.project?.assetBasePath || ''}" placeholder="e.g. assets/scene1" />
           <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
-            Base folder for this scene's assets (e.g. <code>assets/c1s1</code> ➔ audio in <code>assets/c1s1/audio/</code>).
+            Base folder for this scene's assets (e.g. <code>assets/scene1</code> ➔ audio in <code>assets/scene1/audio/</code>).
           </div>
         </div>
       </div>

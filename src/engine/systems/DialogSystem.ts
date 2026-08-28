@@ -24,6 +24,11 @@ export class DialogSystem {
 
   private autoAdvanceChoiceId: string | null = null;
   private activeFlagGetter: ((flag: string) => boolean) | null = null;
+  private playerName: string = 'Player';
+
+  public setPlayerName(name: string): void {
+    this.playerName = name;
+  }
 
   public clear(): void {
     AudioSystem.getInstance().stopVoice();
@@ -377,7 +382,7 @@ export class DialogSystem {
 
     // Speak the player's selected response choice
     EventBus.getInstance().emit('dialog:node', {
-      speaker: 'Sir Ronald',
+      speaker: this.playerName || 'Player',
       text: choice.text,
       choices: [],
       hasNext: true,

@@ -57,8 +57,12 @@ export class DialogEditor {
   }
 
   private getAllProjectActors(): { id: string; name: string; animations: string[] }[] {
+    const playerChar = this.project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
+    const playerName = playerChar?.name || 'Hero';
+    const playerAnims = playerChar?.animations ? Object.keys(playerChar.animations) : ['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower'];
+
     const actors: { id: string; name: string; animations: string[] }[] = [
-      { id: 'player', name: '👤 Sir Ronald (Player)', animations: ['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower'] }
+      { id: 'player', name: `👤 ${playerName} (Player)`, animations: playerAnims }
     ];
     if (this.project?.scenes) {
       for (const sc of this.project.scenes) {
@@ -474,7 +478,7 @@ export class DialogEditor {
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; position:relative;">
                     <div>
                       <label style="font-size:0.65rem; color:var(--text-muted);">🗣️ Speaker Name</label>
-                      <input type="text" class="form-input node-speaker" data-nodeid="${node.id}" value="${node.speaker}" placeholder="e.g. Master Eldrin" style="width:100%; font-weight:600; font-size:0.75rem;" />
+                      <input type="text" class="form-input node-speaker" data-nodeid="${node.id}" value="${node.speaker}" placeholder="e.g. Hero, Guard, Merchant" style="width:100%; font-weight:600; font-size:0.75rem;" />
                     </div>
                     <div>
                       <label style="font-size:0.65rem; color:#f59e0b;">🎭 Speaker Talk Anim</label>
@@ -496,7 +500,7 @@ export class DialogEditor {
                   <div>
                     <label style="font-size:0.65rem; color:var(--text-muted);">🎙️ Voiceover Audio File (URL)</label>
                     <div style="display:flex; gap:6px; align-items:center;">
-                      <input type="text" class="form-input node-voice-url" data-nodeid="${node.id}" value="${node.voiceAudioUrl || ''}" placeholder="e.g. assets/c1s1/audio/eldrin_runes.mp3" style="flex:1; font-size:0.75rem;" />
+                      <input type="text" class="form-input node-voice-url" data-nodeid="${node.id}" value="${node.voiceAudioUrl || ''}" placeholder="e.g. assets/audio/dialog_line_1.mp3" style="flex:1; font-size:0.75rem;" />
                       <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose Audio File">
                         📁
                         <input type="file" class="node-voice-file" data-nodeid="${node.id}" accept="audio/*" style="display:none;" />

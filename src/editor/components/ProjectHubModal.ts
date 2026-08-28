@@ -198,7 +198,7 @@ export class ProjectHubModal {
               </div>
             </div>
             <div class="sample-desc">
-              A complete 2-chapter point & click quest featuring Sir Ronald, Master Eldrin, parallax castle gates, dialogue trees, inventory puzzles, and voice acting.
+              A complete 2-chapter point & click quest featuring parallax backgrounds, interactive dialogue trees, inventory puzzles, and voice acting.
             </div>
             <div class="sample-stats">
               <span>📖 2 Chapters</span>

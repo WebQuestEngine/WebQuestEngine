@@ -156,16 +156,10 @@ export class StoryGraphSystem {
   public getKnownFlags(): { scope: string; flag: string; label: string }[] {
     const known: Map<string, string> = new Map();
 
-    // Default scoped flags
-    known.set('player:hasKey', 'Player Inventory: Brass Key');
-    known.set('quest:labUnlocked', 'Quest Progress: Laboratory Access');
-    known.set('shrub:searched', 'Scene Element: Shrub Searched');
-    known.set('eldrin:talkedOnce', 'Character: Met Master Eldrin');
-
     if (this.project) {
       if (this.project.initialFlags) {
         for (const k of Object.keys(this.project.initialFlags)) {
-          if (!known.has(k)) known.set(k, `State: ${k}`);
+          if (!known.has(k)) known.set(k, `Initial State: ${k}`);
         }
       }
       for (const sc of this.project.scenes) {
@@ -182,6 +176,20 @@ export class StoryGraphSystem {
               if (act.requiredFlag) known.set(act.requiredFlag, `Condition: ${act.requiredFlag}`);
               if (act.notFlag) known.set(act.notFlag, `Condition: ${act.notFlag}`);
               if (act.setFlag) known.set(act.setFlag, `Outcome Flag: ${act.setFlag}`);
+            }
+          }
+        }
+      }
+      if (this.project.dialogs) {
+        for (const dlg of this.project.dialogs) {
+          for (const node of Object.values(dlg.nodes)) {
+            if (node.requiredFlag) known.set(node.requiredFlag, `Dialog Condition: ${node.requiredFlag}`);
+            if (node.notFlag) known.set(node.notFlag, `Dialog Condition: ${node.notFlag}`);
+            if (node.choices) {
+              for (const c of node.choices) {
+                if (c.requiredFlag) known.set(c.requiredFlag, `Choice Condition: ${c.requiredFlag}`);
+                if (c.notFlag) known.set(c.notFlag, `Choice Condition: ${c.notFlag}`);
+              }
             }
           }
         }
