@@ -36,10 +36,14 @@ export class UISystem {
   private currentCursorHotspotY = 0;
   private lastClientX = window.innerWidth / 2;
   private lastClientY = window.innerHeight / 2;
+  private currentCursorUrl: string | null = null;
+  private currentRawHotspotX = 0;
+  private currentRawHotspotY = 0;
+  private imageDimensionsCache = new Map<string, { width: number; height: number }>();
 
   public updateCustomCursor(iconUrl?: string | null, hotspotX?: number, hotspotY?: number): void {
-    this.currentCursorHotspotX = hotspotX ?? 0;
-    this.currentCursorHotspotY = hotspotY ?? 0;
+    const rawHX = hotspotX ?? 0;
+    const rawHY = hotspotY ?? 0;
 
     if (!this.cursorFollowerElement) {
       this.cursorFollowerElement = document.createElement('div');
@@ -57,42 +61,75 @@ export class UISystem {
       window.addEventListener('mousemove', (e) => {
         this.lastClientX = e.clientX;
         this.lastClientY = e.clientY;
-        if (this.cursorFollowerElement) {
+        if (this.cursorFollowerElement && this.currentCursorUrl) {
           this.cursorFollowerElement.style.left = `${e.clientX - this.currentCursorHotspotX}px`;
           this.cursorFollowerElement.style.top = `${e.clientY - this.currentCursorHotspotY}px`;
         }
       });
     }
 
-    if (iconUrl) {
-      const resolved = AssetManager.getInstance().resolveImageSrc(iconUrl);
-      const img = new Image();
-      img.onload = () => {
-        const natW = img.naturalWidth || 48;
-        const natH = img.naturalHeight || 48;
-        const scale = Math.min(48 / natW, 48 / natH, 1);
-        const actualW = Math.round(natW * scale);
-        const actualH = Math.round(natH * scale);
-        const effectiveHX = (hotspotX ?? 0) * scale;
-        const effectiveHY = (hotspotY ?? 0) * scale;
-
-        this.currentCursorHotspotX = effectiveHX;
-        this.currentCursorHotspotY = effectiveHY;
-
-        if (this.cursorFollowerElement) {
-          this.cursorFollowerElement.innerHTML = `<img src="${resolved}" style="width:${actualW}px; height:${actualH}px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,0.7)); display:block;" />`;
-          this.cursorFollowerElement.style.left = `${this.lastClientX - this.currentCursorHotspotX}px`;
-          this.cursorFollowerElement.style.top = `${this.lastClientY - this.currentCursorHotspotY}px`;
-          this.cursorFollowerElement.style.display = 'block';
-          document.body.classList.add('custom-cursor-active');
-        }
-      };
-      img.src = resolved;
-    } else {
+    if (!iconUrl) {
+      this.currentCursorUrl = null;
+      this.currentRawHotspotX = 0;
+      this.currentRawHotspotY = 0;
+      this.currentCursorHotspotX = 0;
+      this.currentCursorHotspotY = 0;
       if (this.cursorFollowerElement) {
         this.cursorFollowerElement.style.display = 'none';
       }
       document.body.classList.remove('custom-cursor-active');
+      return;
+    }
+
+    // If identical cursor and hotspot is already active, just maintain smooth tracking
+    if (
+      iconUrl === this.currentCursorUrl &&
+      rawHX === this.currentRawHotspotX &&
+      rawHY === this.currentRawHotspotY &&
+      this.cursorFollowerElement.style.display === 'block'
+    ) {
+      return;
+    }
+
+    this.currentCursorUrl = iconUrl;
+    this.currentRawHotspotX = rawHX;
+    this.currentRawHotspotY = rawHY;
+
+    const resolved = AssetManager.getInstance().resolveImageSrc(iconUrl);
+
+    const applyLayout = (natW: number, natH: number) => {
+      if (this.currentCursorUrl !== iconUrl) return;
+      const scale = Math.min(48 / (natW || 48), 48 / (natH || 48), 1);
+      const actualW = Math.round(natW * scale);
+      const actualH = Math.round(natH * scale);
+      this.currentCursorHotspotX = Math.round(rawHX * scale);
+      this.currentCursorHotspotY = Math.round(rawHY * scale);
+
+      if (this.cursorFollowerElement) {
+        this.cursorFollowerElement.innerHTML = `<img src="${resolved}" style="width:${actualW}px; height:${actualH}px; object-fit:contain; filter:drop-shadow(0 2px 8px rgba(0,0,0,0.7)); display:block;" />`;
+        this.cursorFollowerElement.style.left = `${this.lastClientX - this.currentCursorHotspotX}px`;
+        this.cursorFollowerElement.style.top = `${this.lastClientY - this.currentCursorHotspotY}px`;
+        this.cursorFollowerElement.style.display = 'block';
+        document.body.classList.add('custom-cursor-active');
+      }
+    };
+
+    if (this.imageDimensionsCache.has(resolved)) {
+      const cached = this.imageDimensionsCache.get(resolved)!;
+      applyLayout(cached.width, cached.height);
+    } else {
+      const img = new Image();
+      img.onload = () => {
+        const natW = img.naturalWidth || 48;
+        const natH = img.naturalHeight || 48;
+        this.imageDimensionsCache.set(resolved, { width: natW, height: natH });
+        applyLayout(natW, natH);
+      };
+      img.onerror = () => {
+        this.imageDimensionsCache.set(resolved, { width: 48, height: 48 });
+        applyLayout(48, 48);
+      };
+      img.src = resolved;
     }
   }
 
@@ -454,7 +491,7 @@ export class UISystem {
 
   public updateHoverTitle(name: string, verb?: string): void {
     if (!this.containerElement) return;
-    const titleEl = this.containerElement.querySelector('#ui-hover-title, .ui-hover-title');
+    const titleEl = this.containerElement.querySelector('#ui-action-sentence, #ui-hover-title, .action-sentence, .ui-hover-title');
     if (titleEl) {
       titleEl.textContent = verb ? `${verb.toUpperCase()} ${name}` : name;
     }
@@ -462,9 +499,10 @@ export class UISystem {
 
   public clearHoverTitle(): void {
     if (!this.containerElement) return;
-    const titleEl = this.containerElement.querySelector('#ui-hover-title, .ui-hover-title');
+    const titleEl = this.containerElement.querySelector('#ui-action-sentence, #ui-hover-title, .action-sentence, .ui-hover-title');
     if (titleEl) {
-      titleEl.textContent = '';
+      const verbLabel = this.activeVerb === 'walk' ? 'Walk to' : this.activeVerb ? this.activeVerb.toUpperCase() : '';
+      titleEl.textContent = verbLabel;
     }
   }
 
