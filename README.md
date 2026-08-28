@@ -6,6 +6,15 @@
 
 ---
 
+## 🎮 Play the Live Demo Quest
+
+Experience the engine in action with our sample quest, **The Alchemist's Mystery**:
+
+* 🕹️ **[Play Demo Quest (Fullscreen Game)](https://itaibh.github.io/WebQuestEngine/player.html)** — Play the standalone point-and-click adventure demo directly in your browser.
+* 🛠️ **[Launch WebQuestEngine Studio](https://itaibh.github.io/WebQuestEngine/)** — Open the full visual authoring editor loaded with the demo project to inspect and tweak scenes, characters, dialog trees, and logic rules.
+
+---
+
 ## 🎯 Project Objective
 
 **WebQuestEngine** is a modern, browser-based **2D Point & Click Adventure Game Engine & Authoring Studio** built with **TypeScript**, **PixiJS**, and **Vite**. 
@@ -35,8 +44,8 @@ The goal of this project is to empower game creators, writers, and narrative des
 
 ```bash
 # Clone the repository
-git clone https://github.com/itaibh/PointAndClickQuestEngine.git
-cd PointAndClickQuestEngine
+git clone https://github.com/itaibh/WebQuestEngine.git
+cd WebQuestEngine
 
 # Install dependencies
 npm install
