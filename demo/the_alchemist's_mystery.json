@@ -93,7 +93,7 @@
     {
       "id": "scene_gates",
       "name": "Castle Gates",
-      "backgroundMusicUrl": "assets/audio/bgm.mp3",
+      "backgroundMusicUrl": "assets/c1s1/audio/Pufino - Breton (freetouse.com).mp3",
       "width": 1920,
       "height": 1080,
       "playerSpawn": {
@@ -783,6 +783,7 @@
     {
       "id": "scene_lab",
       "name": "Alchemist Laboratory",
+      "backgroundMusicUrl": "assets/c1s2/audio/Aetheric - Whispers of the Harp (freetouse.com).mp3",
       "width": 1920,
       "height": 1080,
       "playerSpawn": {
@@ -837,20 +838,20 @@
               "y": 744
             },
             {
-              "x": 601,
-              "y": 736
+              "x": 594,
+              "y": 759
             },
             {
               "x": 738,
               "y": 783
             },
             {
-              "x": 874,
-              "y": 748
+              "x": 884,
+              "y": 759
             },
             {
-              "x": 926,
-              "y": 638
+              "x": 994,
+              "y": 708
             },
             {
               "x": 1349,
