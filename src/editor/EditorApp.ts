@@ -233,9 +233,15 @@ export class EditorApp {
     EventBus.getInstance().on('editor:select_scene', async (sceneId: string) => {
       const targetScene = this.project.scenes.find(s => s.id === sceneId);
       if (targetScene && this.editorCanvas) {
-        await this.editorCanvas.loadScene(targetScene);
+        if (this.editorCanvas.currentScene?.data.id !== sceneId) {
+          await this.editorCanvas.loadScene(targetScene);
+        }
         this.inspector.setCurrentScene(targetScene);
       }
+    });
+
+    EventBus.getInstance().on('ui:notify', (message: string) => {
+      this.showNotification(message);
     });
   }
 

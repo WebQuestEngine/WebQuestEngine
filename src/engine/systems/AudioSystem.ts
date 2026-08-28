@@ -51,6 +51,10 @@ export class AudioSystem {
     return AudioSystem.instance;
   }
 
+  public static setInstance(inst: AudioSystem | null): void {
+    AudioSystem.instance = inst as any;
+  }
+
   public setPlayMode(play: boolean): void {
     this.isPlayMode = play;
     if (!play) {

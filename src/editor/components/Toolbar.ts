@@ -16,6 +16,7 @@ export class Toolbar {
       <div class="brand-title">
         <span class="brand-icon">🏰</span>
         <span>QuestForge 2D</span>
+        <span class="version-badge">v2.0 (Decoupled)</span>
       </div>
 
       <div class="toolbar-group">

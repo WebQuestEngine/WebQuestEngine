@@ -18,6 +18,10 @@ export class DialogSystem {
     return DialogSystem.instance;
   }
 
+  public static setInstance(inst: DialogSystem | null): void {
+    DialogSystem.instance = inst as any;
+  }
+
   private autoAdvanceChoiceId: string | null = null;
 
   public clear(): void {

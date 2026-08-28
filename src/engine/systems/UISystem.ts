@@ -27,6 +27,10 @@ export class UISystem {
     return UISystem.instance;
   }
 
+  public static setInstance(inst: UISystem | null): void {
+    UISystem.instance = inst as any;
+  }
+
   private cursorFollowerElement: HTMLElement | null = null;
 
   public updateCustomCursor(iconUrl?: string | null): void {

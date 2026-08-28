@@ -16,6 +16,10 @@ export class InventorySystem {
     return InventorySystem.instance;
   }
 
+  public static setInstance(inst: InventorySystem | null): void {
+    InventorySystem.instance = inst as any;
+  }
+
   public registerItem(item: InventoryItemData): void {
     this.items.set(item.id, item);
   }

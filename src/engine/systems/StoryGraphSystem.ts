@@ -18,6 +18,10 @@ export class StoryGraphSystem {
     return StoryGraphSystem.instance;
   }
 
+  public static setInstance(inst: StoryGraphSystem | null): void {
+    StoryGraphSystem.instance = inst as any;
+  }
+
   public loadProject(project: ProjectData): void {
     this.project = project;
 

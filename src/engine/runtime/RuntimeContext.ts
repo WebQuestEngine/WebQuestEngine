@@ -43,7 +43,12 @@ export class RuntimeContext {
       }
     }
 
-    this.ui.init(uiContainerElement, project.uiConfig);
+    // Set active singleton proxies for play mode
+    StoryGraphSystem.setInstance(this.story);
+    InventorySystem.setInstance(this.inventory);
+    DialogSystem.setInstance(this.dialog);
+    UISystem.setInstance(this.ui);
+    AudioSystem.setInstance(this.audio);
   }
 
   public destroy(): void {
@@ -53,5 +58,11 @@ export class RuntimeContext {
     this.inventory.clear();
     this.ui.destroy();
     this.eventBus.clear();
+
+    StoryGraphSystem.setInstance(null);
+    InventorySystem.setInstance(null);
+    DialogSystem.setInstance(null);
+    UISystem.setInstance(null);
+    AudioSystem.setInstance(null);
   }
 }
