@@ -130,6 +130,9 @@ export class GameRuntime {
 
     try {
       if (this.currentScene) {
+        if (this.viewportMask && this.viewportMask.parent) {
+          this.viewportMask.parent.removeChild(this.viewportMask);
+        }
         this.app.stage.removeChild(this.currentScene.container);
         this.currentScene.destroy();
         this.currentScene = null;
@@ -150,6 +153,10 @@ export class GameRuntime {
 
       if (this.currentScene.playerCharacter) {
         this.camera.follow(this.currentScene.playerCharacter.container);
+      }
+
+      if (!this.viewportMask || (this.viewportMask as any).destroyed || (this.viewportMask as any).context === null) {
+        this.viewportMask = new Graphics();
       }
 
       this.app.stage.addChild(this.currentScene.container);
@@ -202,7 +209,7 @@ export class GameRuntime {
   }
 
   public update(delta: number): void {
-    if (!this.currentScene) return;
+    if (this.isDestroyed || !this.currentScene || this.isLoadingScene) return;
 
     this.camera.viewport = {
       width: this.containerElement.clientWidth || window.innerWidth,
@@ -218,6 +225,10 @@ export class GameRuntime {
     const vpY = vp.y ?? 0;
 
     // Hard-clip to Viewport Rectangle & Stretch/Fit Screen Window
+    if (!this.viewportMask || (this.viewportMask as any).destroyed || (this.viewportMask as any).context === null) {
+      this.viewportMask = new Graphics();
+      this.currentScene.container.addChild(this.viewportMask);
+    }
     this.viewportMask.visible = true;
     this.viewportMask.clear();
     this.viewportMask.rect(vpX, vpY, vpW, vpH);

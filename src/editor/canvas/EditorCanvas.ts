@@ -266,6 +266,9 @@ export class EditorCanvas {
 
   public async loadScene(sceneData: SceneData): Promise<void> {
     if (this.currentScene) {
+      if (this.debugOverlay && this.debugOverlay.parent) {
+        this.debugOverlay.parent.removeChild(this.debugOverlay);
+      }
       this.app.stage.removeChild(this.currentScene.container);
       this.currentScene.destroy();
       this.currentScene = null;
@@ -285,6 +288,10 @@ export class EditorCanvas {
 
     this.camera.follow(null);
     this.camera.resetZoom();
+
+    if (!this.debugOverlay || (this.debugOverlay as any).destroyed || (this.debugOverlay as any).context === null) {
+      this.debugOverlay = new Graphics();
+    }
 
     this.app.stage.addChild(this.currentScene.container);
     this.currentScene.container.addChild(this.debugOverlay);
