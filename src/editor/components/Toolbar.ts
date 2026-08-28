@@ -28,6 +28,7 @@ export class Toolbar {
         <button class="btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
         <button class="btn" id="btn-redo" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>↪️ Redo</button>
         <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+        <button class="btn btn-gold" id="btn-new-project" title="Create a new quest or open Project Hub">✨ New</button>
         <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open</button>
         <button class="btn" id="btn-save-file" title="Save Project JSON (Ctrl+S or Shift+Click for Save As)">💾 Save</button>
         <button class="btn" id="btn-save-as-file" title="Save Project JSON As... (Ctrl+Shift+S)">💾 Save As...</button>
@@ -95,6 +96,10 @@ export class Toolbar {
     EventBus.getInstance().on('history:changed', (state: { canUndo: boolean; canRedo: boolean }) => {
       if (undoBtn) undoBtn.disabled = !state.canUndo;
       if (redoBtn) redoBtn.disabled = !state.canRedo;
+    });
+
+    this.element.querySelector('#btn-new-project')?.addEventListener('click', () => {
+      EventBus.getInstance().emit('editor:show_project_hub');
     });
 
     this.element.querySelector('#btn-open-file')?.addEventListener('click', () => {

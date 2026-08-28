@@ -10,25 +10,28 @@ import { DialogEditor } from './components/DialogEditor';
 import { EventBus } from '../engine/core/EventBus';
 import { FileAccessAdapter } from '../engine/storage/FileAccessAdapter';
 import { ProjectSerializer } from '../engine/storage/ProjectSerializer';
+import { RecentProjectsManager } from '../engine/storage/RecentProjectsManager';
+import { ProjectHubModal } from './components/ProjectHubModal';
 import { UISystem } from '../engine/systems/UISystem';
 import { HistoryManager } from './HistoryManager';
 
 export class EditorApp {
   private container: HTMLElement;
-  private project: ProjectData;
+  private project: ProjectData | null = null;
   private toolbar: Toolbar;
   private inspector: Inspector;
   private treeView: ProjectTreeView;
   private zoomWidget: ZoomWidget;
   private storyGraphView: StoryGraphView;
   private dialogEditor: DialogEditor;
+  private projectHubModal: ProjectHubModal;
 
   private editorCanvas: EditorCanvas | null = null;
   private gameRuntime: GameRuntime | null = null;
   private viewportElement: HTMLElement | null = null;
   private pristineProjectJson: string = '';
 
-  constructor(container: HTMLElement, initialProject: ProjectData) {
+  constructor(container: HTMLElement, initialProject: ProjectData | null = null) {
     this.container = container;
     this.project = initialProject;
 
@@ -38,8 +41,12 @@ export class EditorApp {
     this.zoomWidget = new ZoomWidget();
     this.storyGraphView = new StoryGraphView();
     this.dialogEditor = new DialogEditor();
+    this.projectHubModal = new ProjectHubModal();
 
-    HistoryManager.getInstance().init(this.project);
+    if (this.project) {
+      HistoryManager.getInstance().init(this.project);
+      RecentProjectsManager.addOrUpdateRecentProject(this.project);
+    }
   }
 
   public async init(): Promise<void> {
@@ -66,27 +73,53 @@ export class EditorApp {
 
     this.viewportElement = this.container.querySelector('#canvas-container');
 
-    this.syncAllViews();
     this.attachEvents();
     this.attachKeyboardShortcuts();
 
-    await this.startEditorCanvas();
+    if (this.project) {
+      this.syncAllViews();
+      await this.startEditorCanvas();
+    } else {
+      this.renderEmptyStatePlaceholder();
+      this.projectHubModal.show();
+    }
+  }
+
+  private renderEmptyStatePlaceholder(): void {
+    if (!this.viewportElement) return;
+    this.viewportElement.innerHTML = `
+      <div class="editor-empty-viewport">
+        <div class="empty-viewport-box">
+          <div class="empty-icon">🏰</div>
+          <div class="empty-title">QuestForge 2D</div>
+          <div class="empty-subtitle">Point & Click Adventure Engine & Studio</div>
+          <p class="empty-desc">No quest project loaded. Create a new adventure, open an existing JSON file, or load a sample quest to begin authoring.</p>
+          <button class="btn btn-gold btn-lg" id="btn-empty-open-hub" style="padding:10px 24px; font-weight:700; font-size:0.95rem;">
+            ✨ Open Project Hub
+          </button>
+        </div>
+      </div>
+    `;
+    this.viewportElement.querySelector('#btn-empty-open-hub')?.addEventListener('click', () => {
+      this.projectHubModal.show();
+    });
   }
 
   private async startEditorCanvas(): Promise<void> {
-    if (!this.viewportElement) return;
+    if (!this.viewportElement || !this.project) return;
 
     if (this.editorCanvas) {
       this.editorCanvas.destroy();
       this.editorCanvas = null;
     }
 
+    this.viewportElement.innerHTML = '';
     this.editorCanvas = new EditorCanvas(this.viewportElement, this.project);
     await this.editorCanvas.init();
   }
 
   private async startPlayRuntime(): Promise<void> {
-    if (!this.viewportElement) return;
+    if (!this.viewportElement || !this.project) return;
 
     // Save pristine master copy before entering play testing
     this.pristineProjectJson = ProjectSerializer.serialize(this.project);
@@ -124,6 +157,7 @@ export class EditorApp {
   private attachEvents(): void {
     // Record history snapshot on project updates
     EventBus.getInstance().on('editor:project_updated', () => {
+      if (!this.project) return;
       HistoryManager.getInstance().pushState(this.project);
       if (this.editorCanvas) {
         this.editorCanvas.setProject(this.project);
@@ -152,12 +186,27 @@ export class EditorApp {
       }
     });
 
+    EventBus.getInstance().on('editor:show_project_hub', (tab?: 'new' | 'open' | 'recents') => {
+      this.projectHubModal.show(tab || 'new');
+    });
+
+    EventBus.getInstance().on('editor:load_project', async (newProject: ProjectData) => {
+      if (!newProject) return;
+      this.project = newProject;
+      RecentProjectsManager.addOrUpdateRecentProject(this.project);
+      HistoryManager.getInstance().init(this.project);
+      this.syncAllViews();
+      await this.startEditorCanvas();
+      this.showNotification(`✨ Loaded quest: "${this.project.title}"`);
+    });
+
     EventBus.getInstance().on('editor:open_file', async () => {
       const res = await FileAccessAdapter.openLocalProjectFile();
       if (res) {
         try {
           const loadedProject = ProjectSerializer.deserialize(res.content);
           this.project = loadedProject;
+          RecentProjectsManager.addOrUpdateRecentProject(loadedProject);
           HistoryManager.getInstance().init(loadedProject);
           this.syncAllViews();
           await this.startEditorCanvas();
@@ -169,26 +218,31 @@ export class EditorApp {
     });
 
     EventBus.getInstance().on('editor:save_file', async () => {
+      if (!this.project) return;
       const jsonStr = ProjectSerializer.serialize(this.project);
       const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
       const success = await FileAccessAdapter.saveProjectFile(jsonStr, filename);
       if (success) {
+        RecentProjectsManager.addOrUpdateRecentProject(this.project);
         const activeName = FileAccessAdapter.getActiveFilename() || filename;
         this.showNotification(`💾 Saved project to "${activeName}" successfully.`);
       }
     });
 
     EventBus.getInstance().on('editor:save_file_as', async () => {
+      if (!this.project) return;
       const jsonStr = ProjectSerializer.serialize(this.project);
       const filename = `${this.project.title.toLowerCase().replace(/\s+/g, '_')}.json`;
       const success = await FileAccessAdapter.saveProjectFileAs(jsonStr, filename);
       if (success) {
+        RecentProjectsManager.addOrUpdateRecentProject(this.project);
         const activeName = FileAccessAdapter.getActiveFilename() || filename;
         this.showNotification(`💾 Saved project as "${activeName}" successfully.`);
       }
     });
 
     EventBus.getInstance().on('editor:change_preset', (preset: UIPresetType) => {
+      if (!this.project) return;
       this.project.uiConfig.preset = preset;
       HistoryManager.getInstance().pushState(this.project);
       this.showNotification(`Interface layout set to: ${preset.toUpperCase()}`);
@@ -231,6 +285,7 @@ export class EditorApp {
     });
 
     EventBus.getInstance().on('editor:select_scene', async (sceneId: string) => {
+      if (!this.project) return;
       const targetScene = this.project.scenes.find(s => s.id === sceneId);
       if (targetScene && this.editorCanvas) {
         if (this.editorCanvas.currentScene?.data.id !== sceneId) {
@@ -246,10 +301,11 @@ export class EditorApp {
   }
 
   private syncAllViews(): void {
+    if (!this.project) return;
     this.treeView.setProject(this.project);
     this.storyGraphView.setProject(this.project);
     this.dialogEditor.setProject(this.project);
-    const activeScene = this.project.scenes[0];
+    const activeScene = this.project.scenes?.[0];
     this.inspector.setProject(this.project, activeScene);
   }
 
