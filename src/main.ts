@@ -1,5 +1,5 @@
 import { EditorApp } from './editor/EditorApp';
-import alchemistProject from './demo/the_alchemist\'s_mystery.json';
+import alchemistProject from '../demo/the_alchemist\'s_mystery.json';
 import { ProjectData } from './engine/types';
 import { ProjectSerializer } from './engine/storage/ProjectSerializer';
 
@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let initialProject: ProjectData = alchemistProject as unknown as ProjectData;
 
   try {
-    const res = await fetch('./src/demo/the_alchemist\'s_mystery.json?t=' + Date.now());
+    const res = await fetch('./the_alchemist\'s_mystery.json?t=' + Date.now());
     if (res.ok) {
       const jsonText = await res.text();
       initialProject = ProjectSerializer.deserialize(jsonText);

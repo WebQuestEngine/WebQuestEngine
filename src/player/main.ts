@@ -1,7 +1,7 @@
 import { GameRuntime } from '../engine/runtime/GameRuntime';
 import { ProjectData } from '../engine/types';
 import { ProjectSerializer } from '../engine/storage/ProjectSerializer';
-import bundledGameProject from '../demo/the_alchemist\'s_mystery.json';
+import bundledGameProject from '../../demo/the_alchemist\'s_mystery.json';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const container = document.getElementById('game-container');
@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let gameData: ProjectData = bundledGameProject as unknown as ProjectData;
 
   try {
-    const res = await fetch('./src/demo/the_alchemist\'s_mystery.json?t=' + Date.now());
+    const res = await fetch('./the_alchemist\'s_mystery.json?t=' + Date.now());
     if (res.ok) {
       const jsonText = await res.text();
       gameData = ProjectSerializer.deserialize(jsonText);

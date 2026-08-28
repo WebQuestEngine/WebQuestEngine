@@ -14,7 +14,7 @@ function localSavePlugin(): Plugin {
             try {
               const payload = JSON.parse(body);
               const filename = payload.filename || "the_alchemist's_mystery.json";
-              const targetPath = path.resolve(__dirname, 'src/demo', filename);
+              const targetPath = path.resolve(__dirname, 'demo', filename);
               fs.writeFileSync(targetPath, JSON.stringify(payload.data, null, 2), 'utf8');
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ success: true, filepath: targetPath }));
@@ -32,13 +32,15 @@ function localSavePlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
+  publicDir: 'demo',
   plugins: [localSavePlugin()],
   server: {
     port: 3000,
     open: false,
     host: true,
     watch: {
-      ignored: ['**/src/demo/*.json', '**/*.json']
+      ignored: ['**/demo/*.json', '**/*.json']
     }
   },
   build: {

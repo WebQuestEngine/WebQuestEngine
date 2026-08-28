@@ -393,7 +393,7 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Base Asset Folder</label>
-          <input type="text" class="form-input" id="base-folder-input" value="${this.project?.assetBasePath || ''}" placeholder="e.g. src/demo or assets" />
+          <input type="text" class="form-input" id="base-folder-input" value="${this.project?.assetBasePath || ''}" placeholder="e.g. demo or assets" />
         </div>
       </div>
       <div class="sidebar-section">
@@ -1003,7 +1003,7 @@ export class Inspector {
         </div>
         <div class="form-group">
           <label>Base Asset Folder</label>
-          <input type="text" class="form-input" id="proj-base-folder" value="${this.project.assetBasePath || ''}" placeholder="e.g. src/demo or assets" />
+          <input type="text" class="form-input" id="proj-base-folder" value="${this.project.assetBasePath || ''}" placeholder="e.g. demo or assets" />
         </div>
       </div>
 
@@ -2454,9 +2454,7 @@ export class Inspector {
     let selectedFrameIndex = rawFrames.length > 0 ? 0 : -1;
 
     const rawUrl = char.spriteSheetUrl || '';
-    const imgUrl = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.startsWith('/'))
-      ? rawUrl
-      : `src/demo/${rawUrl.replace(/^\/+/, '')}`;
+    const imgUrl = AssetManager.getInstance().resolveImageSrc(rawUrl);
 
     const otherClipKeys = Object.keys(anims).filter(k => k !== animKey);
 

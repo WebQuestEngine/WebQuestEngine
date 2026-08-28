@@ -3,7 +3,7 @@ import * as PIXI from 'pixi.js';
 export class AssetManager {
   private static instance: AssetManager;
   private textures: Map<string, PIXI.Texture> = new Map();
-  private baseFolders: Set<string> = new Set(['src/demo', 'src/assets', 'assets', 'src']);
+  private baseFolders: Set<string> = new Set(['assets', 'demo/assets', 'demo', 'src']);
 
   private constructor() { }
 
@@ -39,13 +39,19 @@ export class AssetManager {
     if (clean.startsWith('/')) clean = clean.substring(1);
 
     if (clean.startsWith('assets/')) {
-      return `/src/demo/${clean}`;
+      return `./${clean}`;
     }
-    if (!clean.startsWith('src/')) {
-      return `/src/${clean}`;
+    if (clean.startsWith('demo/assets/')) {
+      return `./${clean.replace(/^demo\//, '')}`;
+    }
+    if (clean.startsWith('demo/')) {
+      return `./${clean}`;
+    }
+    if (clean.startsWith('src/')) {
+      return `./${clean}`;
     }
 
-    return `/${clean}`;
+    return `./assets/${clean}`;
   }
 
   public getLocalDiskPath(url: string): string {
@@ -54,7 +60,7 @@ export class AssetManager {
       return url;
     }
     const resolved = this.resolveImageSrc(url);
-    return resolved.startsWith('/') ? resolved.substring(1) : resolved;
+    return resolved.startsWith('/') ? resolved.substring(1) : resolved.replace(/^\.\//, '');
   }
 
   public trackFileFolder(filePath: string): void {
@@ -78,7 +84,8 @@ export class AssetManager {
 
     this.trackFileFolder(url);
 
-    const candidates: string[] = [url];
+    const resolved = this.resolveImageSrc(url);
+    const candidates: string[] = [resolved, url];
     const filename = url.split('/').pop() || url;
 
     if (
@@ -88,10 +95,13 @@ export class AssetManager {
       !url.startsWith('data:') &&
       !url.startsWith('blob:')
     ) {
+      candidates.push(`./assets/${filename}`);
+      candidates.push(`assets/${filename}`);
       for (const folder of this.baseFolders) {
         if (folder) {
           candidates.push(`${folder}/${url}`);
           candidates.push(`${folder}/${filename}`);
+          candidates.push(`./${folder}/${filename}`);
         }
       }
       candidates.push(`/${url}`);
