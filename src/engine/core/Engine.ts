@@ -43,6 +43,7 @@ export class Engine {
   private drawingPolygonTarget: { type: 'hotspot' | 'walkpath'; hIdx?: number } | null = null;
   private drawingPoints: Vector2D[] = [];
   private mouseWorldPos: Vector2D | null = null;
+  private visitedScenes: Set<string> = new Set();
 
   constructor(container: HTMLElement) {
     this.containerElement = container;
@@ -100,9 +101,26 @@ export class Engine {
       await this.loadScene(sceneData, payload.spawnPoint);
     });
 
-    // Listen for inventory additions
+    // Listen for inventory additions & item events
     EventBus.getInstance().on('inventory:give', (itemId: string) => {
       InventorySystem.getInstance().addItem(itemId);
+    });
+
+    EventBus.getInstance().on('inventory:item_added', (itemId: string) => {
+      this.checkAndTriggerEvent('item', itemId, 'obtained');
+    });
+
+    EventBus.getInstance().on('item:use', (itemId: string) => {
+      this.checkAndTriggerEvent('item', itemId, 'use');
+    });
+
+    EventBus.getInstance().on('item:examine', (itemId: string) => {
+      this.checkAndTriggerEvent('item', itemId, 'examine');
+    });
+
+    EventBus.getInstance().on('item:combine', (payload: { item1: string; item2: string }) => {
+      this.checkAndTriggerEvent('item', payload.item1, 'combine') ||
+      this.checkAndTriggerEvent('item', payload.item2, 'combine');
     });
 
     // Listen for flags
@@ -123,6 +141,7 @@ export class Engine {
         if (this.currentScene?.data.backgroundMusicUrl) {
           AudioSystem.getInstance().playMusic(this.currentScene.data.backgroundMusicUrl);
         }
+        this.checkAndTriggerEvent('game', 'game', 'start');
       } else {
         AudioSystem.getInstance().stopMusic(500);
         this.viewportMask.visible = false;
@@ -343,6 +362,9 @@ export class Engine {
     if (initialSceneData) {
       await this.loadScene(initialSceneData);
     }
+    if (!this.isEditorMode) {
+      this.checkAndTriggerEvent('game', 'game', 'start');
+    }
   }
 
   public resizeViewport(): void {
@@ -358,36 +380,9 @@ export class Engine {
     DialogSystem.getInstance().clear();
     if (!this.project || !this.project.dialogs) return;
 
-    const sceneDialogIds = new Set<string>();
-
-    // 1. Collect dialogs from character actions
-    if (sceneData.characters) {
-      for (const char of sceneData.characters) {
-        if (char.actions) {
-          for (const act of char.actions) {
-            if (act.dialogId) sceneDialogIds.add(act.dialogId);
-          }
-        }
-      }
-    }
-
-    // 2. Collect dialogs from hotspot actions
-    if (sceneData.hotspots) {
-      for (const hs of sceneData.hotspots) {
-        if (hs.actions) {
-          for (const act of hs.actions) {
-            if (act.dialogId) sceneDialogIds.add(act.dialogId);
-          }
-        }
-      }
-    }
-
-    // Register ONLY dialog trees required for the active scene
-    for (const dialogId of sceneDialogIds) {
-      const tree = this.project.dialogs.find((d: any) => d.id === dialogId);
-      if (tree) {
-        DialogSystem.getInstance().registerDialog(tree);
-      }
+    // Register all dialog trees in project so event triggers work anywhere
+    for (const tree of this.project.dialogs) {
+      DialogSystem.getInstance().registerDialog(tree);
     }
   }
 
@@ -419,6 +414,12 @@ export class Engine {
 
     if (!this.isEditorMode) {
       AudioSystem.getInstance().playMusic(sceneData.backgroundMusicUrl);
+      const isFirst = !this.visitedScenes.has(sceneData.id);
+      this.visitedScenes.add(sceneData.id);
+      if (isFirst) {
+        this.checkAndTriggerEvent('scene', sceneData.id, 'first_enter');
+      }
+      this.checkAndTriggerEvent('scene', sceneData.id, 'enter');
     } else {
       AudioSystem.getInstance().stopMusic(500);
     }
@@ -1717,6 +1718,42 @@ export class Engine {
     } else if (type === 'walkpath') {
       const wp = scene.walkPaths?.[0];
       return !!wp?.locked;
+    }
+    return false;
+  }
+
+  public checkAndTriggerEvent(scope: 'game' | 'scene' | 'hotspot' | 'character' | 'item', targetId: string, eventName: string): boolean {
+    if (!this.project?.dialogs) return false;
+
+    for (const tree of this.project.dialogs) {
+      for (const node of Object.values(tree.nodes)) {
+        if (node.nodeType === 'event_listener') {
+          const matchScope = node.eventScope === scope;
+          const matchTarget = 
+            scope === 'game' || 
+            !node.eventTargetId || 
+            node.eventTargetId === 'any' || 
+            node.eventTargetId === targetId;
+
+          const matchEvent = 
+            node.eventName === eventName || 
+            (eventName === 'interact' && node.eventName === 'interact') ||
+            (node.eventName === 'interact' && ['talk_to', 'look_at', 'use', 'pick_up', 'talk', 'look'].includes(eventName)) ||
+            (scope === 'game' && (node.eventName === eventName || (eventName === 'start' && (!node.eventName || node.eventName === 'start'))));
+
+          if (matchScope && matchTarget && matchEvent) {
+            console.log(`%c[Engine] ⚡ Event Trigger Matched: [${scope}:${targetId}:${eventName}] -> Sequence "${tree.id}", Node "${node.id}"`, 'color: #f59e0b; font-weight: bold;');
+            
+            DialogSystem.getInstance().registerDialog(tree);
+
+            if (this.currentScene?.playerCharacter?.data.name) {
+              DialogSystem.getInstance().setPlayerName(this.currentScene.playerCharacter.data.name);
+            }
+            DialogSystem.getInstance().startDialog(tree.id, (flag) => StoryGraphSystem.getInstance().getFlag(flag), node.id);
+            return true;
+          }
+        }
+      }
     }
     return false;
   }

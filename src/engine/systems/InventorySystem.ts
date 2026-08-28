@@ -28,6 +28,7 @@ export class InventorySystem {
     if (this.items.has(itemId)) {
       this.playerInventory.add(itemId);
       EventBus.getInstance().emit('inventory:updated', this.getItems());
+      EventBus.getInstance().emit('inventory:item_added', itemId);
       EventBus.getInstance().emit('ui:notify', `Added to inventory: ${this.items.get(itemId)?.name}`);
       return true;
     }

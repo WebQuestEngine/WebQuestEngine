@@ -58,6 +58,9 @@ export class GameRuntime {
     if (initialSceneData) {
       await this.loadScene(initialSceneData);
     }
+
+    // Trigger Game Start Event
+    this.checkAndTriggerEvent('game', 'game', 'start');
   }
 
   private isLoadingScene = false;
@@ -81,6 +84,35 @@ export class GameRuntime {
       EventBus.getInstance().on('inventory:give', (itemId: string) => {
         if (this.isDestroyed) return;
         this.context.inventory.addItem(itemId);
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('inventory:item_added', (itemId: string) => {
+        if (this.isDestroyed) return;
+        this.checkAndTriggerEvent('item', itemId, 'obtained');
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('item:use', (itemId: string) => {
+        if (this.isDestroyed) return;
+        this.checkAndTriggerEvent('item', itemId, 'use');
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('item:examine', (itemId: string) => {
+        if (this.isDestroyed) return;
+        this.checkAndTriggerEvent('item', itemId, 'examine');
+      })
+    );
+
+    this.unsubscribers.push(
+      EventBus.getInstance().on('item:combine', (payload: { item1: string; item2: string }) => {
+        if (this.isDestroyed) return;
+        this.checkAndTriggerEvent('item', payload.item1, 'combine') ||
+        this.checkAndTriggerEvent('item', payload.item2, 'combine');
       })
     );
 
@@ -1110,21 +1142,34 @@ export class GameRuntime {
   }
 
   public checkAndTriggerEvent(scope: 'game' | 'scene' | 'hotspot' | 'character' | 'item', targetId: string, eventName: string): boolean {
-    if (!this.context.project?.dialogs || this.context.dialog.isActive()) return false;
+    if (!this.context.project?.dialogs) return false;
 
     for (const tree of this.context.project.dialogs) {
       for (const node of Object.values(tree.nodes)) {
         if (node.nodeType === 'event_listener') {
           const matchScope = node.eventScope === scope;
-          const matchTarget = !node.eventTargetId || node.eventTargetId === targetId || (scope === 'game' && targetId === 'game');
-          const matchEvent = node.eventName === eventName || node.eventName === 'interact';
+          const matchTarget = 
+            scope === 'game' || 
+            !node.eventTargetId || 
+            node.eventTargetId === 'any' || 
+            node.eventTargetId === targetId;
+
+          const matchEvent = 
+            node.eventName === eventName || 
+            (eventName === 'interact' && node.eventName === 'interact') ||
+            (node.eventName === 'interact' && ['talk_to', 'look_at', 'use', 'pick_up', 'talk', 'look'].includes(eventName)) ||
+            (scope === 'game' && (node.eventName === eventName || (eventName === 'start' && (!node.eventName || node.eventName === 'start'))));
 
           if (matchScope && matchTarget && matchEvent) {
             console.log(`%c[GameRuntime] ⚡ Event Trigger Matched: [${scope}:${targetId}:${eventName}] -> Sequence "${tree.id}", Node "${node.id}"`, 'color: #f59e0b; font-weight: bold;');
+            
+            // Ensure sequence is registered
+            this.context.dialog.registerDialog(tree);
+
             if (this.currentScene?.playerCharacter?.data.name) {
               this.context.dialog.setPlayerName(this.currentScene.playerCharacter.data.name);
             }
-            this.context.dialog.startDialog(tree.id, (flag) => this.context.story.getFlag(flag), node.nextNodeId || node.id);
+            this.context.dialog.startDialog(tree.id, (flag) => this.context.story.getFlag(flag), node.id);
             return true;
           }
         }
