@@ -583,98 +583,145 @@ export class DialogEditor {
                 </div>
               `}
 
-              <!-- Optional Flags & Outcomes Section -->
-              <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:6px; margin-bottom:8px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                <div>
-                  <label style="font-size:0.6rem; color:var(--text-muted);">If Req Flag</label>
-                  <input type="text" class="form-input node-req-flag" data-nodeid="${node.id}" value="${node.requiredFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
+              ${!isRouter ? `
+                <!-- Optional Flags & Outcomes Section (Beats Only) -->
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:6px; margin-bottom:8px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                  <div>
+                    <label style="font-size:0.6rem; color:var(--text-muted);">If Req Flag</label>
+                    <input type="text" class="form-input node-req-flag" data-nodeid="${node.id}" value="${node.requiredFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
+                  </div>
+                  <div>
+                    <label style="font-size:0.6rem; color:var(--text-muted);">If NOT Flag</label>
+                    <input type="text" class="form-input node-not-flag" data-nodeid="${node.id}" value="${node.notFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
+                  </div>
+                  <div>
+                    <label style="font-size:0.6rem; color:#10b981; font-weight:700;">🚩 Set Flag(s)</label>
+                    <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlags ? node.setFlags.join(', ') : (node.setFlag || '')}" placeholder="e.g. talkedToEldrin, learnedSpell" style="font-size:0.7rem;" />
+                  </div>
+                  <div>
+                    <label style="font-size:0.6rem; color:#ef4444; font-weight:700;">🚩 Clear Flag(s)</label>
+                    <input type="text" class="form-input node-clear-flag" data-nodeid="${node.id}" value="${node.clearFlags ? node.clearFlags.join(', ') : (node.clearFlag || '')}" placeholder="e.g. questActive" style="font-size:0.7rem;" />
+                  </div>
+                  <div style="grid-column:1 / -1;">
+                    <label style="font-size:0.6rem; color:var(--accent-gold); font-weight:700;">🎁 Give Item</label>
+                    <select class="form-input node-give-item-select" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem; color:${node.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on entering this beat">
+                      <option value="">-- None --</option>
+                      ${(this.project?.items || []).map(item => `
+                        <option value="${item.id}" ${node.giveItem === item.id ? 'selected' : ''}>
+                          🎁 ${item.name} (${item.id})
+                        </option>
+                      `).join('')}
+                      ${node.giveItem && !(this.project?.items || []).some(it => it.id === node.giveItem) ? `
+                        <option value="${node.giveItem}" selected>🎁 ${node.giveItem} (Custom)</option>
+                      ` : ''}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label style="font-size:0.6rem; color:var(--text-muted);">If NOT Flag</label>
-                  <input type="text" class="form-input node-not-flag" data-nodeid="${node.id}" value="${node.notFlag || ''}" placeholder="e.g. hasItem:crystal" style="font-size:0.7rem;" />
-                </div>
-                <div>
-                  <label style="font-size:0.6rem; color:#10b981; font-weight:700;">🚩 Set Flag(s)</label>
-                  <input type="text" class="form-input node-set-flag" data-nodeid="${node.id}" value="${node.setFlags ? node.setFlags.join(', ') : (node.setFlag || '')}" placeholder="e.g. talkedToEldrin, learnedSpell" style="font-size:0.7rem;" />
-                </div>
-                <div>
-                  <label style="font-size:0.6rem; color:#ef4444; font-weight:700;">🚩 Clear Flag(s)</label>
-                  <input type="text" class="form-input node-clear-flag" data-nodeid="${node.id}" value="${node.clearFlags ? node.clearFlags.join(', ') : (node.clearFlag || '')}" placeholder="e.g. questActive" style="font-size:0.7rem;" />
-                </div>
-                <div style="grid-column:1 / -1;">
-                  <label style="font-size:0.6rem; color:var(--accent-gold); font-weight:700;">🎁 Give Item</label>
-                  <select class="form-input node-give-item-select" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem; color:${node.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on entering this beat">
-                    <option value="">-- None --</option>
-                    ${(this.project?.items || []).map(item => `
-                      <option value="${item.id}" ${node.giveItem === item.id ? 'selected' : ''}>
-                        🎁 ${item.name} (${item.id})
-                      </option>
-                    `).join('')}
-                    ${node.giveItem && !(this.project?.items || []).some(it => it.id === node.giveItem) ? `
-                      <option value="${node.giveItem}" selected>🎁 ${node.giveItem} (Custom)</option>
-                    ` : ''}
-                  </select>
-                </div>
-              </div>
 
-              <!-- Interactivity Checkbox -->
-              ${(!isRouter && hasMultipleOutgoing) ? `
-                <div style="background:rgba(251, 191, 36, 0.1); border:1px solid rgba(251, 191, 36, 0.3); border-radius:6px; padding:6px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
-                  <input type="checkbox" class="node-interactive-chk" data-nodeid="${node.id}" ${isInteractive ? 'checked' : ''} id="chk_inter_${node.id}" />
-                  <label for="chk_inter_${node.id}" style="font-size:0.7rem; color:var(--accent-gold); font-weight:700; cursor:pointer;">
-                    ☑️ Interactive Player Selection Box
-                  </label>
-                </div>
+                <!-- Interactivity Checkbox -->
+                ${hasMultipleOutgoing ? `
+                  <div style="background:rgba(251, 191, 36, 0.1); border:1px solid rgba(251, 191, 36, 0.3); border-radius:6px; padding:6px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" class="node-interactive-chk" data-nodeid="${node.id}" ${isInteractive ? 'checked' : ''} id="chk_inter_${node.id}" />
+                    <label for="chk_inter_${node.id}" style="font-size:0.7rem; color:var(--accent-gold); font-weight:700; cursor:pointer;">
+                      ☑️ Interactive Player Selection Box
+                    </label>
+                  </div>
+                ` : ''}
               ` : ''}
 
               <!-- Outgoing Choices / Router Branches -->
               <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                  <span style="font-size:0.7rem; font-weight:700; color:${isRouter ? '#c084fc' : 'var(--accent-gold)'};">${isRouter ? 'Router Outgoing Branches' : 'Outgoing Responses'} (${choiceCount}):</span>
-                  <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;">+ ${isRouter ? 'Branch' : 'Response'}</button>
+                  <span style="font-size:0.7rem; font-weight:700; color:${isRouter ? '#c084fc' : 'var(--accent-gold)'};">${isRouter ? 'Branch Rules' : 'Outgoing Responses'} (${choiceCount}):</span>
+                  <button class="btn btn-add-choice" data-nodeid="${node.id}" style="font-size:0.65rem; padding:2px 6px;">+ ${isRouter ? 'Rule' : 'Response'}</button>
                 </div>
 
                 ${node.choices && node.choices.length > 0 ? `
                   <div style="display:flex; flex-direction:column; gap:6px;">
-                    ${node.choices.map((c, cIdx) => `
-                      <div class="choice-card" style="position:relative; background:rgba(0,0,0,0.3); border:1px solid var(--panel-border); padding:6px; border-radius:6px;">
-                        <div style="display:flex; gap:4px; align-items:center; margin-bottom:4px;">
-                          <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.text}" placeholder="${isRouter ? 'Branch Condition Description' : 'Choice Text'}" style="flex:1; font-size:0.75rem; font-weight:600;" />
-                          <span style="font-size:0.65rem; color:var(--text-muted);">➔</span>
-                          <select class="form-input choice-next-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:115px; font-size:0.7rem; color:${c.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Select target node to connect">
-                            <option value="">-- End / None --</option>
-                            ${Object.values(tree.nodes).map(targetN => `
-                              <option value="${targetN.id}" ${c.nextNodeId === targetN.id ? 'selected' : ''}>
-                                ${targetN.isRouterNode ? '🔀 ' : '🎬 '}${targetN.id} (${targetN.speaker || 'Narrator'})
-                              </option>
-                            `).join('')}
-                          </select>
-                          ${c.nextNodeId ? `
-                            <button class="btn btn-disconnect-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.65rem; color:#f59e0b;" title="✂️ Disconnect this wire">✂️</button>
-                          ` : ''}
-                          <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Choice">✕</button>
-                        </div>
-                        
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:2px;">
-                          <input type="text" class="form-input choice-req-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.requiredFlag || ''}" placeholder="Req Flag (e.g. hasItem:crystal)" style="font-size:0.65rem;" title="Required Flag condition" />
-                          <input type="text" class="form-input choice-not-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.notFlag || ''}" placeholder="NOT Flag" style="font-size:0.65rem;" title="Must NOT have flag condition" />
-                        </div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:3px;">
-                          <input type="text" class="form-input choice-set-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.setFlag || ''}" placeholder="🚩 Set Flag..." style="font-size:0.65rem;" title="Set flag upon choosing this response" />
-                          <select class="form-input choice-give-item-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:100%; font-size:0.65rem; color:${c.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on choosing this response">
-                            <option value="">🎁 Give Item: None</option>
-                            ${(this.project?.items || []).map(item => `
-                              <option value="${item.id}" ${c.giveItem === item.id ? 'selected' : ''}>
-                                🎁 ${item.name} (${item.id})
-                              </option>
-                            `).join('')}
-                            ${c.giveItem && !(this.project?.items || []).some(it => it.id === c.giveItem) ? `
-                              <option value="${c.giveItem}" selected>🎁 ${c.giveItem} (Custom)</option>
-                            ` : ''}
-                          </select>
-                        </div>
+                    ${node.choices.map((c, cIdx) => {
+                      if (isRouter) {
+                        let currentFlag = '';
+                        let currentOp = 'true';
 
-                        ${!isRouter ? `
+                        if (c.notFlag !== undefined) {
+                          currentFlag = c.notFlag;
+                          currentOp = 'false';
+                        } else if (c.requiredFlag !== undefined) {
+                          currentFlag = c.requiredFlag;
+                          currentOp = 'true';
+                        } else {
+                          currentFlag = '';
+                          currentOp = 'always';
+                        }
+
+                        const isDraggable = currentOp !== 'always';
+
+                        return `
+                          <div class="router-branch-card" data-nodeid="${node.id}" data-cidx="${cIdx}" draggable="${isDraggable}" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid rgba(192, 132, 252, 0.3); padding:6px 8px; border-radius:6px; cursor:${isDraggable ? 'grab' : 'default'};">
+                            <div style="display:flex; gap:5px; align-items:center;">
+                              <!-- Native Drag Handle -->
+                              <span class="choice-drag-handle" style="cursor:${isDraggable ? 'grab' : 'not-allowed'}; color:${isDraggable ? '#c084fc' : '#64748b'}; font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="${isDraggable ? 'Drag & drop to re-order rule' : 'Fallback rule is pinned at the bottom'}">⠿</span>
+
+                              <span style="font-size:0.7rem; color:#c084fc; font-weight:700;">If</span>
+                              <input type="text" class="form-input router-flag-name" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${currentFlag}" placeholder="flagName" style="flex:1; font-size:0.75rem; font-weight:600; color:#38bdf8; ${currentOp === 'always' ? 'opacity:0.35;' : ''}" ${currentOp === 'always' ? 'disabled' : ''} />
+                              <span style="font-size:0.7rem; color:#c084fc; font-weight:700;">is</span>
+                              <select class="form-input router-flag-op" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:115px; font-size:0.7rem; font-weight:700; color:${currentOp === 'false' ? '#ef4444' : (currentOp === 'true' ? '#22c55e' : '#f59e0b')};">
+                                <option value="true" ${currentOp === 'true' ? 'selected' : ''}>✅ TRUE</option>
+                                <option value="false" ${currentOp === 'false' ? 'selected' : ''}>❌ FALSE</option>
+                                <option value="always" ${currentOp === 'always' ? 'selected' : ''}>⚡ Else (Fallback)</option>
+                              </select>
+
+                              <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Rule">✕</button>
+                            </div>
+
+                            <!-- Router Choice Output Port -->
+                            <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#c084fc; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(192,132,252,0.9); z-index:10;" title="Click & Drag arrow to connect to target Beat or Router node"></div>
+                          </div>
+                        `;
+                      }
+
+                      return `
+                        <div class="choice-card" data-nodeid="${node.id}" data-cidx="${cIdx}" draggable="true" style="position:relative; background:rgba(0,0,0,0.3); border:1px solid var(--panel-border); padding:6px; border-radius:6px; cursor:grab;">
+                          <div style="display:flex; gap:4px; align-items:center; margin-bottom:4px;">
+                            <!-- Native Drag Handle -->
+                            <span class="choice-drag-handle" style="cursor:grab; color:var(--text-muted); font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="Drag & drop to re-order response">⠿</span>
+
+                            <input type="text" class="form-input choice-text" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.text}" placeholder="Choice Text" style="flex:1; font-size:0.75rem; font-weight:600;" />
+                            <span style="font-size:0.65rem; color:var(--text-muted);">➔</span>
+                            <select class="form-input choice-next-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:115px; font-size:0.7rem; color:${c.nextNodeId ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Select target node to connect">
+                              <option value="">-- End / None --</option>
+                              ${Object.values(tree.nodes).map(targetN => `
+                                <option value="${targetN.id}" ${c.nextNodeId === targetN.id ? 'selected' : ''}>
+                                  ${targetN.isRouterNode ? '🔀 ' : '🎬 '}${targetN.id} (${targetN.speaker || 'Narrator'})
+                                </option>
+                              `).join('')}
+                            </select>
+                            ${c.nextNodeId ? `
+                              <button class="btn btn-disconnect-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.65rem; color:#f59e0b;" title="✂️ Disconnect this wire">✂️</button>
+                            ` : ''}
+
+                            <button class="btn btn-del-choice" data-nodeid="${node.id}" data-cidx="${cIdx}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Choice">✕</button>
+                          </div>
+                          
+                          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:2px;">
+                            <input type="text" class="form-input choice-req-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.requiredFlag || ''}" placeholder="Req Flag (e.g. hasItem:crystal)" style="font-size:0.65rem;" title="Required Flag condition" />
+                            <input type="text" class="form-input choice-not-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.notFlag || ''}" placeholder="NOT Flag" style="font-size:0.65rem;" title="Must NOT have flag condition" />
+                          </div>
+                          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:3px;">
+                            <input type="text" class="form-input choice-set-flag" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.setFlag || ''}" placeholder="🚩 Set Flag..." style="font-size:0.65rem;" title="Set flag upon choosing this response" />
+                            <select class="form-input choice-give-item-select" data-nodeid="${node.id}" data-cidx="${cIdx}" style="width:100%; font-size:0.65rem; color:${c.giveItem ? '#38bdf8' : 'var(--text-muted)'}; font-weight:600;" title="Give item to player on choosing this response">
+                              <option value="">🎁 Give Item: None</option>
+                              ${(this.project?.items || []).map(item => `
+                                <option value="${item.id}" ${c.giveItem === item.id ? 'selected' : ''}>
+                                  🎁 ${item.name} (${item.id})
+                                </option>
+                              `).join('')}
+                              ${c.giveItem && !(this.project?.items || []).some(it => it.id === c.giveItem) ? `
+                                <option value="${c.giveItem}" selected>🎁 ${c.giveItem} (Custom)</option>
+                              ` : ''}
+                            </select>
+                          </div>
+
                           <div style="margin-top:4px; display:flex; gap:6px; align-items:center;">
                             <input type="text" class="form-input choice-voice-url" data-nodeid="${node.id}" data-cidx="${cIdx}" value="${c.voiceAudioUrl || ''}" placeholder="🎙️ Response Voiceover URL..." style="flex:1; font-size:0.7rem;" />
                             <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Audio File">
@@ -682,12 +729,12 @@ export class DialogEditor {
                               <input type="file" class="choice-voice-file" data-nodeid="${node.id}" data-cidx="${cIdx}" accept="audio/*" style="display:none;" />
                             </label>
                           </div>
-                        ` : ''}
-                        
-                        <!-- Response Choice Output Port -->
-                        <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:${isRouter ? '#c084fc' : '#fbbf24'}; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px ${isRouter ? 'rgba(192,132,252,0.9)' : 'rgba(251,191,36,0.9)'}; z-index:10;" title="Click & Drag arrow to connect or reconnect to any target node Input Port"></div>
-                      </div>
-                    `).join('')}
+                          
+                          <!-- Response Choice Output Port -->
+                          <div class="node-port node-port-out" data-nodeid="${node.id}" data-cidx="${cIdx}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#fbbf24; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(251,191,36,0.9); z-index:10;" title="Click & Drag arrow to connect or reconnect to any target node Input Port"></div>
+                        </div>
+                      `;
+                    }).join('')}
                   </div>
                 ` : `
                   <div style="display:flex; gap:6px; align-items:center;">
@@ -1484,18 +1531,164 @@ export class DialogEditor {
       });
     });
 
-    // Choice Add
+    const enforceRouterFallbackLast = (nid: string) => {
+      const node = tree.nodes[nid];
+      if (!node || !node.isRouterNode || !node.choices) return;
+      const fallbackIdx = node.choices.findIndex(c => c.requiredFlag === undefined && c.notFlag === undefined);
+      if (fallbackIdx !== -1 && fallbackIdx !== node.choices.length - 1) {
+        const [fallback] = node.choices.splice(fallbackIdx, 1);
+        node.choices.push(fallback);
+      }
+    };
+
+    // Choice / Rule Add
     this.element.querySelectorAll('.btn-add-choice').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const nid = (e.currentTarget as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nid]) {
           if (!tree.nodes[nid].choices) tree.nodes[nid].choices = [];
+          const isR = Boolean(tree.nodes[nid].isRouterNode);
           const cIdx = tree.nodes[nid].choices!.length + 1;
-          tree.nodes[nid].choices!.push({
+          const newChoice = {
             id: `branch_${cIdx}`,
-            text: tree.nodes[nid].isRouterNode ? 'Branch Condition Description' : 'Response option...',
+            text: isR ? 'Flag is true' : 'Response option...',
+            requiredFlag: isR ? '' : undefined,
             nextNodeId: ''
-          });
+          };
+
+          if (isR && tree.nodes[nid].choices!.length > 0) {
+            const lastChoice = tree.nodes[nid].choices![tree.nodes[nid].choices!.length - 1];
+            if (lastChoice && lastChoice.requiredFlag === undefined && lastChoice.notFlag === undefined) {
+              // Insert before the Fallback rule so Fallback stays at the end
+              tree.nodes[nid].choices!.splice(tree.nodes[nid].choices!.length - 1, 0, newChoice);
+            } else {
+              tree.nodes[nid].choices!.push(newChoice);
+            }
+          } else {
+            tree.nodes[nid].choices!.push(newChoice);
+          }
+
+          enforceRouterFallbackLast(nid);
+          this.renderTree();
+          emitUpdate();
+        }
+      });
+    });
+
+    // Drag & Drop Re-ordering for Rules and Choices
+    let draggedChoiceNid: string | null = null;
+    let draggedChoiceIdx: number | null = null;
+
+    this.element.querySelectorAll('.router-branch-card, .choice-card').forEach(card => {
+      const el = card as HTMLElement;
+
+      el.addEventListener('dragstart', (e) => {
+        const nid = el.dataset.nodeid;
+        const cidx = parseInt(el.dataset.cidx || '-1');
+        if (nid && cidx >= 0) {
+          draggedChoiceNid = nid;
+          draggedChoiceIdx = cidx;
+          el.style.opacity = '0.4';
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', `${nid}:${cidx}`);
+          }
+        }
+      });
+
+      el.addEventListener('dragend', () => {
+        draggedChoiceNid = null;
+        draggedChoiceIdx = null;
+        el.style.opacity = '1';
+        this.element.querySelectorAll('.router-branch-card, .choice-card').forEach(c => {
+          (c as HTMLElement).style.outline = '';
+        });
+      });
+
+      el.addEventListener('dragover', (e) => {
+        const nid = el.dataset.nodeid;
+        if (draggedChoiceNid === nid) {
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+          el.style.outline = '2px dashed #c084fc';
+        }
+      });
+
+      el.addEventListener('dragleave', () => {
+        el.style.outline = '';
+      });
+
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.style.outline = '';
+        const targetNid = el.dataset.nodeid;
+        const targetCIdx = parseInt(el.dataset.cidx || '-1');
+
+        if (draggedChoiceNid && draggedChoiceNid === targetNid && draggedChoiceIdx !== null && targetCIdx >= 0 && draggedChoiceIdx !== targetCIdx) {
+          const choices = tree.nodes[targetNid]?.choices;
+          if (choices) {
+            const [moved] = choices.splice(draggedChoiceIdx, 1);
+            choices.splice(targetCIdx, 0, moved);
+            enforceRouterFallbackLast(targetNid);
+            this.renderTree();
+            emitUpdate();
+          }
+        }
+        draggedChoiceNid = null;
+        draggedChoiceIdx = null;
+      });
+    });
+
+    // Router Flag Name Edit
+    this.element.querySelectorAll('.router-flag-name').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const nid = target.dataset.nodeid!;
+        const cIdx = parseInt(target.dataset.cidx!);
+        const choice = tree.nodes[nid]?.choices?.[cIdx];
+        if (choice) {
+          const flag = target.value.trim();
+          const opSel = this.element.querySelector(`.router-flag-op[data-nodeid="${nid}"][data-cidx="${cIdx}"]`) as HTMLSelectElement;
+          const op = opSel?.value || 'true';
+          if (op === 'false') {
+            choice.notFlag = target.value;
+            choice.requiredFlag = undefined;
+            choice.text = flag ? `${flag} is false` : 'is false';
+          } else if (op === 'true') {
+            choice.requiredFlag = target.value;
+            choice.notFlag = undefined;
+            choice.text = flag ? `${flag} is true` : 'is true';
+          }
+          emitUpdate();
+        }
+      });
+    });
+
+    // Router Flag Condition Op Edit (True / False / Fallback)
+    this.element.querySelectorAll('.router-flag-op').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        const cIdx = parseInt((sel as HTMLElement).dataset.cidx!);
+        const choice = tree.nodes[nid]?.choices?.[cIdx];
+        if (choice) {
+          const nameInput = this.element.querySelector(`.router-flag-name[data-nodeid="${nid}"][data-cidx="${cIdx}"]`) as HTMLInputElement;
+          const flag = nameInput?.value || '';
+          const op = target.value;
+          if (op === 'false') {
+            choice.notFlag = flag;
+            choice.requiredFlag = undefined;
+            choice.text = flag ? `${flag} is false` : 'is false';
+          } else if (op === 'true') {
+            choice.requiredFlag = flag;
+            choice.notFlag = undefined;
+            choice.text = flag ? `${flag} is true` : 'is true';
+          } else {
+            choice.requiredFlag = undefined;
+            choice.notFlag = undefined;
+            choice.text = 'Else (Fallback)';
+          }
+          enforceRouterFallbackLast(nid);
           this.renderTree();
           emitUpdate();
         }
