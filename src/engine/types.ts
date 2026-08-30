@@ -1,6 +1,6 @@
 export type UIPresetType = 'lucasarts' | 'sierra' | 'context_coin' | 'direct_cursor';
 
-export type VerbType = 'walk' | 'look' | 'interact' | 'talk' | 'use' | 'pick_up' | 'open' | 'close' | 'push' | 'pull';
+export type VerbType = 'walk' | 'look' | 'interact' | 'talk' | 'use' | 'pick_up' | 'open' | 'close' | 'push' | 'pull' | 'pointer';
 
 export interface Vector2D {
   x: number;
@@ -21,7 +21,7 @@ export interface UIConfig {
   inventoryPosition: 'bottom' | 'top' | 'drawer' | 'radial';
   autoHideBars: boolean;
   showVerbText: boolean;
-  customCursors?: Partial<Record<VerbType, VerbCursorConfig>>;
+  customCursors?: Partial<Record<VerbType | 'arrow', VerbCursorConfig>>;
 }
 
 export interface InventoryItemData {

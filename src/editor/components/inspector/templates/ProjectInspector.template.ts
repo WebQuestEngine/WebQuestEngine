@@ -6,6 +6,7 @@ import chapterHtml from './ProjectInspector.html?raw';
 import cursorCardHtml from './ProjectCursorCard.html?raw';
 
 const VERB_DEFS: { id: VerbType; name: string; icon: string }[] = [
+  { id: 'pointer', name: 'Pointer', icon: '↖️' },
   { id: 'walk', name: 'Walk', icon: '🥾' },
   { id: 'look', name: 'Look', icon: '👁️' },
   { id: 'interact', name: 'Interact / Touch', icon: '🖐️' },

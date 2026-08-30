@@ -42,6 +42,11 @@
         "url": "assets/cursors/use.png",
         "hotspotX": 34,
         "hotspotY": 57
+      },
+      "pointer": {
+        "url": "assets/cursors/arrow.png",
+        "hotspotX": 42,
+        "hotspotY": 26
       }
     }
   },

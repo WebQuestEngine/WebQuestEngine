@@ -3,6 +3,22 @@ import { EventBus } from '../core/EventBus';
 import { InventorySystem } from './InventorySystem';
 import { AssetManager } from '../core/AssetManager';
 
+export const DEFAULT_ARROW_CURSOR_URL =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">` +
+      `<defs>` +
+        `<filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">` +
+          `<feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.8"/>` +
+        `</filter>` +
+      `</defs>` +
+      `<g filter="url(#shadow)">` +
+        `<path d="M4 2 L22 16 L13.5 17 L18.5 28 L14.5 30 L9.5 19 L4 24 Z" fill="#ffffff" stroke="#0f172a" stroke-width="2" stroke-linejoin="round"/>` +
+        `<path d="M6.5 5.5 L18 14.5 L12 15.2 L16.2 24.5 L14.2 25.5 L10 16.5 L6.5 19.5 Z" fill="#fbbf24"/>` +
+      `</g>` +
+    `</svg>`
+  );
+
 export class UISystem {
   private static instance: UISystem;
   public config: UIConfig = {
@@ -17,6 +33,7 @@ export class UISystem {
 
   public activeVerb: VerbType = 'walk';
   public containerElement: HTMLElement | null = null;
+  public isHoveringUI = false;
 
   public constructor() {}
 
@@ -40,6 +57,28 @@ export class UISystem {
   private currentRawHotspotX = 0;
   private currentRawHotspotY = 0;
   private imageDimensionsCache = new Map<string, { width: number; height: number }>();
+  private globalMouseMoveHandler: ((e: MouseEvent) => void) | null = null;
+
+  public getPointerCursorConfig(): { url: string; hotspotX: number; hotspotY: number } {
+    const custom = this.config?.customCursors?.['pointer'] || (this.config?.customCursors as any)?.['arrow'];
+    if (custom?.url) {
+      return {
+        url: custom.url,
+        hotspotX: custom.hotspotX ?? 0,
+        hotspotY: custom.hotspotY ?? 0
+      };
+    }
+    return {
+      url: DEFAULT_ARROW_CURSOR_URL,
+      hotspotX: 4,
+      hotspotY: 2
+    };
+  }
+
+  public showPointerCursor(): void {
+    const ptr = this.getPointerCursorConfig();
+    this.updateCustomCursor(ptr.url, ptr.hotspotX, ptr.hotspotY);
+  }
 
   public updateCustomCursor(iconUrl?: string | null, hotspotX?: number, hotspotY?: number): void {
     const rawHX = hotspotX ?? 0;
@@ -58,14 +97,30 @@ export class UISystem {
       `;
       document.body.appendChild(this.cursorFollowerElement);
 
-      window.addEventListener('mousemove', (e) => {
+      this.globalMouseMoveHandler = (e: MouseEvent) => {
         this.lastClientX = e.clientX;
         this.lastClientY = e.clientY;
         if (this.cursorFollowerElement && this.currentCursorUrl) {
           this.cursorFollowerElement.style.left = `${e.clientX - this.currentCursorHotspotX}px`;
           this.cursorFollowerElement.style.top = `${e.clientY - this.currentCursorHotspotY}px`;
         }
-      });
+
+        const target = e.target as Element | null;
+        const inUI = target
+          ? !!target.closest(
+              '.quest-ui-overlay, .play-mode-exit-bar, .dialog-box-overlay, .inventory-modal, .inventory-drawer, .context-coin, .tree-context-menu'
+            )
+          : false;
+
+        if (inUI !== this.isHoveringUI) {
+          this.isHoveringUI = inUI;
+          if (inUI) {
+            this.showPointerCursor();
+          }
+        }
+      };
+
+      window.addEventListener('mousemove', this.globalMouseMoveHandler);
     }
 
     if (!iconUrl) {
@@ -390,7 +445,8 @@ export class UISystem {
           open: 'Open',
           close: 'Close',
           push: 'Push',
-          pull: 'Pull'
+          pull: 'Pull',
+          pointer: ''
         };
         sentence.textContent = labelMap[this.activeVerb] || 'Walk to';
       }
@@ -520,6 +576,13 @@ export class UISystem {
   public destroy(): void {
     this.unsubscribers.forEach(unsub => unsub());
     this.unsubscribers = [];
+
+    if (this.globalMouseMoveHandler) {
+      window.removeEventListener('mousemove', this.globalMouseMoveHandler);
+      this.globalMouseMoveHandler = null;
+    }
+
+    this.isHoveringUI = false;
 
     if (this.containerElement) {
       const overlays = this.containerElement.querySelectorAll('.quest-ui-overlay, .speech-subtitle-box, .ui-subtitle-bar');

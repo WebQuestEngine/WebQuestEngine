@@ -214,6 +214,17 @@ export class GameRuntime {
       this.handleCanvasMouseMove(e);
     });
 
+    canvas.addEventListener('mouseleave', () => {
+      if (this.isDestroyed) return;
+      this.context.ui.showPointerCursor();
+    });
+
+    canvas.addEventListener('mouseenter', (e) => {
+      if (this.isDestroyed) return;
+      this.context.ui.isHoveringUI = false;
+      this.handleCanvasMouseMove(e);
+    });
+
     canvas.addEventListener('wheel', (e) => {
       if (this.isDestroyed) return;
       this.handleCanvasWheel(e);
@@ -626,6 +637,12 @@ export class GameRuntime {
 
   private handleCanvasMouseMove(e: MouseEvent): void {
     if (this.isDestroyed || !this.currentScene) return;
+
+    if (this.context.ui.isHoveringUI) {
+      this.context.ui.showPointerCursor();
+      return;
+    }
+
     const worldPt = this.getWorldPoint(e);
     this.lastMouseWorldPos = worldPt;
 
@@ -643,6 +660,12 @@ export class GameRuntime {
 
   private updateCursorAndHover(worldPt: Vector2D | null): void {
     if (this.isDestroyed || !this.currentScene) return;
+
+    if (this.context.ui.isHoveringUI) {
+      this.context.ui.showPointerCursor();
+      return;
+    }
+
     const pt = worldPt || { x: 0, y: 0 };
 
     const hotspot = this.currentScene.findHotspotAt(pt);
@@ -670,8 +693,7 @@ export class GameRuntime {
         this.app.canvas.style.cursor = 'none';
         this.context.ui.updateCustomCursor(walkCursor.url, walkCursor.hotspotX ?? 0, walkCursor.hotspotY ?? 0);
       } else {
-        this.context.ui.updateCustomCursor(null);
-        this.app.canvas.style.cursor = 'default';
+        this.context.ui.showPointerCursor();
       }
       this.context.ui.clearHoverTitle();
       return;
@@ -699,6 +721,9 @@ export class GameRuntime {
       const cConfig = uiConfig.customCursors[chosen.verb]!;
       this.app.canvas.style.cursor = 'none';
       this.context.ui.updateCustomCursor(cConfig.url, cConfig.hotspotX ?? 0, cConfig.hotspotY ?? 0);
+    } else if (chosen.verb === 'pointer' || chosen.verb === ('arrow' as any)) {
+      this.app.canvas.style.cursor = 'none';
+      this.context.ui.showPointerCursor();
     } else {
       this.context.ui.updateCustomCursor(null);
       this.app.canvas.style.cursor = 'pointer';
