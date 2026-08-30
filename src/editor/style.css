@@ -498,7 +498,6 @@ body {
   position: relative;
   overflow: auto;
   display: flex;
-  justify-content: center;
 }
 
 .sprite-grid-cell {
