@@ -1,6 +1,7 @@
 import { GraphicalElement } from './GraphicalElement';
 import { Vector2D, HotspotAction, VerbType } from '../types';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
+import { ConditionEvaluator } from '../utils/ConditionEvaluator';
 
 export class InteractableElement extends GraphicalElement {
   public cursor: string = 'interact';
@@ -18,9 +19,10 @@ export class InteractableElement extends GraphicalElement {
   public isEnabled(): boolean {
     if (!this.enabled) return false;
     const storySystem = StoryGraphSystem.getInstance();
-    if (this.requiredFlag && !storySystem.getFlag(this.requiredFlag)) return false;
-    if (this.notFlag && storySystem.getFlag(this.notFlag)) return false;
-    return true;
+    return ConditionEvaluator.isMet(
+      { requiredFlag: this.requiredFlag, notFlag: this.notFlag },
+      flag => storySystem.getFlag(flag)
+    );
   }
 
   public override update(delta?: number): void {
@@ -77,8 +79,7 @@ export class InteractableElement extends GraphicalElement {
         }
       }
 
-      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
-      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      if (!ConditionEvaluator.isMet(a, flag => storySystem.getFlag(flag))) return false;
       return true;
     });
   }
@@ -87,8 +88,7 @@ export class InteractableElement extends GraphicalElement {
     const storySystem = StoryGraphSystem.getInstance();
     return this.actions.find(a => {
       if (a.requireItemId !== itemId) return false;
-      if (a.requiredFlag && !storySystem.getFlag(a.requiredFlag)) return false;
-      if (a.notFlag && storySystem.getFlag(a.notFlag)) return false;
+      if (!ConditionEvaluator.isMet(a, flag => storySystem.getFlag(flag))) return false;
       return true;
     });
   }
@@ -107,8 +107,7 @@ export class InteractableElement extends GraphicalElement {
     const storySystem = StoryGraphSystem.getInstance();
     return this.actions.find(a => {
       if (a.requireItemId && !selectedItemId) return false;
-      if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
-      if (a.notFlag && storySystem?.getFlag(a.notFlag)) return false;
+      if (!ConditionEvaluator.isMet(a, flag => storySystem?.getFlag(flag))) return false;
       return true;
     });
   }

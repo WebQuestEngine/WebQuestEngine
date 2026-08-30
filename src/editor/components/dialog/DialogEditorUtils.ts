@@ -1,0 +1,133 @@
+import { ProjectData, SceneData, DialogTree } from '../../../engine/types';
+
+export class DialogEditorUtils {
+  public static escapeHtml(str: string): string {
+    return (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  public static getAllScenes(project: ProjectData | null): SceneData[] {
+    return project?.scenes || [];
+  }
+
+  public static getAllHotspots(project: ProjectData | null): { id: string; name: string; sceneId: string; sceneName: string }[] {
+    const list: { id: string; name: string; sceneId: string; sceneName: string }[] = [];
+    if (project?.scenes) {
+      for (const sc of project.scenes) {
+        for (const hs of sc.hotspots || []) {
+          list.push({ id: hs.id, name: hs.name, sceneId: sc.id, sceneName: sc.name });
+        }
+      }
+    }
+    return list;
+  }
+
+  public static getAllCharacters(project: ProjectData | null): { id: string; name: string; sceneId: string; sceneName: string }[] {
+    const list: { id: string; name: string; sceneId: string; sceneName: string }[] = [];
+    if (project?.scenes) {
+      for (const sc of project.scenes) {
+        for (const ch of sc.characters || []) {
+          list.push({ id: ch.id, name: ch.name, sceneId: sc.id, sceneName: sc.name });
+        }
+      }
+    }
+    return list;
+  }
+
+  public static getAllItems(project: ProjectData | null): { id: string; name: string }[] {
+    return (project?.items || []).map(it => ({ id: it.id, name: it.name }));
+  }
+
+  public static getEventsForScope(scope: string): { id: string; label: string }[] {
+    switch (scope) {
+      case 'game':
+        return [
+          { id: 'start', label: '🎮 On Game Start / Launch' },
+          { id: 'end', label: '🏁 On Game End / Victory' },
+          { id: 'loaded', label: '💾 On Save Game Loaded' }
+        ];
+      case 'scene':
+        return [
+          { id: 'enter', label: '🚪 On Enter Scene' },
+          { id: 'first_enter', label: '✨ On First Time Enter Scene' },
+          { id: 'exit', label: '🚶 On Exit Scene' }
+        ];
+      case 'hotspot':
+        return [
+          { id: 'interact', label: '⚡ On Any Interaction' },
+          { id: 'look_at', label: '👁️ On Look At' },
+          { id: 'use', label: '✋ On Use / Activate' },
+          { id: 'talk_to', label: '💬 On Talk To' },
+          { id: 'pick_up', label: '🎒 On Pick Up / Take' },
+          { id: 'open', label: '🔓 On Open' },
+          { id: 'close', label: '🔒 On Close' }
+        ];
+      case 'character':
+        return [
+          { id: 'talk_to', label: '💬 On Talk To' },
+          { id: 'interact', label: '⚡ On Any Interaction' },
+          { id: 'arrived_at', label: '📍 On Arrived At Target' },
+          { id: 'anim_completed', label: '🎬 On Animation Finished' }
+        ];
+      case 'item':
+        return [
+          { id: 'use', label: '✋ On Use Item' },
+          { id: 'examine', label: '🔍 On Examine Item' },
+          { id: 'obtained', label: '🎁 On Item Obtained' },
+          { id: 'combine', label: '🔗 On Item Combined' }
+        ];
+      default:
+        return [{ id: 'trigger', label: '⚡ On Trigger' }];
+    }
+  }
+
+  public static findDialogScene(project: ProjectData | null, dTree: DialogTree): SceneData | null {
+    if (!project || !project.scenes) return null;
+    for (const sc of project.scenes) {
+      for (const ch of sc.characters || []) {
+        if (ch.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && dTree.id.includes(ch.id.replace(/^npc_/, '')))) return sc;
+      }
+      for (const hs of sc.hotspots || []) {
+        if (hs.actions?.some(a => a.dialogId === dTree.id)) return sc;
+      }
+    }
+    return project.scenes[0] || null;
+  }
+
+  public static getAllProjectActors(project: ProjectData | null): { id: string; name: string; animations: string[] }[] {
+    const playerChar = project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
+    const playerName = playerChar?.name || 'Hero';
+    const playerAnims = playerChar?.animations ? Object.keys(playerChar.animations) : ['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower'];
+
+    const actors: { id: string; name: string; animations: string[] }[] = [
+      { id: 'player', name: `👤 ${playerName} (Player)`, animations: playerAnims }
+    ];
+    if (project?.scenes) {
+      for (const sc of project.scenes) {
+        for (const c of sc.characters) {
+          const anims = c.animations ? Object.keys(c.animations) : ['idle', 'talk', 'walk', 'gesture', 'look_around'];
+          if (!actors.some(a => a.id === c.id)) {
+            actors.push({ id: c.id, name: `🎭 ${c.name} (${c.id})`, animations: anims });
+          }
+        }
+        for (const hs of sc.hotspots) {
+          if (!actors.some(a => a.id === hs.id)) {
+            actors.push({ id: hs.id, name: `📦 ${hs.name} (${hs.id})`, animations: ['idle', 'active', 'open', 'close'] });
+          }
+        }
+      }
+    }
+    return actors;
+  }
+
+  public static getActorAnimations(project: ProjectData | null, actorId: string): string[] {
+    const actors = DialogEditorUtils.getAllProjectActors(project);
+    const found = actors.find(a => a.id === actorId);
+    if (found && found.animations && found.animations.length > 0) return found.animations;
+    return ['idle', 'talk', 'walk', 'gesture', 'stir_cauldron', 'look_around', 'cower', 'celebrate'];
+  }
+}

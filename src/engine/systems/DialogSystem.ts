@@ -1,6 +1,7 @@
 import { DialogTree, DialogNode, DialogChoice } from '../types';
 import { EventBus } from '../core/EventBus';
 import { AudioSystem } from './AudioSystem';
+import { ConditionEvaluator } from '../utils/ConditionEvaluator';
 
 export class DialogSystem {
   private static instance: DialogSystem;
@@ -89,45 +90,39 @@ export class DialogSystem {
     );
 
     // 1. Evaluate per-node flag testing conditions (optional)
-    if (this.currentNode.requiredFlag && flagGetter) {
-      const hasFlag = flagGetter(this.currentNode.requiredFlag);
-      console.log(
-        `  🔍 Node requiredFlag check: "%c${this.currentNode.requiredFlag}%c" -> %c${hasFlag ? 'PASS (True)' : 'FAIL (False)'}%c`,
-        'color: #f59e0b; font-weight: bold;',
-        'color: inherit;',
-        hasFlag ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
-        'color: inherit;'
+    if (flagGetter && (this.currentNode.requiredFlag || this.currentNode.notFlag)) {
+      const evalRes = ConditionEvaluator.evaluate(
+        { requiredFlag: this.currentNode.requiredFlag, notFlag: this.currentNode.notFlag },
+        flagGetter
       );
-      if (!hasFlag) {
-        if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
-          console.log(`  ↪️ Node skipped due to requiredFlag, advancing to fallback nextNodeId: "${this.currentNode.nextNodeId}"`);
-          this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
-          this.presentNode(flagGetter);
-          return;
-        }
-        console.log('  ⏹️ Node skipped due to requiredFlag and no fallback nextNodeId, ending dialog.');
-        this.endDialog();
-        return;
-      }
-    }
 
-    if (this.currentNode.notFlag && flagGetter) {
-      const hasFlag = flagGetter(this.currentNode.notFlag);
-      console.log(
-        `  🔍 Node notFlag check: "%c${this.currentNode.notFlag}%c" -> %c${!hasFlag ? 'PASS (False)' : 'FAIL (True - blocked)'}%c`,
-        'color: #f59e0b; font-weight: bold;',
-        'color: inherit;',
-        !hasFlag ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
-        'color: inherit;'
-      );
-      if (hasFlag) {
+      if (this.currentNode.requiredFlag) {
+        console.log(
+          `  🔍 Node requiredFlag check: "%c${this.currentNode.requiredFlag}%c" -> %c${evalRes.reqPass ? 'PASS (True)' : 'FAIL (False)'}%c`,
+          'color: #f59e0b; font-weight: bold;',
+          'color: inherit;',
+          evalRes.reqPass ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+          'color: inherit;'
+        );
+      }
+      if (this.currentNode.notFlag) {
+        console.log(
+          `  🔍 Node notFlag check: "%c${this.currentNode.notFlag}%c" -> %c${evalRes.notPass ? 'PASS (False)' : 'FAIL (True - blocked)'}%c`,
+          'color: #f59e0b; font-weight: bold;',
+          'color: inherit;',
+          evalRes.notPass ? 'color: #10b981; font-weight: bold;' : 'color: #ef4444; font-weight: bold;',
+          'color: inherit;'
+        );
+      }
+
+      if (!evalRes.valid) {
         if (this.currentNode.nextNodeId && this.currentTree.nodes[this.currentNode.nextNodeId]) {
-          console.log(`  ↪️ Node skipped due to notFlag, advancing to fallback nextNodeId: "${this.currentNode.nextNodeId}"`);
+          console.log(`  ↪️ Node skipped due to condition, advancing to fallback nextNodeId: "${this.currentNode.nextNodeId}"`);
           this.currentNode = this.currentTree.nodes[this.currentNode.nextNodeId];
           this.presentNode(flagGetter);
           return;
         }
-        console.log('  ⏹️ Node skipped due to notFlag and no fallback nextNodeId, ending dialog.');
+        console.log('  ⏹️ Node skipped due to condition and no fallback nextNodeId, ending dialog.');
         this.endDialog();
         return;
       }
@@ -196,21 +191,13 @@ export class DialogSystem {
       if (this.currentNode.choices && this.currentNode.choices.length > 0) {
         for (let idx = 0; idx < this.currentNode.choices.length; idx++) {
           const choice = this.currentNode.choices[idx];
-          let valid = true;
-          let reqPass = true;
-          let notPass = true;
-
-          if (choice.requiredFlag && flagGetter) {
-            reqPass = flagGetter(choice.requiredFlag);
-            if (!reqPass) valid = false;
-          }
-          if (choice.notFlag && flagGetter) {
-            const hasNot = flagGetter(choice.notFlag);
-            if (hasNot) {
-              notPass = false;
-              valid = false;
-            }
-          }
+          const evalRes = ConditionEvaluator.evaluate(
+            { requiredFlag: choice.requiredFlag, notFlag: choice.notFlag },
+            flagGetter
+          );
+          const valid = evalRes.valid;
+          const reqPass = evalRes.reqPass;
+          const notPass = evalRes.notPass;
 
           console.log(
             `  ↳ Route #${idx + 1} -> Target Node: "%c${choice.nextNodeId || '(None)'}%c" | reqFlag: "%c${choice.requiredFlag || 'None'}%c" (${choice.requiredFlag ? (reqPass ? '✅ PASS' : '❌ FAIL') : 'N/A'}) | notFlag: "%c${choice.notFlag || 'None'}%c" (${choice.notFlag ? (notPass ? '✅ PASS' : '❌ FAIL') : 'N/A'}) -> %c${valid ? 'MATCHED' : 'SKIPPED'}%c`,
@@ -312,21 +299,13 @@ export class DialogSystem {
     if (this.currentNode.choices && this.currentNode.choices.length > 0) {
       console.log(`  💬 Evaluating ${this.currentNode.choices.length} response choices:`);
       availableChoices = this.currentNode.choices.filter((choice, idx) => {
-        let valid = true;
-        let reqPass = true;
-        let notPass = true;
-
-        if (choice.requiredFlag && flagGetter) {
-          reqPass = flagGetter(choice.requiredFlag);
-          if (!reqPass) valid = false;
-        }
-        if (choice.notFlag && flagGetter) {
-          const hasNot = flagGetter(choice.notFlag);
-          if (hasNot) {
-            notPass = false;
-            valid = false;
-          }
-        }
+        const evalRes = ConditionEvaluator.evaluate(
+          { requiredFlag: choice.requiredFlag, notFlag: choice.notFlag },
+          flagGetter
+        );
+        const valid = evalRes.valid;
+        const reqPass = evalRes.reqPass;
+        const notPass = evalRes.notPass;
 
         console.log(
           `    [Option #${idx + 1}] "%c${choice.text}%c" -> reqFlag: "${choice.requiredFlag || 'None'}" (${choice.requiredFlag ? (reqPass ? 'PASS' : 'FAIL') : 'N/A'}), notFlag: "${choice.notFlag || 'None'}" (${choice.notFlag ? (notPass ? 'PASS' : 'FAIL') : 'N/A'}) -> %c${valid ? 'AVAILABLE' : 'FILTERED OUT'}%c`,
