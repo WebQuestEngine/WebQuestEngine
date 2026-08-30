@@ -29,7 +29,7 @@ export class DialogTabInspectorTemplate {
       <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">
         <b>Player Options (${choices.length}):</b>
         <ul style="margin:4px 0 0 16px; padding:0;">
-          ${TemplateUtils.renderList<{text: string}>(choices, (c: {text: string}) => `<li>${TemplateUtils.escapeHtml(c.text)}</li>`)}
+          ${TemplateUtils.renderList<{ text: string }>(choices, (c: { text: string }) => `<li>${TemplateUtils.escapeHtml(c.text)}</li>`)}
         </ul>
       </div>` : '';
 
@@ -84,7 +84,7 @@ export class HotspotInspectorTemplate {
            </button>
          </div>` : '';
 
-    const verticesHTML = TemplateUtils.renderList<{x: number; y: number}>(hs.points, (pt: {x: number; y: number}, i: number) => `
+    const verticesHTML = TemplateUtils.renderList<{ x: number; y: number }>(hs.points, (pt: { x: number; y: number }, i: number) => `
       <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
         <span style="font-size:0.75rem; color:var(--text-muted); width:24px;">#${i + 1}</span>
         <input type="number" class="form-input hs-pt-x" data-hidx="${hIdx}" data-idx="${i}" value="${pt.x}" style="font-size:0.75rem;" />
@@ -132,7 +132,7 @@ export class CharacterInspectorTemplate {
     const cIdx = scene.characters.indexOf(char);
 
     const animationsHTML = Object.entries(char.animations || {}).map(([key, val]) => {
-      const framesStr = Array.isArray(val) ? val.join(',') : ((val as any).frames || []).join(',');
+      const framesStr = Array.isArray(val) ? val.length : ((val as any).frames || []).length;
       return `
         <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
           <input type="text" class="form-input char-anim-key" data-cidx="${cIdx}" data-oldkey="${TemplateUtils.escapeHtml(key)}" value="${TemplateUtils.escapeHtml(key)}" placeholder="Clip Name" style="font-size:0.75rem; flex:1; font-weight:600;" />
