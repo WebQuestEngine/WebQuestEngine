@@ -1,6 +1,6 @@
 import { ProjectData, DialogTree, DialogNode, DialogChoice, Vector2D, SceneData, StageDirective, DirectiveActionType } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
-import { resolvePickedAssetPath } from './Inspector';
+import { resolvePickedAssetPath } from '../utils/AssetPathUtils';
 
 export class DialogEditor {
   public element: HTMLElement;
