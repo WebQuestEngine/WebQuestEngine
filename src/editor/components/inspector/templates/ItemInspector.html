@@ -1,0 +1,31 @@
+<!-- ItemInspector.html — Inventory item properties -->
+<!-- Used by: EntityInspectors.template.ts -->
+<!-- Slots: {{idx}}, {{name}}, {{itemId}}, {{thumbnailHTML}}, {{iconUrl}}, {{description}} -->
+<div class="sidebar-section">
+  <div class="form-group">
+    <label>Item Name</label>
+    <input type="text" class="form-input item-name" data-idx="{{idx}}" value="{{name}}" style="font-weight:700;" />
+  </div>
+  <div class="form-group">
+    <label>Item ID</label>
+    <input type="text" class="form-input item-id" data-idx="{{idx}}" value="{{itemId}}" readonly style="opacity:0.7;" />
+  </div>
+  <div class="form-group">
+    <label>Icon Path / Upload</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      {{thumbnailHTML}}
+      <input type="text" class="form-input item-icon-url" data-idx="{{idx}}" value="{{iconUrl}}" style="flex:1;" />
+      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
+        📁
+        <input type="file" class="item-icon-file" data-idx="{{idx}}" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Description</label>
+    <textarea class="form-input item-desc" data-idx="{{idx}}" style="height:60px;">{{description}}</textarea>
+  </div>
+  <div style="margin-top:8px;">
+    <button class="btn btn-del-item" data-idx="{{idx}}" style="font-size:0.75rem; color:#ef4444;">🗑️ Delete Item</button>
+  </div>
+</div>

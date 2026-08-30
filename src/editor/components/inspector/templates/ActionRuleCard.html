@@ -1,0 +1,76 @@
+<!-- ActionRuleCard.html — One complete WHEN/IF/THEN action rule card -->
+<!-- Used by: ActionRulesInspector.template.ts -->
+<!-- Slots: {{hIdx}}, {{aIdx}}, {{isCharStr}}, {{isFirst}}, {{isLast}},
+            {{verbSelectedLook}}, {{verbSelectedInteract}}, {{verbSelectedTalk}},
+            {{verbSelectedUse}}, {{verbSelectedPickUp}},
+            {{requireItemHTML}}, {{condFlagValue}}, {{condIsLabel_style}},
+            {{condToggleClass}}, {{condToggleDisabled}}, {{condToggleOpacity}},
+            {{condTogglePointerEvents}}, {{condToggleLabel}},
+            {{actionTypeOptionsHTML}},
+            {{dialogBlockHTML}}, {{animationBlockHTML}}, {{speechBlockHTML}},
+            {{sceneChangeBlockHTML}}, {{giveItemBlockHTML}},
+            {{setFlagBlockHTML}}, {{customEventBlockHTML}}, {{sfxUrl}} -->
+<div class="action-flow-card" style="padding:10px;">
+  <!-- WHEN Section -->
+  <div class="flow-group">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+      <span class="flow-group-title">⚡ WHEN USER PERFORMS</span>
+      <div style="display:flex; align-items:center; gap:4px;">
+        <button class="btn btn-move-action-up" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" {{isFirst}} style="padding:2px 6px; font-size:0.65rem;" title="Move Rule Up (Higher Priority)">⬆️</button>
+        <button class="btn btn-move-action-down" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" {{isLast}} style="padding:2px 6px; font-size:0.65rem;" title="Move Rule Down (Lower Priority)">⬇️</button>
+        <button class="btn btn-del-action" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;" title="Delete Action Rule">✕ Delete</button>
+      </div>
+    </div>
+    <select class="form-select act-verb" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">
+      <option value="look" {{verbSelectedLook}}>👁️ Look At</option>
+      <option value="interact" {{verbSelectedInteract}}>🖐️ Interact / Touch</option>
+      <option value="talk" {{verbSelectedTalk}}>💬 Talk To</option>
+      <option value="use" {{verbSelectedUse}}>🔑 Use Item With</option>
+      <option value="pick_up" {{verbSelectedPickUp}}>🎒 Pick Up</option>
+    </select>
+    {{requireItemHTML}}
+  </div>
+
+  <!-- CONDITION Section -->
+  <div class="flow-group">
+    <span class="flow-group-title">🔀 IF CONDITION (LEAVE EMPTY FOR ALWAYS)</span>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <input type="text" class="form-input act-flag-input" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" value="{{condFlagValue}}" placeholder="Flag Name (e.g. labUnlocked)" style="flex:1; font-size:0.75rem;" />
+      <span class="act-is-label" style="font-size:0.75rem; font-weight:700; {{condIsLabel_style}}">is</span>
+      <button class="btn act-cond-toggle {{condToggleClass}}" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" {{condToggleDisabled}} style="font-size:0.7rem; padding:4px 8px; opacity:{{condToggleOpacity}}; pointer-events:{{condTogglePointerEvents}};" title="Click to toggle between IF TRUE and IF FALSE">
+        {{condToggleLabel}}
+      </button>
+    </div>
+  </div>
+
+  <!-- THEN Section -->
+  <div class="flow-group">
+    <span class="flow-group-title">🎬 THEN FIRE ACTION / EVENT</span>
+    <div style="margin-bottom:8px;">
+      <label style="font-size:0.65rem; color:var(--text-muted); font-weight:700;">Action Event Type</label>
+      <select class="form-select act-type-select" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" style="font-size:0.75rem; font-weight:700; color:#38bdf8;">
+        {{actionTypeOptionsHTML}}
+      </select>
+    </div>
+
+    {{dialogBlockHTML}}
+    {{animationBlockHTML}}
+    {{speechBlockHTML}}
+    {{sceneChangeBlockHTML}}
+    {{giveItemBlockHTML}}
+    {{setFlagBlockHTML}}
+    {{customEventBlockHTML}}
+
+    <!-- Optional Audio SFX -->
+    <div style="margin-top:6px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px;">
+      <label style="font-size:0.65rem; color:var(--text-muted);">🔊 Audio SFX (Optional)</label>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input type="text" class="form-input act-sfx-url" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" value="{{sfxUrl}}" placeholder="e.g. assets/audio/door_open.mp3" style="flex:1; font-size:0.75rem;" />
+        <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose SFX Audio File">
+          📁
+          <input type="file" class="act-sfx-file" data-hidx="{{hIdx}}" data-aidx="{{aIdx}}" data-ischar="{{isCharStr}}" accept="audio/*" style="display:none;" />
+        </label>
+      </div>
+    </div>
+  </div>
+</div>

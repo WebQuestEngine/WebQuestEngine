@@ -1,0 +1,10 @@
+<!-- ActionRulesInspector.html — Container for the action rules section -->
+<!-- Used by: ActionRulesInspector.template.ts -->
+<!-- Slots: {{actionCount}}, {{hIdx}}, {{addBtnClass}}, {{emptyOrRulesHTML}} -->
+<div class="sidebar-section">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+    <div class="sidebar-section-title" style="margin-bottom:0;">Interaction Rules ({{actionCount}})</div>
+    <button class="btn btn-primary {{addBtnClass}}" data-hidx="{{hIdx}}" style="font-size:0.7rem; padding:4px 8px;">+ Add Action Rule</button>
+  </div>
+  {{emptyOrRulesHTML}}
+</div>

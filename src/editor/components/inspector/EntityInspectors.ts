@@ -5,52 +5,17 @@ import { resolvePickedAssetPath, handleFileInputChange, getThumbnailHTML, normal
 import { ActionRulesInspector } from './ActionRulesInspector';
 import { VisualCursorHotspotModal } from '../VisualCursorHotspotModal';
 import { VisualSpritePickerModal } from '../VisualSpritePickerModal';
+import {
+  DialogTabInspectorTemplate,
+  HotspotInspectorTemplate,
+  CharacterInspectorTemplate,
+  LayerInspectorTemplate,
+  ItemInspectorTemplate,
+} from './templates/EntityInspectors.template';
 
 export class DialogTabInspector {
   public static getHTML(dialogId: string | undefined, project: ProjectData | null): string {
-    const dialog = dialogId ? project?.dialogs.find(d => d.id === dialogId) : undefined;
-    if (!dialog) {
-      return `
-        <div class="sidebar-section">
-          <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px; font-style:italic;">
-            No dialogue flow assigned to this element.
-          </div>
-          <button class="btn btn-primary btn-open-dialog-editor" style="width:100%; font-size:0.75rem; padding:8px;">
-            💬 Open Specialized Dialog Editor
-          </button>
-        </div>
-      `;
-    }
-
-    const startNode = dialog.nodes[dialog.startNodeId];
-    const choices = startNode?.choices || [];
-
-    return `
-      <div class="sidebar-section">
-        <div style="background:rgba(139, 92, 246, 0.08); border:1px solid var(--accent-purple); padding:10px; border-radius:8px; margin-bottom:12px;">
-          <div style="font-weight:700; font-family:var(--font-heading); color:var(--accent-gold); font-size:0.85rem; margin-bottom:4px;">
-            💬 ${dialog.title}
-          </div>
-          <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:8px;">ID: <code>${dialog.id}</code></div>
-          ${startNode ? `
-            <div style="font-size:0.75rem; margin-bottom:6px;">
-              <b>Speaker:</b> ${startNode.speaker}<br/>
-              <b>Initial Line:</b> <i>"${startNode.text}"</i>
-            </div>
-            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">
-              <b>Player Options (${choices.length}):</b>
-              <ul style="margin:4px 0 0 16px; padding:0;">
-                ${choices.map(c => `<li>${c.text}</li>`).join('')}
-              </ul>
-            </div>
-          ` : ''}
-        </div>
-
-        <button class="btn btn-gold btn-open-dialog-editor" data-dlgid="${dialog.id}" style="width:100%; font-size:0.8rem; padding:8px; font-weight:700;">
-          💬 Open Specialized Dialog Editor
-        </button>
-      </div>
-    `;
+    return DialogTabInspectorTemplate.render(dialogId, project);
   }
 }
 
@@ -84,114 +49,7 @@ export class HotspotInspector {
     const posX = hs.position ? hs.position.x : Math.round(hs.points.reduce((s,p)=>s+p.x,0)/(hs.points.length||1));
     const posY = hs.position ? hs.position.y : Math.round(hs.points.reduce((s,p)=>s+p.y,0)/(hs.points.length||1));
 
-    return subtabsHTML + `
-      <div class="sidebar-section">
-        <div class="form-group">
-          <label>Object Name</label>
-          <input type="text" class="form-input single-hs-name" data-hidx="${hIdx}" value="${hs.name}" style="font-weight:700;" />
-        </div>
-        <div class="form-group">
-          <label>Graphic Image Path / Upload</label>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${getThumbnailHTML(hs.imageUrl)}
-            <input type="text" class="form-input single-hs-img-url" data-hidx="${hIdx}" value="${hs.imageUrl || ''}" placeholder="None (Invisible Polygon)" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Upload custom graphic">
-              📁
-              <input type="file" class="single-hs-file-input" data-hidx="${hIdx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
-            <input type="number" class="form-input single-hs-pos-x" data-hidx="${hIdx}" value="${posX}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
-            <input type="number" class="form-input single-hs-pos-y" data-hidx="${hIdx}" value="${posY}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
-            <input type="number" step="0.05" class="form-input single-hs-scale-x" data-hidx="${hIdx}" value="${hs.scaleX ?? 1}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
-            <input type="number" step="0.05" class="form-input single-hs-scale-y" data-hidx="${hIdx}" value="${hs.scaleY ?? 1}" />
-          </div>
-          <div style="grid-column: span 2;">
-            <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Base Y)</label>
-            <input type="number" class="form-input single-hs-depth-y" data-hidx="${hIdx}" value="${hs.depthY ?? ''}" placeholder="Auto (Base Y)" />
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:8px;">
-          <label>Cursor Context</label>
-          <select class="form-select single-hs-cursor" data-hidx="${hIdx}">
-            <option value="interact" ${hs.cursor === 'interact' ? 'selected' : ''}>✋ Touch / Interact</option>
-            <option value="look" ${hs.cursor === 'look' ? 'selected' : ''}>👁️ Look</option>
-            <option value="talk" ${hs.cursor === 'talk' ? 'selected' : ''}>💬 Talk</option>
-            <option value="walk" ${hs.cursor === 'walk' ? 'selected' : ''}>🥾 Walk</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Custom Cursor Graphic (URL)</label>
-          <div style="display:flex; gap:6px; align-items:center;">
-            ${hs.customCursorUrl ? `
-              <div style="width:32px; height:32px; min-width:32px; background:#1e293b; border:1px solid var(--border-color); border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                <img src="${AssetManager.getInstance().resolveImageSrc(hs.customCursorUrl)}" style="max-width:28px; max-height:28px; object-fit:contain;" />
-              </div>
-            ` : ''}
-            <input type="text" class="form-input single-hs-custom-cursor" data-hidx="${hIdx}" value="${hs.customCursorUrl || ''}" placeholder="Optional custom mouse cursor PNG" style="flex:1;" />
-            <label class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem; cursor:pointer; margin:0;" title="Browse cursor file">
-              📁
-              <input type="file" class="single-hs-custom-cursor-file" data-hidx="${hIdx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        ${hs.customCursorUrl ? `
-          <div style="display:flex; gap:6px; align-items:flex-end; margin-bottom:8px;">
-            <div style="flex:1;">
-              <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot X (px)</label>
-              <input type="number" class="form-input single-hs-cursor-hx" data-hidx="${hIdx}" value="${hs.customCursorHotspotX ?? 0}" placeholder="0" style="font-size:0.75rem;" />
-            </div>
-            <div style="flex:1;">
-              <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot Y (px)</label>
-              <input type="number" class="form-input single-hs-cursor-hy" data-hidx="${hIdx}" value="${hs.customCursorHotspotY ?? 0}" placeholder="0" style="font-size:0.75rem;" />
-            </div>
-            <button class="btn btn-primary btn-open-hs-cursor-hotspot-modal" data-hidx="${hIdx}" style="padding:4px 8px; font-size:0.7rem; white-space:nowrap; height:28px; background:#059669; border:none; color:white;" title="Visually drag and select hotspot">
-              🎯 Visual Pick
-            </button>
-          </div>
-        ` : ''}
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Required Flag</label>
-            <input type="text" class="form-input single-hs-req-flag" data-hidx="${hIdx}" value="${hs.requiredFlag || ''}" placeholder="None" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Not Flag</label>
-            <input type="text" class="form-input single-hs-not-flag" data-hidx="${hIdx}" value="${hs.notFlag || ''}" placeholder="None" />
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <div class="sidebar-section-title" style="margin-bottom:0;">Polygon Vertices (${hs.points.length})</div>
-        </div>
-        <div style="display:flex; gap:6px; margin-bottom:8px;">
-          <button class="btn btn-primary btn-draw-hs-scratch" data-hidx="${hIdx}" style="flex:1; font-size:0.75rem; padding:4px 6px;">✏️ Draw From Scratch</button>
-          <button class="btn btn-primary" id="btn-add-hs-pt" data-hidx="${hIdx}" style="font-size:0.75rem; padding:4px 6px;">+ Point</button>
-        </div>
-        ${hs.points.map((pt, i) => `
-          <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
-            <span style="font-size:0.75rem; color:var(--text-muted); width:24px;">#${i + 1}</span>
-            <input type="number" class="form-input hs-pt-x" data-hidx="${hIdx}" data-idx="${i}" value="${pt.x}" style="font-size:0.75rem;" />
-            <input type="number" class="form-input hs-pt-y" data-hidx="${hIdx}" data-idx="${i}" value="${pt.y}" style="font-size:0.75rem;" />
-            <button class="btn btn-del-hs-pt" data-hidx="${hIdx}" data-idx="${i}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    return subtabsHTML + HotspotInspectorTemplate.render({ scene, hs, project });
   }
 
   public static attachEvents(
@@ -495,73 +353,7 @@ export class CharacterInspector {
       return subtabsHTML + DialogTabInspector.getHTML(linkedDialog, project);
     }
 
-    return subtabsHTML + `
-      <div class="sidebar-section">
-        <div class="form-group">
-          <label>Character Name</label>
-          <input type="text" class="form-input char-name" data-idx="${cIdx}" value="${char.name}" style="font-weight:700;" />
-        </div>
-        <div class="form-group">
-          <label>Sprite Sheet Path / Upload</label>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${getThumbnailHTML(char.spriteSheetUrl)}
-            <input type="text" class="form-input char-spritesheet" data-idx="${cIdx}" value="${char.spriteSheetUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
-              📁
-              <input type="file" class="char-file-input" data-idx="${cIdx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
-            <input type="number" class="form-input char-pos-x" data-idx="${cIdx}" value="${char.position.x}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
-            <input type="number" class="form-input char-pos-y" data-idx="${cIdx}" value="${char.position.y}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale</label>
-            <input type="number" step="0.05" class="form-input char-scale" data-idx="${cIdx}" value="${char.scale}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Speed</label>
-            <input type="number" class="form-input char-speed" data-idx="${cIdx}" value="${char.speed}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Width</label>
-            <input type="number" class="form-input char-fw" data-idx="${cIdx}" value="${char.frameWidth}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Frame Height</label>
-            <input type="number" class="form-input char-fh" data-idx="${cIdx}" value="${char.frameHeight}" />
-          </div>
-          <div style="grid-column: span 2;">
-            <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet Y)</label>
-            <input type="number" class="form-input char-depth-y" data-idx="${cIdx}" value="${char.depthY ?? ''}" placeholder="Auto (Feet Y)" />
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <div class="sidebar-section-title" style="margin-bottom:0;">🎬 Sprite Sheet Animation Clips (${Object.keys(char.animations || {}).length})</div>
-          <button class="btn btn-primary btn-add-char-anim" data-idx="${cIdx}" style="font-size:0.7rem; padding:3px 6px;">+ Add Clip</button>
-        </div>
-        ${Object.entries(char.animations || {}).map(([key, val]) => {
-          const framesStr = Array.isArray(val) ? val.join(',') : (val.frames || []).join(',');
-          return `
-            <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
-              <input type="text" class="form-input char-anim-key" data-cidx="${cIdx}" data-oldkey="${key}" value="${key}" placeholder="Clip Name" style="font-size:0.75rem; flex:1; font-weight:600;" />
-              <input type="text" class="form-input char-anim-frames" data-cidx="${cIdx}" data-animkey="${key}" value="${framesStr}" placeholder="0,1,2,3" style="font-size:0.75rem; flex:1;" />
-              <button class="btn btn-gold btn-open-frame-picker" data-cidx="${cIdx}" data-animkey="${key}" style="font-size:0.65rem; padding:3px 6px;" title="Open Visual Grid Picker">🖼️ Pick</button>
-              <button class="btn btn-del-char-anim" data-cidx="${cIdx}" data-animkey="${key}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+    return subtabsHTML + CharacterInspectorTemplate.render({ scene, char, project });
   }
 
   public static attachEvents(
@@ -764,70 +556,7 @@ export class CharacterInspector {
 
 export class LayerInspector {
   public static getHTML(scene: SceneData, layer: LayerData): string {
-    const lIdx = scene.layers.indexOf(layer);
-    return `
-      <div class="sidebar-section">
-        <div class="form-group">
-          <label>Layer Name</label>
-          <input type="text" class="form-input single-layer-name" data-idx="${lIdx}" value="${layer.name}" style="font-weight:700;" />
-        </div>
-        <div class="form-group">
-          <label>Image Path / Upload</label>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${getThumbnailHTML(layer.imageUrl)}
-            <input type="text" class="form-input single-layer-url" data-idx="${lIdx}" value="${layer.imageUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose File">
-              📁
-              <input type="file" class="single-layer-file" data-idx="${lIdx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
-            <input type="number" class="form-input single-layer-x" data-idx="${lIdx}" value="${layer.x || 0}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
-            <input type="number" class="form-input single-layer-y" data-idx="${lIdx}" value="${layer.y || 0}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
-            <input type="number" step="0.05" class="form-input single-layer-scalex" data-idx="${lIdx}" value="${layer.scaleX ?? 1}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
-            <input type="number" step="0.05" class="form-input single-layer-scaley" data-idx="${lIdx}" value="${layer.scaleY ?? 1}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Parallax X</label>
-            <input type="number" step="0.1" class="form-input single-layer-parallaxx" data-idx="${lIdx}" value="${layer.parallaxX}" />
-          </div>
-          <div>
-            <label style="font-size:0.65rem; color:var(--text-muted);">Parallax Y</label>
-            <input type="number" step="0.1" class="form-input single-layer-parallaxy" data-idx="${lIdx}" value="${layer.parallaxY}" />
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:8px;">
-          <label>Opacity (${Math.round(layer.opacity * 100)}%)</label>
-          <input type="range" min="0" max="1" step="0.05" class="single-layer-opacity" data-idx="${lIdx}" value="${layer.opacity}" style="width:100%;" />
-        </div>
-        <div class="form-group" style="margin-top:10px;">
-          <label style="font-weight:700;">Layer Ordering & Duplication (Layer ${lIdx + 1} of ${scene.layers.length})</label>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:4px;">
-            <button class="btn btn-layer-move-up" data-idx="${lIdx}" ${lIdx === 0 ? 'disabled' : ''} style="font-size:0.75rem;" title="Move Layer Backwards (Behind)">⬆️ Move Backwards</button>
-            <button class="btn btn-layer-move-down" data-idx="${lIdx}" ${lIdx === scene.layers.length - 1 ? 'disabled' : ''} style="font-size:0.75rem;" title="Move Layer Forwards (In Front)">⬇️ Move Forwards</button>
-            <button class="btn btn-primary btn-layer-duplicate" data-idx="${lIdx}" style="font-size:0.75rem;" title="Duplicate this Layer">📋 Duplicate Layer</button>
-            <button class="btn btn-del-layer" data-idx="${lIdx}" style="font-size:0.75rem; color:#ef4444;" title="Delete Layer">🗑️ Delete Layer</button>
-          </div>
-        </div>
-        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
-          <button class="btn btn-toggle-vis" data-idx="${lIdx}" style="font-size:0.75rem;">
-            ${layer.visible ? '👁️ Visible' : '🙈 Hidden'}
-          </button>
-        </div>
-      </div>
-    `;
+    return LayerInspectorTemplate.render(scene, layer);
   }
 
   public static attachEvents(
@@ -1018,37 +747,7 @@ export class LayerInspector {
 
 export class ItemInspector {
   public static getHTML(item: InventoryItemData, project: ProjectData | null): string {
-    const idx = project?.items.indexOf(item) ?? 0;
-    return `
-      <div class="sidebar-section">
-        <div class="form-group">
-          <label>Item Name</label>
-          <input type="text" class="form-input item-name" data-idx="${idx}" value="${item.name}" style="font-weight:700;" />
-        </div>
-        <div class="form-group">
-          <label>Item ID</label>
-          <input type="text" class="form-input item-id" data-idx="${idx}" value="${item.id}" readonly style="opacity:0.7;" />
-        </div>
-        <div class="form-group">
-          <label>Icon Path / Upload</label>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${getThumbnailHTML(item.iconUrl)}
-            <input type="text" class="form-input item-icon-url" data-idx="${idx}" value="${item.iconUrl}" style="flex:1;" />
-            <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
-              📁
-              <input type="file" class="item-icon-file" data-idx="${idx}" accept="image/*" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Description</label>
-          <textarea class="form-input item-desc" data-idx="${idx}" style="height:60px;">${item.description}</textarea>
-        </div>
-        <div style="margin-top:8px;">
-          <button class="btn btn-del-item" data-idx="${idx}" style="font-size:0.75rem; color:#ef4444;">🗑️ Delete Item</button>
-        </div>
-      </div>
-    `;
+    return ItemInspectorTemplate.render(item, project);
   }
 
   public static attachEvents(

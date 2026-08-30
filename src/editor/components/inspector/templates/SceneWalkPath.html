@@ -1,0 +1,41 @@
+<!-- SceneWalkPath.html — Walk-path/perspective frustum section markup -->
+<!-- Used by: SceneInspector.template.ts -->
+<!-- Slots: {{lockHeaderHTML}}, {{minY}}, {{minScale}}, {{maxY}}, {{maxScale}},
+            {{vanishX}}, {{vertexCount}}, {{verticesHTML}} -->
+{{lockHeaderHTML}}
+<div class="sidebar-section">
+  <div class="sidebar-section-title">📐 2.5D Perspective Frustum &amp; Floor Plane</div>
+  <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+    Matches character movement &amp; scaling to background depth perspective. Drag handles on canvas or edit values.
+  </div>
+  <div class="form-group">
+    <label style="color:#06b6d4; font-weight:700;">🌅 Min Horizon Y (Distance)</label>
+    <input type="number" class="form-input" id="wp-min-y" value="{{minY}}" />
+  </div>
+  <div class="form-group">
+    <label style="color:#06b6d4; font-weight:700;">Horizon Scale (minScale)</label>
+    <input type="number" step="0.05" class="form-input" id="wp-min-scale" value="{{minScale}}" />
+  </div>
+  <div class="form-group">
+    <label style="color:#f59e0b; font-weight:700;">📐 Max Horizon Y (Foreground)</label>
+    <input type="number" class="form-input" id="wp-max-y" value="{{maxY}}" />
+  </div>
+  <div class="form-group">
+    <label style="color:#f59e0b; font-weight:700;">Foreground Scale (maxScale)</label>
+    <input type="number" step="0.05" class="form-input" id="wp-max-scale" value="{{maxScale}}" />
+  </div>
+  <div class="form-group">
+    <label style="color:#38bdf8; font-weight:700;">🎯 Vanishing Point X (Center of Rays)</label>
+    <input type="number" class="form-input" id="wp-vanish-x" value="{{vanishX}}" />
+  </div>
+</div>
+<div class="sidebar-section">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="sidebar-section-title" style="margin-bottom:0;">Walk Polygon Vertices ({{vertexCount}})</div>
+  </div>
+  <div style="display:flex; gap:6px; margin-bottom:8px;">
+    <button class="btn btn-primary" id="btn-draw-wp-scratch" style="flex:1; font-size:0.75rem; padding:4px 6px;">✏️ Draw From Scratch</button>
+    <button class="btn btn-primary" id="btn-add-wp-pt" style="font-size:0.75rem; padding:4px 6px;">+ Point</button>
+  </div>
+  {{verticesHTML}}
+</div>

@@ -1,0 +1,35 @@
+<!-- ProjectCursorCard.html — One verb cursor row within Project Inspector -->
+<!-- Used by: ProjectInspector.template.ts -->
+<!-- Slots: {{icon}}, {{name}}, {{verbId}}, {{cursorUrl}}, {{resolvedImgSrc}},
+            {{hotspotX}}, {{hotspotY}},
+            {{calibrateButtonTopHTML}}, {{thumbnailHTML}}, {{calibrateButtonBottomHTML}} -->
+<div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:8px; margin-bottom:8px;">
+  <div style="font-size:0.75rem; font-weight:700; color:var(--text-main); margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span>{{icon}}</span> <span>{{name}} Cursor</span>
+    </div>
+    {{calibrateButtonTopHTML}}
+  </div>
+  <div style="margin-bottom:6px;">
+    <label style="font-size:0.65rem; color:var(--text-muted);">Graphic URL</label>
+    <div style="display:flex; gap:6px; align-items:center;">
+      {{thumbnailHTML}}
+      <input type="text" class="form-input proj-cursor-input" data-verb="{{verbId}}" value="{{cursorUrl}}" placeholder="e.g. assets/cursors/{{verbId}}.png" style="flex:1; font-size:0.75rem;" />
+      <label class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem; cursor:pointer; margin:0;" title="Browse cursor file">
+        📁
+        <input type="file" class="proj-cursor-file" data-verb="{{verbId}}" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:flex-end;">
+    <div style="flex:1;">
+      <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot X (px)</label>
+      <input type="number" class="form-input proj-cursor-hx" data-verb="{{verbId}}" value="{{hotspotX}}" placeholder="0" style="font-size:0.75rem;" />
+    </div>
+    <div style="flex:1;">
+      <label style="font-size:0.65rem; color:var(--text-muted);">Hotspot Y (px)</label>
+      <input type="number" class="form-input proj-cursor-hy" data-verb="{{verbId}}" value="{{hotspotY}}" placeholder="0" style="font-size:0.75rem;" />
+    </div>
+    {{calibrateButtonBottomHTML}}
+  </div>
+</div>

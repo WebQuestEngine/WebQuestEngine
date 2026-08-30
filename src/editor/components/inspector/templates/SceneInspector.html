@@ -1,0 +1,49 @@
+<!-- SceneInspector.html — Scene properties section markup -->
+<!-- Used by: SceneInspector.template.ts -->
+<!-- Slots: {{lockHeaderHTML}}, {{sceneName}}, {{sceneId}}, {{bgUrl}},
+            {{thumbnailHTML}}, {{bgmUrl}}, {{sceneBasePath}}, {{projectBasePath}} -->
+{{lockHeaderHTML}}
+<div class="sidebar-section">
+  <div class="form-group">
+    <label>Scene Name</label>
+    <input type="text" class="form-input" id="sc-name" value="{{sceneName}}" />
+  </div>
+  <div class="form-group">
+    <label>Scene ID</label>
+    <input type="text" class="form-input" id="sc-id" value="{{sceneId}}" readonly style="opacity:0.7;" />
+  </div>
+  <div class="form-group">
+    <label>Background Image Path / Upload</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      {{thumbnailHTML}}
+      <input type="text" class="form-input" id="sc-bg-url" value="{{bgUrl}}" style="flex:1;" />
+      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose Background File">
+        📁
+        <input type="file" id="sc-bg-file" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>🎵 Background Music Path / Upload</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="text" class="form-input" id="sc-bgm-url" value="{{bgmUrl}}" placeholder="e.g. assets/audio/town.mp3" style="flex:1;" />
+      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose BGM File">
+        📁
+        <input type="file" id="sc-bgm-file" accept="audio/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Scene Base Asset Folder</label>
+    <input type="text" class="form-input" id="sc-base-folder" value="{{sceneBasePath}}" placeholder="e.g. assets/scene1" />
+    <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
+      Base folder for this scene's assets (e.g. <code>assets/scene1</code> ➔ audio in <code>assets/scene1/audio/</code>).
+    </div>
+  </div>
+</div>
+<div class="sidebar-section">
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-primary" id="btn-add-layer" style="flex:1; font-size:0.75rem;">+ Add Layer</button>
+    <button class="btn btn-primary" id="btn-add-hotspot" style="flex:1; font-size:0.75rem;">+ Add Object</button>
+  </div>
+</div>

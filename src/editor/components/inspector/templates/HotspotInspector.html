@@ -1,0 +1,89 @@
+<!-- HotspotInspector.html — Hotspot properties tab -->
+<!-- Used by: EntityInspectors.template.ts -->
+<!-- Slots: {{hIdx}}, {{name}}, {{thumbnailHTML}}, {{imageUrl}},
+            {{posX}}, {{posY}}, {{scaleX}}, {{scaleY}}, {{depthY}},
+            {{cursorInteract}}, {{cursorLook}}, {{cursorTalk}}, {{cursorWalk}},
+            {{customCursorThumbnailHTML}}, {{customCursorUrl}},
+            {{customCursorHotspotFieldsHTML}},
+            {{requiredFlag}}, {{notFlag}},
+            {{vertexCount}}, {{isFirstLayer}}, {{verticesHTML}} -->
+<div class="sidebar-section">
+  <div class="form-group">
+    <label>Object Name</label>
+    <input type="text" class="form-input single-hs-name" data-hidx="{{hIdx}}" value="{{name}}" style="font-weight:700;" />
+  </div>
+  <div class="form-group">
+    <label>Graphic Image Path / Upload</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      {{thumbnailHTML}}
+      <input type="text" class="form-input single-hs-img-url" data-hidx="{{hIdx}}" value="{{imageUrl}}" placeholder="None (Invisible Polygon)" style="flex:1;" />
+      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Upload custom graphic">
+        📁
+        <input type="file" class="single-hs-file-input" data-hidx="{{hIdx}}" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
+      <input type="number" class="form-input single-hs-pos-x" data-hidx="{{hIdx}}" value="{{posX}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
+      <input type="number" class="form-input single-hs-pos-y" data-hidx="{{hIdx}}" value="{{posY}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
+      <input type="number" step="0.05" class="form-input single-hs-scale-x" data-hidx="{{hIdx}}" value="{{scaleX}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
+      <input type="number" step="0.05" class="form-input single-hs-scale-y" data-hidx="{{hIdx}}" value="{{scaleY}}" />
+    </div>
+    <div style="grid-column: span 2;">
+      <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Base Y)</label>
+      <input type="number" class="form-input single-hs-depth-y" data-hidx="{{hIdx}}" value="{{depthY}}" placeholder="Auto (Base Y)" />
+    </div>
+  </div>
+  <div class="form-group" style="margin-top:8px;">
+    <label>Cursor Context</label>
+    <select class="form-select single-hs-cursor" data-hidx="{{hIdx}}">
+      <option value="interact" {{cursorInteract}}>✋ Touch / Interact</option>
+      <option value="look" {{cursorLook}}>👁️ Look</option>
+      <option value="talk" {{cursorTalk}}>💬 Talk</option>
+      <option value="walk" {{cursorWalk}}>🥾 Walk</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Custom Cursor Graphic (URL)</label>
+    <div style="display:flex; gap:6px; align-items:center;">
+      {{customCursorThumbnailHTML}}
+      <input type="text" class="form-input single-hs-custom-cursor" data-hidx="{{hIdx}}" value="{{customCursorUrl}}" placeholder="Optional custom mouse cursor PNG" style="flex:1;" />
+      <label class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem; cursor:pointer; margin:0;" title="Browse cursor file">
+        📁
+        <input type="file" class="single-hs-custom-cursor-file" data-hidx="{{hIdx}}" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  {{customCursorHotspotFieldsHTML}}
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Required Flag</label>
+      <input type="text" class="form-input single-hs-req-flag" data-hidx="{{hIdx}}" value="{{requiredFlag}}" placeholder="None" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Not Flag</label>
+      <input type="text" class="form-input single-hs-not-flag" data-hidx="{{hIdx}}" value="{{notFlag}}" placeholder="None" />
+    </div>
+  </div>
+</div>
+<div class="sidebar-section">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="sidebar-section-title" style="margin-bottom:0;">Polygon Vertices ({{vertexCount}})</div>
+  </div>
+  <div style="display:flex; gap:6px; margin-bottom:8px;">
+    <button class="btn btn-primary btn-draw-hs-scratch" data-hidx="{{hIdx}}" style="flex:1; font-size:0.75rem; padding:4px 6px;">✏️ Draw From Scratch</button>
+    <button class="btn btn-primary" id="btn-add-hs-pt" data-hidx="{{hIdx}}" style="font-size:0.75rem; padding:4px 6px;">+ Point</button>
+  </div>
+  {{verticesHTML}}
+</div>

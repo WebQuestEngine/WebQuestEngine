@@ -1,0 +1,67 @@
+<!-- LayerInspector.html — Layer properties section -->
+<!-- Used by: EntityInspectors.template.ts -->
+<!-- Slots: {{lIdx}}, {{name}}, {{thumbnailHTML}}, {{imageUrl}},
+            {{posX}}, {{posY}}, {{scaleX}}, {{scaleY}}, {{parallaxX}}, {{parallaxY}},
+            {{opacityPct}}, {{opacity}}, {{layerNum}}, {{totalLayers}},
+            {{moveUpDisabled}}, {{moveDownDisabled}}, {{visibilityLabel}} -->
+<div class="sidebar-section">
+  <div class="form-group">
+    <label>Layer Name</label>
+    <input type="text" class="form-input single-layer-name" data-idx="{{lIdx}}" value="{{name}}" style="font-weight:700;" />
+  </div>
+  <div class="form-group">
+    <label>Image Path / Upload</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      {{thumbnailHTML}}
+      <input type="text" class="form-input single-layer-url" data-idx="{{lIdx}}" value="{{imageUrl}}" style="flex:1;" />
+      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;" title="Choose File">
+        📁
+        <input type="file" class="single-layer-file" data-idx="{{lIdx}}" accept="image/*" style="display:none;" />
+      </label>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
+      <input type="number" class="form-input single-layer-x" data-idx="{{lIdx}}" value="{{posX}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Position Y</label>
+      <input type="number" class="form-input single-layer-y" data-idx="{{lIdx}}" value="{{posY}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Scale X</label>
+      <input type="number" step="0.05" class="form-input single-layer-scalex" data-idx="{{lIdx}}" value="{{scaleX}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Scale Y</label>
+      <input type="number" step="0.05" class="form-input single-layer-scaley" data-idx="{{lIdx}}" value="{{scaleY}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Parallax X</label>
+      <input type="number" step="0.1" class="form-input single-layer-parallaxx" data-idx="{{lIdx}}" value="{{parallaxX}}" />
+    </div>
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">Parallax Y</label>
+      <input type="number" step="0.1" class="form-input single-layer-parallaxy" data-idx="{{lIdx}}" value="{{parallaxY}}" />
+    </div>
+  </div>
+  <div class="form-group" style="margin-top:8px;">
+    <label>Opacity ({{opacityPct}}%)</label>
+    <input type="range" min="0" max="1" step="0.05" class="single-layer-opacity" data-idx="{{lIdx}}" value="{{opacity}}" style="width:100%;" />
+  </div>
+  <div class="form-group" style="margin-top:10px;">
+    <label style="font-weight:700;">Layer Ordering &amp; Duplication (Layer {{layerNum}} of {{totalLayers}})</label>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:4px;">
+      <button class="btn btn-layer-move-up" data-idx="{{lIdx}}" {{moveUpDisabled}} style="font-size:0.75rem;" title="Move Layer Backwards (Behind)">⬆️ Move Backwards</button>
+      <button class="btn btn-layer-move-down" data-idx="{{lIdx}}" {{moveDownDisabled}} style="font-size:0.75rem;" title="Move Layer Forwards (In Front)">⬇️ Move Forwards</button>
+      <button class="btn btn-primary btn-layer-duplicate" data-idx="{{lIdx}}" style="font-size:0.75rem;" title="Duplicate this Layer">📋 Duplicate Layer</button>
+      <button class="btn btn-del-layer" data-idx="{{lIdx}}" style="font-size:0.75rem; color:#ef4444;" title="Delete Layer">🗑️ Delete Layer</button>
+    </div>
+  </div>
+  <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+    <button class="btn btn-toggle-vis" data-idx="{{lIdx}}" style="font-size:0.75rem;">
+      {{visibilityLabel}}
+    </button>
+  </div>
+</div>
