@@ -1216,7 +1216,7 @@
   "dialogs": [
     {
       "id": "dlg_eldrin",
-      "title": "Start Game",
+      "title": "Conversation with Master Eldrin",
       "startNodeId": "router_5",
       "nodes": {
         "node_1": {
@@ -1344,7 +1344,7 @@
     },
     {
       "id": "dlg_1787942558368",
-      "title": "End Game",
+      "title": "Start Game",
       "startNodeId": "event_2",
       "nodes": {
         "beat_1": {

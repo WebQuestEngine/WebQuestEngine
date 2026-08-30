@@ -729,6 +729,27 @@ export class DialogEditor {
       if (tree && svgEl) this.renderConnectionLines(tree, svgEl);
     });
 
+    // Sequence title & start node inputs (attached once in render to target active tree)
+    this.element.querySelector('#tree-title-input')?.addEventListener('input', (e) => {
+      const activeTree = this.getActiveTree();
+      if (activeTree) {
+        activeTree.title = (e.target as HTMLInputElement).value;
+        const treeItemLabel = this.element.querySelector(`.dialog-tree-item[data-treeid="${activeTree.id}"] .tree-item-select div:first-child`);
+        if (treeItemLabel) {
+          treeItemLabel.textContent = `🎬 ${activeTree.title || activeTree.id}`;
+        }
+        EventBus.getInstance().emit('editor:project_updated');
+      }
+    });
+
+    this.element.querySelector('#tree-start-node-input')?.addEventListener('input', (e) => {
+      const activeTree = this.getActiveTree();
+      if (activeTree) {
+        activeTree.startNodeId = (e.target as HTMLInputElement).value.trim();
+        EventBus.getInstance().emit('editor:project_updated');
+      }
+    });
+
     this.initGlobalEvents();
   }
 
@@ -1979,17 +2000,6 @@ export class DialogEditor {
           emitUpdate();
         }
       });
-    });
-
-    // Title & Start Node edit
-    this.element.querySelector('#tree-title-input')?.addEventListener('input', (e) => {
-      tree.title = (e.target as HTMLInputElement).value;
-      emitUpdate();
-    });
-
-    this.element.querySelector('#tree-start-node-input')?.addEventListener('input', (e) => {
-      tree.startNodeId = (e.target as HTMLInputElement).value.trim();
-      emitUpdate();
     });
 
     // Make Start Node
