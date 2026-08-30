@@ -1,0 +1,13 @@
+<div class="router-branch-card" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" draggable="{{isDraggable}}" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid rgba(192, 132, 252, 0.3); padding:6px 8px; border-radius:6px; cursor:{{cursorStyle}};">
+  <div style="display:flex; gap:5px; align-items:center;">
+    <span class="choice-drag-handle" style="cursor:{{handleCursor}}; color:{{handleColor}}; font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="{{handleTitle}}">⠿</span>
+
+    <div style="flex:1;">
+      {{conditionPickerHtml}}
+    </div>
+
+    <button class="btn btn-del-choice" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Rule">✕</button>
+  </div>
+
+  <div class="node-port node-port-out" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#c084fc; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(192,132,252,0.9); z-index:10;" title="Click & Drag arrow to connect to target node"></div>
+</div>

@@ -1,0 +1,37 @@
+<div class="dialog-graph-card" data-nodeid="{{nodeId}}" style="position:absolute; left:{{posX}}px; top:{{posY}}px; width:380px; background:linear-gradient(135deg, rgba(76,29,149,0.95), rgba(30,41,59,0.96)); border:1px solid {{cardBorder}}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
+  
+  <!-- Left Input Port -->
+  <div class="node-port node-port-in" data-nodeid="{{nodeId}}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:#c084fc; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px #c084fcaa; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
+
+  <!-- Header -->
+  <div class="node-drag-handle" data-nodeid="{{nodeId}}" style="display:flex; justify-content:space-between; align-items:center; cursor:move; padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1);">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <span style="font-weight:700; color:{{headerColor}};">🔀 ROUTER: {{nodeId}}</span>
+      {{startBadgeHtml}}
+    </div>
+    <div style="display:flex; gap:4px; align-items:center;">
+      <select class="form-input node-type-select" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 4px; font-weight:700; background:rgba(0,0,0,0.5);">
+        <option value="beat">🎬 Beat</option>
+        <option value="router" selected>🔀 Router</option>
+        <option value="event_listener">⚡ Event</option>
+        <option value="action">✨ Action</option>
+      </select>
+      {{startBtnHtml}}
+      <button class="btn btn-del-node" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px; color:#ef4444;" title="Delete Node">✕</button>
+    </div>
+  </div>
+
+  <div style="background:rgba(192, 132, 252, 0.15); border:1px dashed #c084fc; border-radius:6px; padding:6px; margin-bottom:8px; font-size:0.7rem; color:#e9d5ff;">
+    ⚡ <b>Invisible Logic Router Node</b>: Evaluates outgoing conditions in order. The first matching branch is automatically selected!
+  </div>
+
+  <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span style="font-size:0.7rem; font-weight:700; color:#c084fc;">Branch Rules ({{choiceCount}}):</span>
+      <button class="btn btn-add-choice" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px;">+ Rule</button>
+    </div>
+
+    {{branchRulesListHtml}}
+  </div>
+
+</div>

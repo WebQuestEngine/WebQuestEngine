@@ -1,0 +1,7 @@
+<div class="dialog-tree-item {{activeClass}}" data-treeid="{{id}}" style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:6px; background:{{bgStyle}}; border:1px solid {{borderStyle}}; cursor:pointer; transition:all 0.15s ease;">
+  <div class="tree-item-select" data-treeid="{{id}}" style="flex:1; overflow:hidden;">
+    <div style="font-weight:{{fontWeight}}; color:{{titleColor}}; font-size:0.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🎬 {{escapedTitle}}</div>
+    <div style="font-size:0.65rem; color:var(--text-muted);">ID: {{id}} ({{nodeCount}} node{{plural}})</div>
+  </div>
+  <button class="btn btn-del-tree-item" data-treeid="{{id}}" style="padding:2px 5px; font-size:0.7rem; color:#ef4444; background:transparent; border:none; opacity:0.7; cursor:pointer;" title="Delete Sequence">🗑️</button>
+</div>

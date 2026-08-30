@@ -1,0 +1,19 @@
+<div class="choice-card" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" draggable="true" style="position:relative; background:rgba(0,0,0,0.35); border:1px solid var(--panel-border); padding:6px; border-radius:6px; cursor:grab;">
+  <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+    <span class="choice-drag-handle" style="cursor:grab; color:var(--text-muted); font-size:0.85rem; font-weight:800; user-select:none; padding-right:2px;" title="Drag & drop to re-order response">⠿</span>
+    <input type="text" class="form-input choice-text" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" value="{{text}}" placeholder="Response Text..." style="flex:1; font-size:0.75rem; font-weight:600;" />
+    <button class="btn btn-del-choice" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" style="padding:2px 5px; font-size:0.6rem; color:#ef4444;" title="Delete Response">✕</button>
+  </div>
+  
+  {{conditionPickerHtml}}
+
+  <div style="display:flex; gap:6px; align-items:center;">
+    <input type="text" class="form-input choice-voice-url" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" value="{{voiceAudioUrl}}" placeholder="🎙️ Response Voiceover URL..." style="flex:1; font-size:0.68rem;" />
+    <label class="btn btn-primary" style="padding:2px 6px; cursor:pointer;" title="Choose Audio File">
+      📁
+      <input type="file" class="choice-voice-file" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" accept="audio/*" style="display:none;" />
+    </label>
+  </div>
+  
+  <div class="node-port node-port-out" data-nodeid="{{nodeId}}" data-cidx="{{cIdx}}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#fbbf24; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(251,191,36,0.9); z-index:10;" title="Click & Drag arrow to connect to target node Input Port"></div>
+</div>

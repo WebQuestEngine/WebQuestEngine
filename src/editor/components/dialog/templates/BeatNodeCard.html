@@ -1,0 +1,80 @@
+<div class="dialog-graph-card" data-nodeid="{{nodeId}}" style="position:absolute; left:{{posX}}px; top:{{posY}}px; width:380px; background:rgba(30,41,59,0.96); border:1px solid {{cardBorder}}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
+  
+  <!-- Left Input Port -->
+  <div class="node-port node-port-in" data-nodeid="{{nodeId}}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:#38bdf8; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px #38bdf8aa; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
+
+  <!-- Header -->
+  <div class="node-drag-handle" data-nodeid="{{nodeId}}" style="display:flex; justify-content:space-between; align-items:center; cursor:move; padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1);">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <span style="font-weight:700; color:{{headerColor}};">🎬 BEAT: {{nodeId}}</span>
+      {{startBadgeHtml}}
+    </div>
+    <div style="display:flex; gap:4px; align-items:center;">
+      <select class="form-input node-type-select" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 4px; font-weight:700; background:rgba(0,0,0,0.5);">
+        <option value="beat" selected>🎬 Beat</option>
+        <option value="router">🔀 Router</option>
+        <option value="event_listener">⚡ Event</option>
+        <option value="action">✨ Action</option>
+      </select>
+      {{startBtnHtml}}
+      <button class="btn btn-del-node" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px; color:#ef4444;" title="Delete Node">✕</button>
+    </div>
+  </div>
+
+  <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; margin-bottom:8px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; position:relative;">
+      <div>
+        <label style="font-size:0.65rem; color:var(--text-muted);">🗣️ Speaker Name</label>
+        <input type="text" class="form-input node-speaker" data-nodeid="{{nodeId}}" value="{{speaker}}" placeholder="e.g. Hero, Guard, Merchant" style="width:100%; font-weight:600; font-size:0.75rem;" />
+      </div>
+      <div>
+        <label style="font-size:0.65rem; color:#f59e0b;">🎭 Speaker Talk Anim</label>
+        <input type="text" class="form-input node-speaker-anim" data-nodeid="{{nodeId}}" value="{{speakerAnimation}}" placeholder="e.g. talk, gesture" style="width:100%; font-size:0.75rem;" />
+      </div>
+    </div>
+
+    <div style="margin-bottom:6px;">
+      <label style="font-size:0.65rem; color:var(--text-muted);">💬 Spoken Dialogue Text</label>
+      <textarea class="form-input node-text" data-nodeid="{{nodeId}}" style="width:100%; height:44px; font-size:0.8rem;">{{text}}</textarea>
+    </div>
+
+    <!-- Voiceover Audio URL -->
+    <div>
+      <label style="font-size:0.65rem; color:var(--text-muted);">🎙️ Voiceover Audio File (URL)</label>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input type="text" class="form-input node-voice-url" data-nodeid="{{nodeId}}" value="{{voiceAudioUrl}}" placeholder="e.g. assets/audio/dialog_line_1.mp3" style="flex:1; font-size:0.75rem;" />
+        <label class="btn btn-primary" style="padding:4px 8px; cursor:pointer;" title="Choose Audio File">
+          📁
+          <input type="file" class="node-voice-file" data-nodeid="{{nodeId}}" accept="audio/*" style="display:none;" />
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🎭 STAGE DIRECTIVES (Multi-Actor Choreography) -->
+  <div style="background:rgba(245, 158, 11, 0.05); border:1px solid rgba(245, 158, 11, 0.2); border-radius:6px; padding:8px; margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span style="font-size:0.7rem; font-weight:700; color:#f59e0b;">🎭 STAGE DIRECTIVES ({{directivesCount}})</span>
+      <button class="btn btn-primary btn-add-directive" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px;">+ Add Directive</button>
+    </div>
+
+    {{directivesListHtml}}
+  </div>
+
+  <!-- Condition Section (Beats Only) -->
+  {{conditionPickerHtml}}
+
+  <!-- Interactivity Checkbox -->
+  {{interactivityCheckboxHtml}}
+
+  <!-- Outgoing Choices / Responses -->
+  <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; margin-top:6px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span style="font-size:0.7rem; font-weight:700; color:var(--accent-gold);">Outgoing Responses ({{choiceCount}}):</span>
+      <button class="btn btn-add-choice" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px;">+ Response</button>
+    </div>
+
+    {{choicesOrNextHtml}}
+  </div>
+
+</div>

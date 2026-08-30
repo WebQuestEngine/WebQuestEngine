@@ -1,0 +1,49 @@
+<div class="dialog-graph-card" data-nodeid="{{nodeId}}" style="position:absolute; left:{{posX}}px; top:{{posY}}px; width:380px; background:linear-gradient(135deg, rgba(6,78,59,0.95), rgba(30,41,59,0.96)); border:1px solid {{cardBorder}}; border-radius:10px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.5); font-size:0.8rem; pointer-events:auto;">
+  
+  <!-- Left Input Port -->
+  <div class="node-port node-port-in" data-nodeid="{{nodeId}}" style="position:absolute; left:-9px; top:18px; width:18px; height:18px; border-radius:50%; background:#10b981; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px #10b981aa; z-index:10;" title="Input Port: Drag an arrow from another node's output port to connect here"></div>
+
+  <!-- Header -->
+  <div class="node-drag-handle" data-nodeid="{{nodeId}}" style="display:flex; justify-content:space-between; align-items:center; cursor:move; padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1);">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <span style="font-weight:700; color:{{headerColor}};">✨ ACTION: {{nodeId}}</span>
+      {{startBadgeHtml}}
+    </div>
+    <div style="display:flex; gap:4px; align-items:center;">
+      <select class="form-input node-type-select" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 4px; font-weight:700; background:rgba(0,0,0,0.5);">
+        <option value="beat">🎬 Beat</option>
+        <option value="router">🔀 Router</option>
+        <option value="event_listener">⚡ Event</option>
+        <option value="action" selected>✨ Action</option>
+      </select>
+      {{startBtnHtml}}
+      <button class="btn btn-del-node" data-nodeid="{{nodeId}}" style="font-size:0.65rem; padding:2px 6px; color:#ef4444;" title="Delete Node">✕</button>
+    </div>
+  </div>
+
+  <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(16,185,129,0.25); border-radius:6px; padding:8px; margin-bottom:8px;">
+    <div style="margin-bottom:6px;">
+      <label style="font-size:0.65rem; color:#10b981; font-weight:700;">🎬 Action / FX Type</label>
+      <select class="form-input node-action-category" data-nodeid="{{nodeId}}" style="width:100%; font-size:0.75rem; font-weight:700; color:#10b981;">
+        <option value="screen_effect" {{catScreenSelected}}>✨ Screen Effect / Fade</option>
+        <option value="video" {{catVideoSelected}}>🎥 Video Cutscene</option>
+        <option value="camera" {{catCameraSelected}}>🎬 Camera Action</option>
+        <option value="audio" {{catAudioSelected}}>🎵 Audio / Music Cue</option>
+        <option value="delay" {{catDelaySelected}}>⏳ Timed Delay / Wait</option>
+        <option value="scene_change" {{catSceneSelected}}>🏰 Scene Transition</option>
+        <option value="mutation" {{catMutationSelected}}>📦 Inventory & State Mutation</option>
+      </select>
+    </div>
+
+    {{actionCategoryBodyHtml}}
+  </div>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.2); position:relative;">
+    <span style="font-size:0.7rem; color:#10b981; font-weight:700;">▶ On Complete:</span>
+    <span style="font-size:0.72rem; color:{{flowColor}}; font-weight:700;">
+      {{flowLabel}}
+    </span>
+    <div class="node-port node-port-out" data-nodeid="{{nodeId}}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#10b981; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(16,185,129,0.9); z-index:10;" title="▶ On Complete: Drag arrow to connect to target node"></div>
+  </div>
+
+</div>

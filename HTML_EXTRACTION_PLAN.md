@@ -150,12 +150,12 @@ export class TemplateUtils {
 - [x] Verify with `npm run build`.
 
 ### **Phase 3: Dialog & Sequence Graph Studio**
-- [ ] Extract `DialogEditorLayout.html` (toolbar overlay, viewport, zoom controls).
-- [ ] Extract individual node cards (`BeatNodeCard.html`, `RouterNodeCard.html`, `EventNodeCard.html`, `ActionNodeCard.html`).
-- [ ] Extract `StageDirectiveCard.html`, `ChoiceCard.html`, and `ConditionPicker.html`.
-- [ ] Create `NodeViews.template.ts` adapter.
-- [ ] Update `NodeViewFactory.ts` and `DialogEditor.ts` controllers.
-- [ ] Verify with `npm run build`.
+- [x] Extract `DialogEditorLayout.html` (toolbar overlay, viewport, zoom controls).
+- [x] Extract individual node cards (`BeatNodeCard.html`, `RouterNodeCard.html`, `EventNodeCard.html`, `ActionNodeCard.html`).
+- [x] Extract `StageDirectiveCard.html`, `ChoiceCard.html`, and `ConditionPicker.html`.
+- [x] Create `NodeViews.template.ts` adapter.
+- [x] Update `NodeViewFactory.ts` and `DialogEditor.ts` controllers.
+- [x] Verify with `npm run build`.
 
 ### **Phase 4: Studio Modals & Navigation Shell**
 - [ ] Extract `VisualSpritePickerModal.html` & `VisualSpritePickerModal.template.ts`.
