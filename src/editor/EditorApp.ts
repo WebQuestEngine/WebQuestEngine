@@ -269,7 +269,7 @@ export class EditorApp {
           exitBar = document.createElement('div');
           exitBar.className = 'play-mode-exit-bar';
           exitBar.innerHTML = `
-            <button class="btn btn-gold" id="btn-exit-play-bar" style="font-weight: 700;">✏️ Exit to Editor (Esc)</button>
+            <button class="btn btn-gold" id="btn-exit-play-bar" style="font-weight: 700;">✏️ Exit to Editor (Ctrl+Esc)</button>
           `;
           exitBar.querySelector('#btn-exit-play-bar')?.addEventListener('click', () => {
             EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: false });
@@ -314,7 +314,8 @@ export class EditorApp {
 
   private attachKeyboardShortcuts(): void {
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && document.body.classList.contains('play-mode-active')) {
+      // Ctrl+Escape forces an immediate exit from play mode; plain Escape toggles the in-game menu
+      if (e.key === 'Escape' && e.ctrlKey && document.body.classList.contains('play-mode-active')) {
         EventBus.getInstance().emit('editor:mode_changed', { isPlayMode: false });
         return;
       }

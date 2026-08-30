@@ -348,3 +348,24 @@ export interface ProjectData {
   initialFlags: Record<string, boolean>;
   startChapterId: string;
 }
+
+export interface SaveGameData {
+  version: string;
+  slotId: number | string;
+  saveName: string;
+  timestamp: number;
+  dateFormatted: string;
+  projectTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+  sceneId: string;
+  sceneName: string;
+  playerPos: Vector2D;
+  inventoryItemIds: string[];
+  flags: Record<string, boolean>;
+  visitedScenes: string[];
+  audioConfig?: AudioConfig;
+  uiPreset?: UIPresetType;
+  thumbnailUrl?: string;
+}
+

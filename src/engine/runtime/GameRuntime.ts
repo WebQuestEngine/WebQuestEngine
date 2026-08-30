@@ -1,5 +1,5 @@
-import { Application, Graphics, Container, FederatedPointerEvent } from 'pixi.js';
-import { ProjectData, SceneData, Vector2D, VerbType, HotspotAction, DialogNode } from '../types';
+import { Application, Graphics } from 'pixi.js';
+import { ProjectData, SceneData, Vector2D, VerbType, HotspotAction, DialogNode, SaveGameData } from '../types';
 import { Camera } from '../core/Camera';
 import { Scene } from '../scene/Scene';
 import { Character } from '../scene/Character';
@@ -14,6 +14,8 @@ export class GameRuntime {
   public currentScene: Scene | null = null;
   public containerElement: HTMLElement;
   private isDestroyed = false;
+  private isPaused = false;
+  private visitedScenes: Set<string> = new Set();
 
   private viewportMask: Graphics;
   private dialogOverlayEl: HTMLElement | null = null;
@@ -193,10 +195,47 @@ export class GameRuntime {
         }
       })
     );
+
+    // In-game menu & save/load events
+    this.unsubscribers.push(
+      EventBus.getInstance().on('game:pause', () => this.pause()),
+      EventBus.getInstance().on('game:resume', () => this.resume()),
+      EventBus.getInstance().on('game:request_save', (payload: { slotId: number | string }) => {
+        const playerPos = this.currentScene?.playerCharacter
+          ? { x: Math.round(this.currentScene.playerCharacter.container.x), y: Math.round(this.currentScene.playerCharacter.container.y) }
+          : (this.currentScene?.data.playerSpawn || { x: 100, y: 100 });
+        this.context.save.createSaveSnapshot(payload.slotId, playerPos, this.visitedScenes);
+      }),
+      EventBus.getInstance().on('game:request_load', async (saveData: SaveGameData) => {
+        await this.restoreSaveGame(saveData);
+      }),
+      EventBus.getInstance().on('game:restart_chapter', () => {
+        const currentChapter = this.context.story.getCurrentChapter();
+        if (currentChapter) {
+          this.context.story.setChapter(currentChapter.id);
+        }
+      }),
+      EventBus.getInstance().on('game:restart_all', async () => {
+        this.context.story.resetToInitialState();
+        this.context.inventory.clear();
+        const initScene = this.context.story.getCurrentScene();
+        if (initScene) {
+          await this.loadScene(initScene);
+        }
+        this.checkAndTriggerEvent('game', 'game', 'start');
+      })
+    );
   }
 
   private setupInputListeners(): void {
     const canvas = this.app.canvas;
+
+    window.addEventListener('keydown', (e) => {
+      if (this.isDestroyed) return;
+      if (e.key === 'Escape' && !this.context.dialog.isActive()) {
+        this.context.ui.toggleMenu();
+      }
+    });
 
     canvas.addEventListener('click', (e) => {
       if (this.isDestroyed) return;
@@ -258,7 +297,8 @@ export class GameRuntime {
       this.context.inventory.selectItem(null);
       this.context.ui.setActiveVerb('walk');
 
-      this.currentScene = new Scene(sceneData);
+    this.visitedScenes.add(sceneData.id);
+    this.currentScene = new Scene(sceneData);
       await this.currentScene.init(this.camera);
 
       // Position player
@@ -310,6 +350,14 @@ export class GameRuntime {
     }
   }
 
+  public pause(): void {
+    this.isPaused = true;
+  }
+
+  public resume(): void {
+    this.isPaused = false;
+  }
+
   public update(delta: number): void {
     if (this.isDestroyed || !this.currentScene || this.isLoadingScene) return;
 
@@ -318,7 +366,9 @@ export class GameRuntime {
       height: this.containerElement.clientHeight || window.innerHeight
     };
     this.camera.update();
-    this.currentScene.update(delta, this.camera);
+    if (!this.isPaused) {
+      this.currentScene.update(delta, this.camera);
+    }
 
     const vp = this.context.project.viewportSettings || { width: 1920, height: 1080, x: 0, y: 0 };
     const vpW = vp.width || 1920;
@@ -354,7 +404,7 @@ export class GameRuntime {
   }
 
   private handleCanvasClick(e: MouseEvent): void {
-    if (this.isDestroyed || !this.currentScene || this.context.dialog.isActive()) return;
+    if (this.isDestroyed || !this.currentScene || this.context.dialog.isActive() || this.isPaused || this.context.ui.isMenuOpen()) return;
     const worldPoint = this.getWorldPoint(e);
 
     const activeVerb = this.context.ui.activeVerb;
@@ -1388,6 +1438,38 @@ export class GameRuntime {
 
     // Default fallback
     onComplete();
+  }
+
+  public async restoreSaveGame(saveData: SaveGameData): Promise<void> {
+    const scene = this.context.project.scenes.find(s => s.id === saveData.sceneId);
+    if (!scene) {
+      console.warn(`[GameRuntime] Target scene ${saveData.sceneId} not found in project.`);
+      return;
+    }
+
+    if (saveData.chapterId) {
+      this.context.story.setChapter(saveData.chapterId);
+    }
+    if (saveData.flags) {
+      this.context.story.setAllFlags(saveData.flags);
+    }
+    if (saveData.inventoryItemIds) {
+      this.context.inventory.setInventory(saveData.inventoryItemIds);
+    }
+    if (saveData.visitedScenes) {
+      this.visitedScenes = new Set(saveData.visitedScenes);
+    }
+    if (saveData.uiPreset) {
+      this.context.ui.setPreset(saveData.uiPreset);
+    }
+    if (saveData.audioConfig) {
+      this.context.audio.setConfig(saveData.audioConfig);
+    }
+
+    await this.loadScene(scene, saveData.playerPos);
+
+    this.checkAndTriggerEvent('game', 'game', 'loaded');
+    EventBus.getInstance().emit('ui:notify', `📂 Loaded: ${saveData.saveName}`);
   }
 
   public destroy(): void {

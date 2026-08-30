@@ -210,7 +210,32 @@ export class StoryGraphSystem {
     return this.currentChapter;
   }
 
+  public getCurrentStoryNode(): StoryNodeData | null {
+    return this.currentStoryNode;
+  }
+
   public getStoryNodes(): StoryNodeData[] {
     return this.project ? this.project.storyNodes : [];
+  }
+
+  public getAllFlags(): Record<string, boolean> {
+    const obj: Record<string, boolean> = {};
+    for (const [k, v] of this.flags.entries()) {
+      obj[k] = v;
+    }
+    return obj;
+  }
+
+  public setAllFlags(flags: Record<string, boolean>): void {
+    this.flags.clear();
+    for (const [k, v] of Object.entries(flags)) {
+      this.flags.set(k, v);
+    }
+    EventBus.getInstance().emit('flags:reloaded', this.getAllFlags());
+  }
+
+  public resetToInitialState(): void {
+    if (!this.project) return;
+    this.loadProject(this.project);
   }
 }

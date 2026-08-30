@@ -6,6 +6,7 @@ import { InventorySystem } from '../systems/InventorySystem';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { UISystem } from '../systems/UISystem';
 import { PathfindingSystem } from '../systems/PathfindingSystem';
+import { SaveSystem } from '../systems/SaveSystem';
 
 export class RuntimeContext {
   public eventBus: EventBus;
@@ -15,6 +16,7 @@ export class RuntimeContext {
   public story: StoryGraphSystem;
   public ui: UISystem;
   public pathfinding: PathfindingSystem;
+  public save: SaveSystem;
   public project: ProjectData;
 
   constructor(project: ProjectData, uiContainerElement: HTMLElement) {
@@ -32,6 +34,7 @@ export class RuntimeContext {
     this.story = new StoryGraphSystem();
     this.ui = new UISystem();
     this.pathfinding = new PathfindingSystem();
+    this.save = new SaveSystem(project);
 
     // Initialize systems with project data
     this.story.loadProject(project);
@@ -55,9 +58,11 @@ export class RuntimeContext {
     DialogSystem.setInstance(this.dialog);
     UISystem.setInstance(this.ui);
     AudioSystem.setInstance(this.audio);
+    SaveSystem.setInstance(this.save);
 
-    // Initialize UI system in DOM container
+    // Initialize UI system in DOM container & setup menu
     this.ui.init(uiContainerElement, project.uiConfig);
+    this.ui.setMenuProject(project);
   }
 
   public destroy(): void {
@@ -73,5 +78,6 @@ export class RuntimeContext {
     DialogSystem.setInstance(null);
     UISystem.setInstance(null);
     AudioSystem.setInstance(null);
+    SaveSystem.setInstance(null);
   }
 }

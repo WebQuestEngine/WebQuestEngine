@@ -1,6 +1,7 @@
-import { UIConfig, VerbType, InventoryItemData, UIPresetType } from '../types';
+import { UIConfig, VerbType, InventoryItemData, UIPresetType, ProjectData } from '../types';
 import { EventBus } from '../core/EventBus';
 import { InventorySystem } from './InventorySystem';
+import { InGameMenuModal } from '../ui/InGameMenuModal';
 import { AssetManager } from '../core/AssetManager';
 
 export const DEFAULT_ARROW_CURSOR_URL =
@@ -36,6 +37,10 @@ export class UISystem {
   public isHoveringUI = false;
 
   public constructor() {}
+
+  public getConfig(): UIConfig {
+    return { ...this.config };
+  }
 
   public static getInstance(): UISystem {
     if (!UISystem.instance) {
@@ -189,11 +194,15 @@ export class UISystem {
   }
 
   private unsubscribers: (() => void)[] = [];
+  private menuModal: InGameMenuModal | null = null;
 
   public init(container: HTMLElement, config?: UIConfig): void {
     this.containerElement = container;
     if (config) {
       this.config = { ...this.config, ...config };
+    }
+    if (!this.menuModal) {
+      this.menuModal = new InGameMenuModal();
     }
     this.renderUI();
 
@@ -265,7 +274,8 @@ export class UISystem {
 
   private getLucasArtsHTML(): string {
     return `
-      <div class="lucas-bottom-bar">
+      <div class="lucas-bottom-bar" style="position:relative;">
+        <button class="btn-ui-menu" id="ui-menu-btn" style="position:absolute; top:8px; right:12px; z-index:20; background:rgba(0,0,0,0.6); border:1px solid rgba(251,191,36,0.5); color:#fbbf24; border-radius:4px; padding:3px 10px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Game Menu (ESC)">⚙️ Menu</button>
         <div class="verb-grid">
           <button class="verb-btn active" data-verb="walk">Walk to</button>
           <button class="verb-btn" data-verb="look">Look at</button>
@@ -297,6 +307,7 @@ export class UISystem {
           <button class="sierra-btn" data-verb="interact" title="Interact">✋ Touch</button>
           <button class="sierra-btn" data-verb="talk" title="Talk">💬 Talk</button>
           <button class="sierra-btn" id="sierra-inv-toggle" title="Inventory">🎒 Inventory</button>
+          <button class="sierra-btn" id="ui-menu-btn" style="background:rgba(251,191,36,0.15); color:#fbbf24; border-color:rgba(251,191,36,0.4);" title="Game Menu (ESC)">⚙️ Menu</button>
         </div>
         <div class="action-sentence" id="ui-action-sentence">Walk to</div>
       </div>
@@ -318,6 +329,7 @@ export class UISystem {
         <button class="coin-btn" data-verb="talk" title="Talk">💬</button>
       </div>
       <button class="floating-inv-btn" id="ui-floating-inv">🎒 Inventory</button>
+      <button class="floating-menu-btn" id="ui-menu-btn" style="position:fixed; top:12px; right:12px; z-index:100; background:rgba(15,23,42,0.85); border:1px solid rgba(251,191,36,0.4); color:#fbbf24; padding:5px 12px; border-radius:20px; font-size:0.75rem; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.5);" title="Game Menu (ESC)">⚙️ Menu</button>
       <div class="action-sentence floating" id="ui-action-sentence">Walk to</div>
       <div class="inventory-drawer hidden" id="ui-inventory-modal">
         <div class="inventory-drawer-header">
@@ -336,6 +348,7 @@ export class UISystem {
         <button class="verb-btn" data-verb="look" title="Look">👁️ Look</button>
         <button class="verb-btn" data-verb="interact" title="Interact/Use">✋ Use</button>
         <button class="verb-btn" data-verb="talk" title="Talk">💬 Talk</button>
+        <button class="verb-btn" id="ui-menu-btn" style="background:rgba(251,191,36,0.15); color:#fbbf24; border-color:rgba(251,191,36,0.4); margin-left:6px;" title="Game Menu (ESC)">⚙️ Menu</button>
       </div>
 
       <div class="direct-inv-dock">
@@ -397,6 +410,34 @@ export class UISystem {
         invModal.classList.add('hidden');
       });
     }
+
+    // Menu toggle button
+    overlay.querySelectorAll('#ui-menu-btn, .btn-ui-menu, .floating-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleMenu();
+      });
+    });
+  }
+
+  public openMenu(): void {
+    this.menuModal?.open();
+  }
+
+  public closeMenu(): void {
+    this.menuModal?.close();
+  }
+
+  public toggleMenu(): void {
+    this.menuModal?.toggle();
+  }
+
+  public isMenuOpen(): boolean {
+    return this.menuModal?.isMenuOpen() || false;
+  }
+
+  public setMenuProject(project: ProjectData): void {
+    this.menuModal?.setProject(project);
   }
 
   public showContextCoin(x: number, y: number): void {

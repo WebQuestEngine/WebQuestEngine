@@ -93,4 +93,15 @@ export class InventorySystem {
     this.selectedItemId = null;
     EventBus.getInstance().emit('inventory:updated', []);
   }
+
+  public setInventory(itemIds: string[]): void {
+    this.playerInventory.clear();
+    this.selectedItemId = null;
+    for (const id of itemIds) {
+      if (this.items.has(id)) {
+        this.playerInventory.add(id);
+      }
+    }
+    EventBus.getInstance().emit('inventory:updated', this.getItems());
+  }
 }
