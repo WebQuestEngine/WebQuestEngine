@@ -1,6 +1,49 @@
 import { defineConfig, Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
+
+function getCommitHash(): string {
+  if (process.env.GITHUB_SHA) {
+    return process.env.GITHUB_SHA.substring(0, 7);
+  }
+  if (process.env.GIT_COMMIT_HASH) {
+    return process.env.GIT_COMMIT_HASH.substring(0, 7);
+  }
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    return 'dev';
+  }
+}
+
+function versionPlugin(): Plugin {
+  const commitHash = getCommitHash();
+  const versionStr = `v2.0-${commitHash}`;
+
+  return {
+    name: 'vite-plugin-version',
+    transformIndexHtml(html) {
+      return html
+        .replace(/__COMMIT_HASH__/g, commitHash)
+        .replace(/__APP_VERSION__/g, versionStr)
+        .replace(/\[v2\.0-[a-zA-Z0-9_-]+\]/g, `[${versionStr}]`)
+        .replace(/\[v2\.0\s+[^\]]+\]/g, `[${versionStr}]`);
+    },
+    transform(code, id) {
+      if (id.endsWith('Toolbar.html') || id.includes('Toolbar.html?raw')) {
+        return {
+          code: code
+            .replace(/__COMMIT_HASH__/g, commitHash)
+            .replace(/__APP_VERSION__/g, versionStr)
+            .replace(/v2\.0\s*\([a-zA-Z0-9_-]+\)/g, `v2.0 (${commitHash})`)
+            .replace(/v2\.0-[a-zA-Z0-9_-]+/g, versionStr),
+          map: null
+        };
+      }
+    }
+  };
+}
 
 function localSavePlugin(): Plugin {
   return {
@@ -36,7 +79,11 @@ function localSavePlugin(): Plugin {
 export default defineConfig({
   base: './',
   publicDir: 'demo',
-  plugins: [localSavePlugin()],
+  plugins: [versionPlugin(), localSavePlugin()],
+  define: {
+    __COMMIT_HASH__: JSON.stringify(getCommitHash()),
+    __APP_VERSION__: JSON.stringify(`v2.0-${getCommitHash()}`)
+  },
   server: {
     port: 3000,
     open: false,
