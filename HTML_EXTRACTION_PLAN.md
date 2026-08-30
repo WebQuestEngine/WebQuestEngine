@@ -158,11 +158,11 @@ export class TemplateUtils {
 - [x] Verify with `npm run build`.
 
 ### **Phase 4: Studio Modals & Navigation Shell**
-- [ ] Extract `VisualSpritePickerModal.html` & `VisualSpritePickerModal.template.ts`.
-- [ ] Extract `ProjectHubModal.html` & `ProjectHubModal.template.ts`.
-- [ ] Extract `Toolbar.html` & `Toolbar.template.ts`.
-- [ ] Extract `ProjectTreeView.html` & `ProjectTreeView.template.ts`.
-- [ ] Verify with `npm run build`.
+- [x] Extract `VisualSpritePickerModal.html` & `VisualSpritePickerModal.template.ts`.
+- [x] Extract `ProjectHubModal.html` & `ProjectHubModal.template.ts`.
+- [x] Extract `Toolbar.html` & `Toolbar.template.ts`.
+- [x] Extract `ProjectTreeView.html` & `ProjectTreeView.template.ts`.
+- [x] Verify with `npm run build`.
 
 ### **Phase 5: Verification & Full Regression Testing**
 - [ ] Run `npm run build` to ensure 0 TypeScript or bundling errors.

@@ -1,5 +1,6 @@
 import { ProjectData, SceneData, CharacterData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
+import { ProjectTreeViewTemplate } from './templates/ProjectTreeView.template';
 
 export interface SelectionTarget {
   type: 'project' | 'chapter' | 'scene' | 'walkpath' | 'layer' | 'hotspot' | 'character' | 'item';
@@ -92,25 +93,7 @@ export class ProjectTreeView {
   }
 
   private render(): void {
-    this.element.innerHTML = `
-      <div class="tree-header" style="display:flex; flex-direction:column; gap:6px; align-items:stretch; padding:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:700; font-family:var(--font-heading);">📖 Quest Hierarchy</span>
-          <button class="btn" id="btn-collapse-all" style="font-size:0.65rem; padding:2px 6px;">Collapse</button>
-        </div>
-        
-        <!-- Top Action Toolbar -->
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:4px;">
-          <button class="btn btn-primary" id="btn-tree-add-ch" style="font-size:0.65rem; padding:4px 2px;" title="Add New Chapter">+ Chapter</button>
-          <button class="btn btn-primary" id="btn-tree-add-sc" style="font-size:0.65rem; padding:4px 2px;" title="Add New Scene">+ Scene</button>
-          <button class="btn btn-primary" id="btn-tree-add-obj" style="font-size:0.65rem; padding:4px 2px;" title="Add Interactive Object">+ Object</button>
-          <button class="btn btn-primary" id="btn-tree-add-layer" style="font-size:0.65rem; padding:4px 2px;" title="Add Background Layer">+ Layer</button>
-          <button class="btn btn-primary" id="btn-tree-add-char" style="font-size:0.65rem; padding:4px 2px;" title="Add NPC Character">+ NPC</button>
-          <button class="btn btn-primary" id="btn-tree-add-item" style="font-size:0.65rem; padding:4px 2px;" title="Add Quest Item">+ Item</button>
-        </div>
-      </div>
-      <div class="tree-content" id="tree-root-container"></div>
-    `;
+    this.element.innerHTML = ProjectTreeViewTemplate.renderLayout();
 
     this.element.querySelector('#btn-tree-add-ch')?.addEventListener('click', () => this.addChapter());
     this.element.querySelector('#btn-tree-add-sc')?.addEventListener('click', () => this.addScene());
@@ -202,15 +185,7 @@ export class ProjectTreeView {
 
   private renderLockBtn(type: string, id?: string, sceneId?: string): string {
     const locked = this.isNodeLocked(type, id, sceneId);
-    return `
-      <span class="tree-lock-btn ${locked ? 'locked' : ''}"
-            data-locktype="${type}"
-            data-lockid="${id || ''}"
-            data-locksceneid="${sceneId || ''}"
-            title="${locked ? 'Locked (Click to Unlock)' : 'Unlocked (Click to Lock)'}">
-        ${locked ? '🔒' : '🔓'}
-      </span>
-    `;
+    return ProjectTreeViewTemplate.renderLockBtn(locked, type, id, sceneId);
   }
 
   public toggleLock(type: string, id?: string, sceneId?: string): void {
@@ -330,242 +305,14 @@ export class ProjectTreeView {
     const container = this.element.querySelector('#tree-root-container');
     if (!container || !this.project) return;
 
-    let html = '';
-
-    for (const ch of this.project.chapters) {
-      const chKey = `chapter_${ch.id}`;
-      const isChCollapsed = this.collapsedNodes.has(chKey);
-
-      html += `
-        <div class="tree-group">
-          <div class="tree-item ${this.selectedNodeId === chKey ? 'selected' : ''}" data-nodeid="${chKey}" data-type="chapter" data-id="${ch.id}">
-            <span class="tree-toggler" data-key="${chKey}">${isChCollapsed ? '▶' : '▼'}</span>
-            <span style="flex:1;">📖 ${ch.title}</span>
-            ${this.renderLockBtn('chapter', ch.id)}
-          </div>
-
-          ${!isChCollapsed ? `
-            <div class="tree-children">
-              <!-- SCENES FOLDER -->
-              ${this.renderScenesFolder(ch.id)}
-
-              <!-- CHARACTERS FOLDER -->
-              ${this.renderCharactersFolder(ch.id)}
-
-              <!-- ITEMS FOLDER -->
-              ${this.renderItemsFolder(ch.id)}
-            </div>
-          ` : ''}
-        </div>
-      `;
-    }
-
-    container.innerHTML = html;
-    this.attachEvents();
-  }
-
-  private renderScenesFolder(chapterId: string): string {
-    if (!this.project) return '';
-    const folderKey = `scenes_folder_${chapterId}`;
-    const isCollapsed = this.collapsedNodes.has(folderKey);
-
-    let html = `
-      <div class="tree-group tree-node">
-        <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="scenes_folder">
-          <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span>📂 Scenes (${this.project.scenes.length})</span>
-        </div>
-
-        ${!isCollapsed ? `
-          <div class="tree-children">
-            ${this.project.scenes.map(sc => {
-      const scKey = `scene_${sc.id}`;
-      const wpKey = `walkpath_${sc.id}`;
-      const isScCollapsed = this.collapsedNodes.has(scKey);
-      return `
-                <div class="tree-group tree-node">
-                  <div class="tree-item ${this.selectedNodeId === scKey ? 'selected' : ''}" data-nodeid="${scKey}" data-type="scene" data-id="${sc.id}">
-                    <span class="tree-toggler" data-key="${scKey}">${isScCollapsed ? '▶' : '▼'}</span>
-                    <span style="flex:1;">🎬 ${sc.name}</span>
-                    ${this.renderLockBtn('scene', sc.id)}
-                  </div>
-
-                  ${!isScCollapsed ? `
-                    <div class="tree-children">
-                      <!-- 1. Layers Folder (Parallax Layers) -->
-                      ${this.renderBackgroundFolder(sc)}
-
-                      <!-- 2. Objects Folder (Interactive Hotspots) -->
-                      ${this.renderObjectsFolder(sc)}
-
-                      <!-- 3. WalkPath Polygon Node -->
-                      <div class="tree-item tree-node ${this.selectedNodeId === wpKey ? 'selected' : ''}" data-nodeid="${wpKey}" data-type="walkpath" data-sceneid="${sc.id}">
-                        <span style="flex:1;">🚶 WalkPath Polygon</span>
-                        ${this.renderLockBtn('walkpath', undefined, sc.id)}
-                      </div>
-                    </div>
-                  ` : ''}
-                </div>
-              `;
-    }).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-    return html;
-  }
-
-  private renderBackgroundFolder(scene: SceneData): string {
-    const folderKey = `background_folder_${scene.id}`;
-    const isCollapsed = this.collapsedNodes.has(folderKey);
-
-    let html = `
-      <div class="tree-group tree-node">
-        <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="background_folder" data-sceneid="${scene.id}">
-          <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Layers (${scene.layers.length})</span>
-          ${this.renderLockBtn('background_folder', undefined, scene.id)}
-        </div>
-
-        ${!isCollapsed ? `
-          <div class="tree-children">
-            ${scene.layers.map((l, lIdx) => {
-              const lKey = `layer_${l.id}`;
-              return `
-                <div class="tree-item tree-node layer-tree-node ${this.selectedNodeId === lKey ? 'selected' : ''}"
-                     draggable="true"
-                     data-nodeid="${lKey}"
-                     data-type="layer"
-                     data-id="${l.id}"
-                     data-sceneid="${scene.id}"
-                     data-idx="${lIdx}">
-                  <span style="flex:1;">🖼️ ${l.name}</span>
-                  ${this.renderLockBtn('layer', l.id, scene.id)}
-                  <span class="tree-layer-actions">
-                    <button class="tree-action-btn btn-tree-layer-up" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Backwards">⬆️</button>
-                    <button class="tree-action-btn btn-tree-layer-down" data-sceneid="${scene.id}" data-id="${l.id}" title="Move Forwards">⬇️</button>
-                    <button class="tree-action-btn btn-tree-layer-dup" data-sceneid="${scene.id}" data-id="${l.id}" title="Duplicate Layer">📋</button>
-                  </span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-    return html;
-  }
-
-  private renderObjectsFolder(scene: SceneData): string {
-    const folderKey = `objects_folder_${scene.id}`;
-    const isCollapsed = this.collapsedNodes.has(folderKey);
-
-    let html = `
-      <div class="tree-group tree-node">
-        <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="objects_folder" data-sceneid="${scene.id}">
-          <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Objects (${scene.hotspots.length})</span>
-          ${this.renderLockBtn('objects_folder', undefined, scene.id)}
-        </div>
-
-        ${!isCollapsed ? `
-          <div class="tree-children">
-            ${scene.hotspots.map(hs => {
-      const hsKey = `hotspot_${hs.id}`;
-      return `
-                <div class="tree-item tree-node ${this.selectedNodeId === hsKey ? 'selected' : ''}" data-nodeid="${hsKey}" data-type="hotspot" data-id="${hs.id}" data-sceneid="${scene.id}">
-                  <span style="flex:1;">🎯 ${hs.name}</span>
-                  ${this.renderLockBtn('hotspot', hs.id, scene.id)}
-                </div>
-              `;
-    }).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-    return html;
-  }
-
-  private renderCharactersFolder(chapterId: string): string {
-    if (!this.project) return '';
-    const folderKey = `characters_folder_${chapterId}`;
-    const isCollapsed = this.collapsedNodes.has(folderKey);
-
-    const seenCharIds = new Set<string>();
-    const allChars: { id: string; name: string; sceneId: string }[] = [];
-
-    const currentScene = (window as any).engine?.currentScene;
-    if (currentScene) {
-      currentScene.data.characters.forEach((c: CharacterData) => {
-        if (!seenCharIds.has(c.id)) {
-          seenCharIds.add(c.id);
-          allChars.push({ id: c.id, name: c.name, sceneId: currentScene.data.id });
-        }
-      });
-    }
-
-    this.project.scenes.forEach(sc => {
-      sc.characters.forEach((c: CharacterData) => {
-        if (!seenCharIds.has(c.id)) {
-          seenCharIds.add(c.id);
-          allChars.push({ id: c.id, name: c.name, sceneId: sc.id });
-        }
-      });
+    container.innerHTML = ProjectTreeViewTemplate.renderTreeContent({
+      project: this.project,
+      selectedNodeId: this.selectedNodeId,
+      collapsedNodes: this.collapsedNodes,
+      isNodeLocked: (type, id, sceneId) => this.isNodeLocked(type, id, sceneId),
     });
 
-    let html = `
-      <div class="tree-group tree-node">
-        <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="characters_folder">
-          <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Characters (${allChars.length})</span>
-          ${this.renderLockBtn('characters_folder', undefined, chapterId)}
-        </div>
-
-        ${!isCollapsed ? `
-          <div class="tree-children">
-            ${allChars.map(c => {
-      const cKey = `character_${c.id}`;
-      return `
-                <div class="tree-item tree-node ${this.selectedNodeId === cKey ? 'selected' : ''}" data-nodeid="${cKey}" data-type="character" data-id="${c.id}" data-sceneid="${c.sceneId}">
-                  <span style="flex:1;">👤 ${c.name}</span>
-                  ${this.renderLockBtn('character', c.id, c.sceneId)}
-                </div>
-              `;
-    }).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-    return html;
-  }
-
-  private renderItemsFolder(chapterId: string): string {
-    if (!this.project) return '';
-    const folderKey = `items_folder_${chapterId}`;
-    const isCollapsed = this.collapsedNodes.has(folderKey);
-
-    let html = `
-      <div class="tree-group tree-node">
-        <div class="tree-item ${this.selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="items_folder">
-          <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span>📂 Items (${this.project.items.length})</span>
-        </div>
-
-        ${!isCollapsed ? `
-          <div class="tree-children">
-            ${this.project.items.map(item => {
-      const itemKey = `item_${item.id}`;
-      return `
-                <div class="tree-item tree-node ${this.selectedNodeId === itemKey ? 'selected' : ''}" data-nodeid="${itemKey}" data-type="item" data-id="${item.id}">
-                  <span>🎒 ${item.name}</span>
-                </div>
-              `;
-    }).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-    return html;
+    this.attachEvents();
   }
 
   public addChapter(): void {
@@ -861,63 +608,7 @@ export class ProjectTreeView {
     menu.style.left = `${e.clientX}px`;
     menu.style.top = `${e.clientY}px`;
 
-    let itemsHTML = '';
-
-    if (type === 'chapter') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="add-scene">➕ Add Scene</div>
-        <div class="tree-context-menu-divider"></div>
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Chapter</div>
-      `;
-    } else if (type === 'scene') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="dup-scene">📋 Duplicate Scene</div>
-        <div class="tree-context-menu-item" data-action="add-obj">🎯 Add Object</div>
-        <div class="tree-context-menu-item" data-action="add-layer">🖼️ Add Layer</div>
-        <div class="tree-context-menu-divider"></div>
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Scene</div>
-      `;
-    } else if (type === 'background_folder') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="add-layer">🖼️ Add Parallax Layer</div>
-      `;
-    } else if (type === 'layer') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="move-layer-up">⬆️ Move Backwards (Behind)</div>
-        <div class="tree-context-menu-item" data-action="move-layer-down">⬇️ Move Forwards (In Front)</div>
-        <div class="tree-context-menu-item" data-action="dup-layer">📋 Duplicate Layer</div>
-        <div class="tree-context-menu-divider"></div>
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Layer</div>
-      `;
-    } else if (type === 'objects_folder') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="add-obj">🎯 Add Interactive Object</div>
-      `;
-    } else if (type === 'hotspot') {
-      itemsHTML += `
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Object</div>
-      `;
-    } else if (type === 'characters_folder') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="add-char">👤 Add Character (NPC)</div>
-      `;
-    } else if (type === 'character') {
-      itemsHTML += `
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Character</div>
-      `;
-    } else if (type === 'items_folder') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="add-item">🎒 Add Quest Item</div>
-      `;
-    } else if (type === 'item') {
-      itemsHTML += `
-        <div class="tree-context-menu-item danger" data-action="del-node">🗑️ Delete Item</div>
-      `;
-    } else if (type === 'walkpath') {
-      itemsHTML += `
-        <div class="tree-context-menu-item" data-action="draw-wp-scratch">✏️ Redraw WalkPath From Scratch</div>
-      `;
-    }
+    const itemsHTML = ProjectTreeViewTemplate.renderContextMenuItems(type);
 
     if (!itemsHTML) return;
 

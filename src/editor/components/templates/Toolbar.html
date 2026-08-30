@@ -1,0 +1,40 @@
+<div class="brand-title">
+  <span class="brand-icon">🏰</span>
+  <span>QuestForge 2D</span>
+  <span class="version-badge">v2.0 (Decoupled)</span>
+</div>
+
+<div class="toolbar-group">
+  <button class="btn btn-gold" id="btn-play-toggle">
+    <span id="play-icon">▶</span>
+    <span id="play-text">Play Test</span>
+  </button>
+  <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+  <button class="btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
+  <button class="btn" id="btn-redo" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>↪️ Redo</button>
+  <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+  <button class="btn btn-gold" id="btn-new-project" title="Create a new quest or open Project Hub">✨ New</button>
+  <button class="btn" id="btn-open-file" title="Open Local Project JSON (HTML5 File Access API)">📂 Open</button>
+  <button class="btn" id="btn-save-file" title="Save Project JSON (Ctrl+S or Shift+Click for Save As)">💾 Save</button>
+  <button class="btn" id="btn-save-as-file" title="Save Project JSON As... (Ctrl+Shift+S)">💾 Save As...</button>
+  <button class="btn" id="btn-project-settings" title="Project & Custom Cursors Settings">⚙️ Settings</button>
+</div>
+
+<div class="toolbar-group">
+  <select class="form-select" id="select-viewport-preset" style="width: 145px;" title="Game Aspect Ratio / Viewport Preset">
+    <option value="16:9">📺 16:9 (Widescreen)</option>
+    <option value="4:3">📺 4:3 (Retro Sierra)</option>
+    <option value="16:10">📺 16:10 (Display)</option>
+    <option value="21:9">📺 21:9 (Ultrawide)</option>
+    <option value="1:1">📺 1:1 (Square)</option>
+    <option value="custom">📺 Custom Bounds</option>
+  </select>
+  <select class="form-select" id="select-ui-preset" style="width: 140px;">
+    <option value="lucasarts">LucasArts UI</option>
+    <option value="sierra">Sierra UI</option>
+    <option value="context_coin">Context Coin UI</option>
+    <option value="direct_cursor">Direct Cursor UI</option>
+  </select>
+  <button class="btn" id="btn-story-graph">🕸️ Story Graph</button>
+  <button class="btn" id="btn-dialog-tree">💬 Dialogs</button>
+</div>

@@ -1,0 +1,42 @@
+<div class="modal-window project-hub-window" id="project-hub-window">
+  <!-- Modal Header -->
+  <div class="project-hub-header">
+    <div class="project-hub-title-box">
+      <span class="hub-logo-icon">🏰</span>
+      <div>
+        <div class="hub-title">QuestForge 2D Project Hub</div>
+        <div class="hub-subtitle">Start a new adventure, open saved files, or resume recent quests</div>
+      </div>
+    </div>
+    <button class="hub-close-btn" id="btn-hub-close" title="Close (Esc)">✕</button>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="project-hub-nav">
+    <button class="hub-nav-tab {{tabNewActive}}" data-tab="new">
+      ✨ Create New Quest
+    </button>
+    <button class="hub-nav-tab {{tabOpenActive}}" data-tab="open">
+      📂 Open & Samples
+    </button>
+    <button class="hub-nav-tab {{tabRecentsActive}}" data-tab="recents">
+      🕒 Recent Projects <span class="hub-badge">{{recentsCount}}</span>
+    </button>
+  </div>
+
+  <!-- Tab Content Area -->
+  <div class="project-hub-body">
+    {{tabContentHtml}}
+  </div>
+
+  <!-- Modal Footer Bar -->
+  <div class="project-hub-footer">
+    <label class="hub-checkbox-label">
+      <input type="checkbox" id="chk-suppress-startup" {{suppressChecked}} />
+      <span>Don't show this on startup</span>
+    </label>
+    <div class="hub-footer-buttons">
+      {{footerButtonsHtml}}
+    </div>
+  </div>
+</div>
