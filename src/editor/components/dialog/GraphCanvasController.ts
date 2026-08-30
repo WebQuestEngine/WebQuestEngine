@@ -1,6 +1,7 @@
 import { Vector2D, DialogTree } from '../../../engine/types';
 import { EventBus } from '../../../engine/core/EventBus';
 import { GraphWireRenderer } from './GraphWireRenderer';
+import { ZoomWidget } from '../ZoomWidget';
 
 export interface CanvasControllerCallbacks {
   getActiveTree: () => DialogTree | null;
@@ -11,6 +12,7 @@ export interface CanvasControllerCallbacks {
 export class GraphCanvasController {
   private element: HTMLElement;
   private callbacks: CanvasControllerCallbacks;
+  private zoomWidget: ZoomWidget | null = null;
 
   public panOffset: Vector2D = { x: 0, y: 0 };
   public zoomLevel: number = 1.0;
@@ -37,6 +39,11 @@ export class GraphCanvasController {
   constructor(element: HTMLElement, callbacks: CanvasControllerCallbacks) {
     this.element = element;
     this.callbacks = callbacks;
+  }
+
+  public setZoomWidget(zoomWidget: ZoomWidget): void {
+    this.zoomWidget = zoomWidget;
+    this.zoomWidget.setZoom(this.zoomLevel);
   }
 
   public initGlobalEvents(): void {
@@ -351,15 +358,93 @@ export class GraphCanvasController {
     return null;
   }
 
+  public zoomIn(): void {
+    this.zoomLevel = Math.min(2.5, this.zoomLevel * 1.15);
+    this.updateTransform();
+    this.reRenderWires();
+  }
+
+  public zoomOut(): void {
+    this.zoomLevel = Math.max(0.2, this.zoomLevel / 1.15);
+    this.updateTransform();
+    this.reRenderWires();
+  }
+
+  public resetZoom(): void {
+    this.zoomLevel = 1.0;
+    this.panOffset = { x: 0, y: 0 };
+    this.updateTransform();
+    this.reRenderWires();
+  }
+
+  public fitToNodes(): void {
+    const tree = this.callbacks.getActiveTree();
+    const viewport = this.element.querySelector('#dialog-nodes-viewport') as HTMLElement;
+    if (!tree || !viewport) {
+      this.resetZoom();
+      return;
+    }
+
+    const nodes = Object.values(tree.nodes);
+    if (nodes.length === 0) {
+      this.resetZoom();
+      return;
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const node of nodes) {
+      const pos = node.position || { x: 0, y: 0 };
+      minX = Math.min(minX, pos.x);
+      maxX = Math.max(maxX, pos.x + 360);
+      minY = Math.min(minY, pos.y);
+      maxY = Math.max(maxY, pos.y + 240);
+    }
+
+    const graphW = Math.max(100, maxX - minX);
+    const graphH = Math.max(100, maxY - minY);
+    const vpW = viewport.clientWidth || 800;
+    const vpH = viewport.clientHeight || 600;
+
+    const pad = 60;
+    const scaleX = (vpW - pad * 2) / graphW;
+    const scaleY = (vpH - pad * 2) / graphH;
+    const newZoom = Math.max(0.2, Math.min(1.5, Math.min(scaleX, scaleY)));
+
+    this.zoomLevel = newZoom;
+    this.panOffset.x = (vpW - graphW * newZoom) / 2 - minX * newZoom;
+    this.panOffset.y = (vpH - graphH * newZoom) / 2 - minY * newZoom;
+
+    this.updateTransform();
+    this.reRenderWires();
+  }
+
+  public reRenderWires(): void {
+    const tree = this.callbacks.getActiveTree();
+    const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
+    const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
+    if (tree && svgEl && transformLayer) {
+      GraphWireRenderer.renderConnectionLines({
+        tree,
+        svgEl,
+        transformLayer,
+        zoomLevel: this.zoomLevel,
+        isWiring: this.isWiring,
+        tempWirePath: this.tempWirePath,
+        onWireDeleted: this.callbacks.onReRenderTree
+      });
+    }
+  }
+
   public updateTransform(): void {
     const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
-    const zoomLabel = this.element.querySelector('#dialog-zoom-label');
     if (transformLayer) {
       transformLayer.style.transform = `translate(${this.panOffset.x}px, ${this.panOffset.y}px) scale(${this.zoomLevel})`;
     }
-    if (zoomLabel) {
-      zoomLabel.textContent = `${Math.round(this.zoomLevel * 100)}%`;
-    }
+    this.zoomWidget?.setZoom(this.zoomLevel);
   }
 
   public attachCanvasInteractions(tree: DialogTree): void {

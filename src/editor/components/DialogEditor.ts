@@ -5,12 +5,14 @@ import { GraphWireRenderer } from './dialog/GraphWireRenderer';
 import { GraphCanvasController } from './dialog/GraphCanvasController';
 import { NodeViewFactory } from './dialog/nodes/NodeViewFactory';
 import { DialogEditorTemplate } from './dialog/templates/NodeViews.template';
+import { ZoomWidget } from './ZoomWidget';
 
 export class DialogEditor {
   public element: HTMLElement;
   private project: ProjectData | null = null;
   private selectedTreeId: string | null = null;
   private canvasController: GraphCanvasController;
+  private zoomWidget: ZoomWidget;
 
   constructor() {
     this.element = document.createElement('div');
@@ -21,6 +23,15 @@ export class DialogEditor {
       onUpdate: () => EventBus.getInstance().emit('editor:project_updated'),
       onReRenderTree: () => this.renderTree()
     });
+
+    this.zoomWidget = new ZoomWidget({
+      onZoomIn: () => this.canvasController.zoomIn(),
+      onZoomOut: () => this.canvasController.zoomOut(),
+      onReset: () => this.canvasController.resetZoom(),
+      onFit: () => this.canvasController.fitToNodes(),
+      initialZoom: this.canvasController.zoomLevel
+    });
+    this.canvasController.setZoomWidget(this.zoomWidget);
 
     this.render();
 
@@ -97,6 +108,7 @@ export class DialogEditor {
 
   private render(): void {
     this.element.innerHTML = DialogEditorTemplate.renderLayout();
+    this.element.querySelector('#dialog-nodes-viewport')?.appendChild(this.zoomWidget.element);
 
     this.element.querySelector('#btn-close-dialog-editor')?.addEventListener('click', () => {
       this.hide();
@@ -220,65 +232,6 @@ export class DialogEditor {
 
       this.renderTree();
       EventBus.getInstance().emit('editor:project_updated');
-    });
-
-    // Zoom Buttons
-    this.element.querySelector('#btn-zoom-in')?.addEventListener('click', () => {
-      this.canvasController.zoomLevel = Math.min(2.5, this.canvasController.zoomLevel * 1.15);
-      this.canvasController.updateTransform();
-      const tree = this.getActiveTree();
-      const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
-      const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
-      if (tree && svgEl && transformLayer) {
-        GraphWireRenderer.renderConnectionLines({
-          tree,
-          svgEl,
-          transformLayer,
-          zoomLevel: this.canvasController.zoomLevel,
-          isWiring: this.canvasController.isWiring,
-          tempWirePath: this.canvasController.tempWirePath,
-          onWireDeleted: () => this.renderTree()
-        });
-      }
-    });
-
-    this.element.querySelector('#btn-zoom-out')?.addEventListener('click', () => {
-      this.canvasController.zoomLevel = Math.max(0.2, this.canvasController.zoomLevel / 1.15);
-      this.canvasController.updateTransform();
-      const tree = this.getActiveTree();
-      const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
-      const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
-      if (tree && svgEl && transformLayer) {
-        GraphWireRenderer.renderConnectionLines({
-          tree,
-          svgEl,
-          transformLayer,
-          zoomLevel: this.canvasController.zoomLevel,
-          isWiring: this.canvasController.isWiring,
-          tempWirePath: this.canvasController.tempWirePath,
-          onWireDeleted: () => this.renderTree()
-        });
-      }
-    });
-
-    this.element.querySelector('#btn-reset-view')?.addEventListener('click', () => {
-      this.canvasController.zoomLevel = 1.0;
-      this.canvasController.panOffset = { x: 0, y: 0 };
-      this.canvasController.updateTransform();
-      const tree = this.getActiveTree();
-      const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
-      const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;
-      if (tree && svgEl && transformLayer) {
-        GraphWireRenderer.renderConnectionLines({
-          tree,
-          svgEl,
-          transformLayer,
-          zoomLevel: this.canvasController.zoomLevel,
-          isWiring: this.canvasController.isWiring,
-          tempWirePath: this.canvasController.tempWirePath,
-          onWireDeleted: () => this.renderTree()
-        });
-      }
     });
 
     // Sequence title & start node inputs
