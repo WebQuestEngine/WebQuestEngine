@@ -279,9 +279,14 @@ body {
   justify-content: space-between;
   align-items: center;
   background: rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .tree-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: hidden;
   padding: 8px 6px;
   font-size: 0.8rem;
 }

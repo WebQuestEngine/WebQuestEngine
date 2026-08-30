@@ -5,6 +5,15 @@ export interface CursorHotspotResult {
   hotspotY: number;
 }
 
+export interface CursorHotspotParams {
+  verb: string;
+  cursorUrl: string;
+  initialHotspotX?: number;
+  initialHotspotY?: number;
+  onSave: (result: CursorHotspotResult) => void;
+  onCancel?: () => void;
+}
+
 export class VisualCursorHotspotModal {
   private overlay: HTMLElement;
   private cursorName: string;
@@ -22,6 +31,16 @@ export class VisualCursorHotspotModal {
   private isDestroyed: boolean = false;
 
   private readonly MAX_BOX_SIZE = 512;
+
+  public static open(params: CursorHotspotParams): VisualCursorHotspotModal {
+    return new VisualCursorHotspotModal(
+      params.verb,
+      params.cursorUrl,
+      { x: params.initialHotspotX ?? 0, y: params.initialHotspotY ?? 0 },
+      params.onSave,
+      params.onCancel
+    );
+  }
 
   constructor(
     cursorName: string,
