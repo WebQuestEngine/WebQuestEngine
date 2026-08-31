@@ -24,8 +24,9 @@ export class VisualSpritePickerModal {
     let gridH = char.frameHeight || 64;
     let gridOffsetX = char.gridOffsetX || 0;
     let gridOffsetY = char.gridOffsetY || 0;
-    let showGridOverlay = true;
-    let snapToGrid = true;
+    // Grid overlay removed per new requirements
+    let showGridOverlay = false;
+    let snapToGrid = false; // snapping disabled as frames are uniform
     let currentZoom = 1; // 1 = 100%, 2 = 200%, 4 = 400%
     let selectedFrameIndex = rawFrames.length > 0 ? 0 : -1;
 
@@ -53,22 +54,33 @@ export class VisualSpritePickerModal {
 
     const sheetImg = overlay.querySelector('#picker-sheet-img') as HTMLImageElement;
     const zoomWrapper = overlay.querySelector('#picker-zoom-wrapper') as HTMLElement;
+    const gridContainer = overlay.querySelector('.sprite-picker-grid-container') as HTMLElement;
     const gridOverlay = overlay.querySelector('#picker-grid-overlay') as HTMLElement;
     const framesListEl = overlay.querySelector('#picker-frames-list') as HTMLElement;
     const previewCanvas = overlay.querySelector('#picker-preview-canvas') as HTMLCanvasElement;
     const ctx = previewCanvas?.getContext('2d');
 
-    const inputGridW = overlay.querySelector('#input-grid-w') as HTMLInputElement;
-    const inputGridH = overlay.querySelector('#input-grid-h') as HTMLInputElement;
-    const inputGridOffX = overlay.querySelector('#input-grid-off-x') as HTMLInputElement;
-    const inputGridOffY = overlay.querySelector('#input-grid-off-y') as HTMLInputElement;
-    const btnToggleGrid = overlay.querySelector('#btn-toggle-grid') as HTMLButtonElement;
-    const btnToggleSnap = overlay.querySelector('#btn-toggle-snap') as HTMLButtonElement;
+    const inputFrameW = overlay.querySelector('#input-frame-w') as HTMLInputElement;
+    const inputFrameH = overlay.querySelector('#input-frame-h') as HTMLInputElement;
+
+    // Update character frame size when inputs change
+    inputFrameW?.addEventListener('input', () => {
+      const newW = parseInt(inputFrameW.value) || 64;
+      gridW = newW;
+      char.frameWidth = newW;
+      renderOverlayBoxes();
+      updateEditPanelInputs();
+    });
+    inputFrameH?.addEventListener('input', () => {
+      const newH = parseInt(inputFrameH.value) || 64;
+      gridH = newH;
+      char.frameHeight = newH;
+      renderOverlayBoxes();
+      updateEditPanelInputs();
+    });
 
     const editFrameX = overlay.querySelector('#edit-frame-x') as HTMLInputElement;
     const editFrameY = overlay.querySelector('#edit-frame-y') as HTMLInputElement;
-    const editFrameW = overlay.querySelector('#edit-frame-w') as HTMLInputElement;
-    const editFrameH = overlay.querySelector('#edit-frame-h') as HTMLInputElement;
 
     let previewTimer: any = null;
     let previewIdx = 0;
@@ -81,6 +93,8 @@ export class VisualSpritePickerModal {
     // Drag to move or resize selected box state
     let isMovingBox = false;
     let isResizingBox = false;
+    let isPanning = false;
+    let panStart = { x: 0, y: 0 };
     let dragStartPos = { x: 0, y: 0 };
     let initialBoxRect = { x: 0, y: 0, w: gridW, h: gridH };
 
@@ -110,14 +124,13 @@ export class VisualSpritePickerModal {
 
     const updateEditPanelInputs = () => {
       if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) {
-        editFrameX.value = '0'; editFrameY.value = '0'; editFrameW.value = `${gridW}`; editFrameH.value = `${gridH}`;
+        editFrameX.value = '0'; editFrameY.value = '0';
         return;
       }
       const rect = getFrameRect(rawFrames[selectedFrameIndex]);
       editFrameX.value = `${rect.x}`;
       editFrameY.value = `${rect.y}`;
-      editFrameW.value = `${rect.w}`;
-      editFrameH.value = `${rect.h}`;
+
     };
 
     const renderFramesList = () => {
@@ -159,8 +172,9 @@ export class VisualSpritePickerModal {
           e.stopPropagation();
           const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
           const rect = getFrameRect(rawFrames[idx]);
-          const dupRect = { x: rect.x + rect.w, y: rect.y, w: rect.w, h: rect.h };
-          rawFrames.splice(idx + 1, 0, dupRect);
+          // Duplicate the current frame index
+          const dupIdx = typeof rawFrames[idx] === 'number' ? rawFrames[idx] + 1 : idx + 1;
+          rawFrames.splice(idx + 1, 0, dupIdx);
           selectedFrameIndex = idx + 1;
           renderFramesList();
           renderOverlayBoxes();
@@ -208,32 +222,6 @@ export class VisualSpritePickerModal {
 
       gridOverlay.innerHTML = '';
 
-      // Render customizable Grid Overlay lines if enabled
-      if (showGridOverlay && gridW > 0 && gridH > 0) {
-        const cols = Math.max(1, Math.floor((nw - gridOffsetX) / gridW));
-        const rows = Math.max(1, Math.floor((nh - gridOffsetY) / gridH));
-
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
-            const gridIdx = r * cols + c;
-            const gridCell = document.createElement('div');
-            gridCell.style.position = 'absolute';
-            gridCell.style.left = `${(gridOffsetX + c * gridW) * scaleX}px`;
-            gridCell.style.top = `${(gridOffsetY + r * gridH) * scaleY}px`;
-            gridCell.style.width = `${gridW * scaleX}px`;
-            gridCell.style.height = `${gridH * scaleY}px`;
-            gridCell.style.border = '1px dashed rgba(255, 255, 255, 0.22)';
-            gridCell.style.boxSizing = 'border-box';
-            gridCell.style.pointerEvents = 'none';
-            gridCell.style.fontSize = '0.55rem';
-            gridCell.style.color = 'rgba(255,255,255,0.35)';
-            gridCell.style.padding = '1px';
-            gridCell.textContent = `#${gridIdx}`;
-            gridOverlay.appendChild(gridCell);
-          }
-        }
-      }
-
       // Render defined Frame Bounding Boxes
       rawFrames.forEach((f, i) => {
         const rect = getFrameRect(f);
@@ -255,7 +243,7 @@ export class VisualSpritePickerModal {
         rectBox.style.padding = '2px 4px';
         rectBox.style.cursor = 'move';
         rectBox.style.borderRadius = '3px';
-        rectBox.textContent = `#${i + 1}`;
+        rectBox.textContent = `#${i + 1} (${rect.w}x${rect.h})`;
 
         // Interactive Resize Handle on Selected Frame Box
         if (isSel) {
@@ -286,7 +274,7 @@ export class VisualSpritePickerModal {
         }
 
         rectBox.addEventListener('mousedown', (e) => {
-          if (isResizingBox) return;
+          if (isResizingBox || e.button === 1) return;
           e.stopPropagation();
           selectedFrameIndex = i;
           isMovingBox = true;
@@ -322,6 +310,14 @@ export class VisualSpritePickerModal {
 
     // Mouse Dragging to Draw, Move, or Resize
     gridOverlay.addEventListener('mousedown', (e) => {
+      if (e.button === 1) { // Middle click for pan
+        e.preventDefault();
+        isPanning = true;
+        isDrawingRect = false; // ensure drawing mode is disabled
+        panStart = { x: e.clientX, y: e.clientY };
+        overlay.style.cursor = 'grabbing';
+        return;
+      }
       if (isMovingBox || isResizingBox) return;
       const rect = gridOverlay.getBoundingClientRect();
       const dispW = sheetImg.clientWidth;
@@ -334,11 +330,34 @@ export class VisualSpritePickerModal {
       const clickX = Math.round((e.clientX - rect.left) * scaleX);
       const clickY = Math.round((e.clientY - rect.top) * scaleY);
 
+      // Single click: place a frame of current size at click location
+      const cols = Math.max(1, Math.floor((nw - gridOffsetX) / gridW));
+      const c = Math.floor((clickX - gridOffsetX) / gridW);
+      const r = Math.floor((clickY - gridOffsetY) / gridH);
+      const newIdx = r * cols + c;
+      rawFrames.push(newIdx);
+      selectedFrameIndex = rawFrames.length - 1;
+      renderFramesList();
+      renderOverlayBoxes();
+      updateEditPanelInputs();
+      startPreview();
+      return;
       isDrawingRect = true;
       drawStartPos = { x: clickX, y: clickY };
     });
 
     overlay.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        const dx = e.clientX - panStart.x;
+        const dy = e.clientY - panStart.y;
+        // Scroll the outer container to achieve panning
+        if (gridContainer) {
+          gridContainer.scrollLeft -= dx;
+          gridContainer.scrollTop -= dy;
+        }
+        panStart = { x: e.clientX, y: e.clientY };
+        return;
+      }
       const rect = gridOverlay.getBoundingClientRect();
       const dispW = sheetImg.clientWidth;
       const dispH = sheetImg.clientHeight;
@@ -374,16 +393,17 @@ export class VisualSpritePickerModal {
       }
 
       if (isMovingBox && selectedFrameIndex >= 0 && selectedFrameIndex < rawFrames.length) {
-        const dx = currentX - dragStartPos.x;
-        const dy = currentY - dragStartPos.y;
+        let dx = currentX - dragStartPos.x;
+        let dy = currentY - dragStartPos.y;
+        if (e && (e as MouseEvent).ctrlKey) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            dy = 0;
+          } else {
+            dx = 0;
+          }
+        }
         let newX = Math.max(0, initialBoxRect.x + dx);
         let newY = Math.max(0, initialBoxRect.y + dy);
-
-        if (snapToGrid) {
-          newX = snapVal(newX, gridW, gridOffsetX);
-          newY = snapVal(newY, gridH, gridOffsetY);
-        }
-
         rawFrames[selectedFrameIndex] = {
           x: newX,
           y: newY,
@@ -401,20 +421,14 @@ export class VisualSpritePickerModal {
         let y = Math.min(drawStartPos.y, currentY);
         let w = Math.max(5, Math.abs(currentX - drawStartPos.x));
         let h = Math.max(5, Math.abs(currentY - drawStartPos.y));
-
-        if (snapToGrid) {
-          x = snapVal(x, gridW, gridOffsetX);
-          y = snapVal(y, gridH, gridOffsetY);
-          w = Math.max(gridW, Math.round(w / gridW) * gridW);
-          h = Math.max(gridH, Math.round(h / gridH) * gridH);
-        }
-
         tempDrawRect = { x, y, w, h };
         renderOverlayBoxes();
       }
     });
 
     overlay.addEventListener('mouseup', () => {
+      isPanning = false;
+      overlay.style.cursor = 'default';
       if (isMovingBox || isResizingBox) {
         isMovingBox = false;
         isResizingBox = false;
@@ -422,9 +436,25 @@ export class VisualSpritePickerModal {
         return;
       }
       if (isDrawingRect && tempDrawRect) {
-        rawFrames.push({ ...tempDrawRect });
+        gridW = tempDrawRect.w;
+        gridH = tempDrawRect.h;
+        gridOffsetX = tempDrawRect.x;
+        gridOffsetY = tempDrawRect.y;
+        rawFrames = rawFrames.map(f => {
+          if (typeof f === 'number') return f;
+          const cols = Math.max(1, Math.floor((sheetImg.naturalWidth - gridOffsetX) / gridW));
+          const c = Math.floor((f.x - gridOffsetX) / gridW);
+          const r = Math.floor((f.y - gridOffsetY) / gridH);
+          return r * cols + c;
+        });
+        const cols = Math.max(1, Math.floor((sheetImg.naturalWidth - gridOffsetX) / gridW));
+        const c = Math.floor((tempDrawRect.x - gridOffsetX) / gridW);
+        const r = Math.floor((tempDrawRect.y - gridOffsetY) / gridH);
+        const newIdx = r * cols + c;
+        rawFrames = [newIdx];
         selectedFrameIndex = rawFrames.length - 1;
         tempDrawRect = null;
+        saveCharacterGridConfig();
         renderFramesList();
         renderOverlayBoxes();
         updateEditPanelInputs();
@@ -442,33 +472,17 @@ export class VisualSpritePickerModal {
       });
     });
 
-    // Grid Inputs with Persistence
-    inputGridW?.addEventListener('input', () => { gridW = parseInt(inputGridW.value) || 64; saveCharacterGridConfig(); renderOverlayBoxes(); });
-    inputGridH?.addEventListener('input', () => { gridH = parseInt(inputGridH.value) || 64; saveCharacterGridConfig(); renderOverlayBoxes(); });
-    inputGridOffX?.addEventListener('input', () => { gridOffsetX = parseInt(inputGridOffX.value) || 0; saveCharacterGridConfig(); renderOverlayBoxes(); });
-    inputGridOffY?.addEventListener('input', () => { gridOffsetY = parseInt(inputGridOffY.value) || 0; saveCharacterGridConfig(); renderOverlayBoxes(); });
 
-    btnToggleGrid?.addEventListener('click', () => {
-      showGridOverlay = !showGridOverlay;
-      btnToggleGrid.textContent = showGridOverlay ? '👁️ Grid ON' : '🙈 Grid OFF';
-      btnToggleGrid.className = `btn ${showGridOverlay ? 'btn-gold' : 'btn-primary'}`;
-      renderOverlayBoxes();
-    });
-
-    btnToggleSnap?.addEventListener('click', () => {
-      snapToGrid = !snapToGrid;
-      btnToggleSnap.textContent = snapToGrid ? '🧲 Snap ON' : '🔓 Snap OFF';
-      btnToggleSnap.className = `btn ${snapToGrid ? 'btn-gold' : 'btn-primary'}`;
-    });
 
     // Direct Frame Inputs
     const updateSelectedFrameFromEditInputs = () => {
       if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) return;
-      const x = parseInt(editFrameX.value) || 0;
-      const y = parseInt(editFrameY.value) || 0;
-      const w = parseInt(editFrameW.value) || gridW;
-      const h = parseInt(editFrameH.value) || gridH;
-      rawFrames[selectedFrameIndex] = { x, y, w, h };
+        const x = parseInt(editFrameX.value) || 0;
+        const y = parseInt(editFrameY.value) || 0;
+        // Force width/height to current character frame size for uniformity
+        const w = gridW;
+        const h = gridH;
+        rawFrames[selectedFrameIndex] = { x, y, w, h };
       renderFramesList();
       renderOverlayBoxes();
       startPreview();
@@ -476,8 +490,6 @@ export class VisualSpritePickerModal {
 
     editFrameX?.addEventListener('input', updateSelectedFrameFromEditInputs);
     editFrameY?.addEventListener('input', updateSelectedFrameFromEditInputs);
-    editFrameW?.addEventListener('input', updateSelectedFrameFromEditInputs);
-    editFrameH?.addEventListener('input', updateSelectedFrameFromEditInputs);
 
     // Pixel Nudge Buttons
     overlay.querySelectorAll('.btn-nudge').forEach(btn => {
@@ -518,10 +530,11 @@ export class VisualSpritePickerModal {
     // Duplicate Next Frame Buttons
     overlay.querySelector('#btn-dup-frame-right')?.addEventListener('click', () => {
       if (rawFrames.length === 0) {
-        rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: gridW, h: gridH });
+        // first frame index is 0
+        rawFrames.push(0);
       } else {
-        const last = getFrameRect(rawFrames[rawFrames.length - 1]);
-        rawFrames.push({ x: last.x + last.w, y: last.y, w: last.w, h: last.h });
+        const lastIdx = rawFrames[rawFrames.length - 1] as number;
+        rawFrames.push(lastIdx + 1);
       }
       selectedFrameIndex = rawFrames.length - 1;
       renderFramesList();
@@ -532,10 +545,10 @@ export class VisualSpritePickerModal {
 
     overlay.querySelector('#btn-dup-frame-down')?.addEventListener('click', () => {
       if (rawFrames.length === 0) {
-        rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: gridW, h: gridH });
+        rawFrames.push(0);
       } else {
-        const last = getFrameRect(rawFrames[rawFrames.length - 1]);
-        rawFrames.push({ x: last.x, y: last.y + last.h, w: last.w, h: last.h });
+        const lastIdx = rawFrames[rawFrames.length - 1] as number;
+        rawFrames.push(lastIdx + 1);
       }
       selectedFrameIndex = rawFrames.length - 1;
       renderFramesList();

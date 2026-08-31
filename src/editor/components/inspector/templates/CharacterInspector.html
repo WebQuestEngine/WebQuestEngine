@@ -12,7 +12,8 @@
     <label>Sprite Sheet Path / Upload</label>
     <div style="display:flex; gap:8px; align-items:center;">
       {{thumbnailHTML}}
-      <input type="text" class="form-input char-spritesheet" data-idx="{{cIdx}}" value="{{spriteSheetUrl}}" style="flex:1;" />
+      <input type="text" class="form-input char-spritesheet" data-idx="{{cIdx}}" value="{{spriteSheetUrl}}"
+        style="flex:1;" />
       <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
         📁
         <input type="file" class="char-file-input" data-idx="{{cIdx}}" accept="image/*" style="display:none;" />
@@ -45,15 +46,18 @@
       <input type="number" class="form-input char-fh" data-idx="{{cIdx}}" value="{{frameHeight}}" />
     </div>
     <div style="grid-column: span 2;">
-      <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet Y)</label>
-      <input type="number" class="form-input char-depth-y" data-idx="{{cIdx}}" value="{{depthY}}" placeholder="Auto (Feet Y)" />
+      <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet
+        Y)</label>
+      <input type="number" class="form-input char-depth-y" data-idx="{{cIdx}}" value="{{depthY}}"
+        placeholder="Auto (Feet Y)" />
     </div>
   </div>
 </div>
 <div class="sidebar-section">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <div class="sidebar-section-title" style="margin-bottom:0;">🎬 Sprite Sheet Animation Clips ({{animCount}})</div>
-    <button class="btn btn-primary btn-add-char-anim" data-idx="{{cIdx}}" style="font-size:0.7rem; padding:3px 6px;">+ Add Clip</button>
+    <button class="btn btn-primary btn-add-char-anim" data-idx="{{cIdx}}" style="font-size:0.7rem; padding:3px 6px;">+
+      Add Clip</button>
   </div>
   {{animationsHTML}}
 </div>

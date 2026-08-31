@@ -1,146 +1,103 @@
-<div class="sprite-picker-modal"
-  style="width:1080px; max-width:96vw; height:92vh; max-height:92vh; display:flex; flex-direction:column;">
+<div class="sprite-picker-modal" style="width:1080px; max-width:96vw; height:92vh; max-height:92vh; display:flex; flex-direction:column;">
   <div class="sprite-picker-header">
     <span>🖼️ Visual Frame Studio - {{charName}} ({{animKey}})</span>
-    <button class="btn btn-del-action" id="btn-close-sprite-picker" style="font-size:0.8rem; padding:4px 8px;">✕
-      Close</button>
+    <button class="btn btn-del-action" id="btn-close-sprite-picker" style="font-size:0.8rem; padding:4px 8px;">✕ Close</button>
   </div>
 
-  <!-- Studio Control Bar -->
-  <div
-    style="padding:8px 16px; background:#0f172a; border-bottom:1px solid var(--panel-border); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
-    <!-- Grid Settings -->
-    <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem;">
-      <span style="font-weight:700; color:var(--accent-gold);">Grid:</span>
-      <input type="number" id="input-grid-w" value="{{gridW}}" style="width:46px; font-size:0.75rem; padding:2px 4px;"
-        title="Cell Width" /> x
-      <input type="number" id="input-grid-h" value="{{gridH}}" style="width:46px; font-size:0.75rem; padding:2px 4px;"
-        title="Cell Height" />
-      <span style="font-weight:700; color:var(--text-muted); margin-left:4px;">Offset:</span>
-      X:<input type="number" id="input-grid-off-x" value="{{gridOffsetX}}"
-        style="width:40px; font-size:0.75rem; padding:2px 4px;" />
-      Y:<input type="number" id="input-grid-off-y" value="{{gridOffsetY}}"
-        style="width:40px; font-size:0.75rem; padding:2px 4px;" />
-
-      <button class="btn {{gridBtnClass}}" id="btn-toggle-grid" style="font-size:0.7rem; padding:3px 8px;">
-        {{gridBtnText}}
-      </button>
-      <button class="btn {{snapBtnClass}}" id="btn-toggle-snap" style="font-size:0.7rem; padding:3px 8px;">
-        {{snapBtnText}}
-      </button>
-    </div>
-
-    <!-- Zoom Controls -->
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted);">Zoom:</span>
-      <button class="btn btn-primary btn-zoom" data-zoom="1" style="font-size:0.7rem; padding:2px 6px;">100%</button>
-      <button class="btn btn-primary btn-zoom" data-zoom="2" style="font-size:0.7rem; padding:2px 6px;">200%</button>
-      <button class="btn btn-primary btn-zoom" data-zoom="4" style="font-size:0.7rem; padding:2px 6px;">400%</button>
-    </div>
+  <!-- Control Bar -->
+  <div style="padding:8px 16px; background:#0f172a; border-bottom:1px solid var(--panel-border); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+<!-- Character Frame Size -->
+<div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; margin-bottom:8px;">
+  <span style="font-weight:700; color:var(--accent-gold);">Frame Size:</span>
+  <label style="color:var(--text-muted); font-size:0.65rem;">W
+    <input type="number" id="input-frame-w" value="{{frameWidth}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Width" />
+  </label>
+  <label style="color:var(--text-muted); font-size:0.65rem;">H
+    <input type="number" id="input-frame-h" value="{{frameHeight}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Height" />
+  </label>
+</div>
   </div>
 
   <!-- Main Workspace (Canvas Left + Properties Right) -->
-  <div
-    style="flex:1; display:grid; grid-template-columns:1fr 280px; gap:12px; padding:12px; min-height:0; overflow:hidden;">
+  <div style="flex:1; display:grid; grid-template-columns:1fr 280px; gap:12px; padding:12px; min-height:0; overflow:hidden;">
     <!-- Main Canvas Container -->
-    <div class="sprite-picker-grid-container"
-      style="user-select:none; height:100%; width:100%; overflow:auto; display:flex;">
-      <div id="picker-zoom-wrapper" style="transform-origin:0 0; transition:transform 0.1s ease; display:inline-block;">
+    <div class="sprite-picker-grid-container" style="user-select:none; height:100%; width:100%; overflow:auto; display:flex;">
+      <div id="picker-zoom-wrapper" style="transform-origin:0 0; transition:transform 0.1s ease; display:inline-block; cursor:grab; overflow:auto; width:100%; height:100%;">
         <div id="picker-sheet-wrapper" style="position:relative; display:inline-block;">
-          <img id="picker-sheet-img" src="{{imgUrl}}"
-            style="display:block; image-rendering:pixelated; pointer-events:none;" />
-          <div id="picker-grid-overlay"
-            style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair; pointer-events:auto;">
-          </div>
+          <img id="picker-sheet-img" src="{{imgUrl}}" style="display:block; image-rendering:pixelated; pointer-events:none;" />
+          <div id="picker-grid-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair; pointer-events:auto;"></div>
         </div>
       </div>
     </div>
 
     <!-- Properties Panel (Right) -->
-    <div
-      style="display:flex; flex-direction:column; gap:10px; background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid var(--panel-border); overflow-y:auto; height:100%;">
+    <div style="display:flex; flex-direction:column; gap:10px; background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid var(--panel-border); overflow-y:auto; height:100%;">
+
+
       <!-- Selected Frame Edit & Pixel Nudging -->
-      <div id="frame-edit-panel"
-        style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
+      <div id="frame-edit-panel" style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
         <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">
-          🎯 Edit Frame #<span id="label-selected-frame-num">{{selectedFrameNum}}</span>
+          🎯 Edit Frame <span id="label-selected-frame-num">{{selectedFrameNum}}</span>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
-          <div><label style="font-size:0.65rem; color:var(--text-muted);">X</label><input type="number"
-              id="edit-frame-x" class="form-input" style="font-size:0.75rem;" /></div>
-          <div><label style="font-size:0.65rem; color:var(--text-muted);">Y</label><input type="number"
-              id="edit-frame-y" class="form-input" style="font-size:0.75rem;" /></div>
-          <div><label style="font-size:0.65rem; color:var(--text-muted);">Width</label><input type="number"
-              id="edit-frame-w" class="form-input" style="font-size:0.75rem;" /></div>
-          <div><label style="font-size:0.65rem; color:var(--text-muted);">Height</label><input type="number"
-              id="edit-frame-h" class="form-input" style="font-size:0.75rem;" /></div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">X</label>
+            <input type="number" id="edit-frame-x" class="form-input" style="font-size:0.75rem;" />
+          </div>
+          <div>
+            <label style="font-size:0.65rem; color:var(--text-muted);">Y</label>
+            <input type="number" id="edit-frame-y" class="form-input" style="font-size:0.75rem;" />
+          </div>
         </div>
         <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
           <span style="font-size:0.65rem; color:var(--text-muted);">Nudge:</span>
-          <button class="btn btn-primary btn-nudge" data-dir="left" style="font-size:0.7rem; padding:2px 6px;">◄
-            Left</button>
-          <button class="btn btn-primary btn-nudge" data-dir="up" style="font-size:0.7rem; padding:2px 6px;">▲
-            Up</button>
-          <button class="btn btn-primary btn-nudge" data-dir="down" style="font-size:0.7rem; padding:2px 6px;">▼
-            Down</button>
-          <button class="btn btn-primary btn-nudge" data-dir="right" style="font-size:0.7rem; padding:2px 6px;">►
-            Right</button>
+          <button class="btn btn-primary btn-nudge" data-dir="left" style="font-size:0.7rem; padding:2px 6px;">◄ Left</button>
+          <button class="btn btn-primary btn-nudge" data-dir="up" style="font-size:0.7rem; padding:2px 6px;">▲ Up</button>
+          <button class="btn btn-primary btn-nudge" data-dir="down" style="font-size:0.7rem; padding:2px 6px;">▼ Down</button>
+          <button class="btn btn-primary btn-nudge" data-dir="right" style="font-size:0.7rem; padding:2px 6px;">► Right</button>
         </div>
       </div>
 
       <!-- Quick Duplication -->
       <div style="background:rgba(30,41,59,0.7); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
-        <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">➕ Duplicate Frame
-          Box</div>
+        <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">➕ Duplicate Frame Box</div>
         <div style="display:flex; gap:6px;">
-          <button class="btn btn-gold" id="btn-dup-frame-right" style="flex:1; font-size:0.7rem; padding:4px 6px;">Right
-            →</button>
-          <button class="btn btn-gold" id="btn-dup-frame-down" style="flex:1; font-size:0.7rem; padding:4px 6px;">Down
-            ↓</button>
+          <button class="btn btn-gold" id="btn-dup-frame-right" style="flex:1; font-size:0.7rem; padding:4px 6px;">Right →</button>
+          <button class="btn btn-gold" id="btn-dup-frame-down" style="flex:1; font-size:0.7rem; padding:4px 6px;">Down ↓</button>
         </div>
       </div>
 
       <!-- Copy Frames From Another Animation -->
       <div style="background:rgba(30,41,59,0.7); padding:8px; border-radius:6px; border:1px solid var(--panel-border);">
-        <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">📋 Copy From Clip
-        </div>
+        <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">📋 Copy From Clip</div>
         <div style="display:flex; gap:6px;">
           <select id="select-copy-clip" class="form-input" style="font-size:0.7rem; flex:1; padding:3px 4px;">
             {{copyClipOptionsHtml}}
           </select>
-          <button class="btn btn-primary" id="btn-copy-clip-frames" style="font-size:0.7rem; padding:2px 8px;">📥
-            Copy</button>
+          <button class="btn btn-primary" id="btn-copy-clip-frames" style="font-size:0.7rem; padding:2px 8px;">📥 Copy</button>
         </div>
       </div>
 
       <div style="display:flex; gap:6px; margin-top:auto;">
         <button class="btn btn-primary" id="btn-picker-clear" style="flex:1; font-size:0.75rem;">🧹 Clear All</button>
-        <button class="btn btn-gold" id="btn-picker-save" style="flex:1; font-size:0.75rem; font-weight:700;">💾 Save
-          Clip</button>
+        <button class="btn btn-gold" id="btn-picker-save" style="flex:1; font-size:0.75rem; font-weight:700;">💾 Save Clip</button>
       </div>
     </div>
   </div>
 
   <!-- Bottom Bar: Horizontal Frame Timeline Strip (Left) & Live Preview (Right) -->
-  <div
-    style="background:rgba(15,23,42,0.95); border-top:1px solid var(--panel-border); padding:10px 16px; display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:center;">
+  <div style="background:rgba(15,23,42,0.95); border-top:1px solid var(--panel-border); padding:10px 16px; display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:center;">
     <div style="display:flex; flex-direction:column; gap:6px; min-width:0;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">🎞️ Frame Sequence (<span
-            id="label-frame-sequence-count">{{frameCount}}</span> Frames)</span>
-        <span style="font-size:0.65rem; color:var(--text-muted);">Click thumbnail to select • Drag box on sheet to
-          reposition</span>
+        <span style="font-size:0.75rem; font-weight:700; color:var(--accent-gold);">🎞️ Frame Sequence (<span id="label-frame-sequence-count">{{frameCount}}</span> Frames)</span>
+        <span style="font-size:0.65rem; color:var(--text-muted);">Click thumbnail to select • Drag box on sheet to reposition</span>
       </div>
       <div id="picker-frames-list" class="horizontal-frames-strip"></div>
     </div>
-
-    <div
-      style="background:rgba(30,41,59,0.8); padding:8px; border-radius:6px; border:1px solid var(--panel-border); display:flex; flex-direction:column; align-items:center;">
+    <div style="background:rgba(30,41,59,0.8); padding:8px; border-radius:6px; border:1px solid var(--panel-border); display:flex; flex-direction:column; align-items:center;">
       <div style="font-size:0.7rem; font-weight:700; color:var(--accent-gold); margin-bottom:4px;">▶ Live Preview</div>
-      <div
-        style="width:100%; height:10vw; background:#000; border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-        <canvas id="picker-preview-canvas" width="{{gridW}}" height="{{gridH}}"
-          style="image-rendering:pixelated; /*width:{{previewCanvasW}}px; height:{{previewCanvasH}}px;*/ width:100%; height:100%; object-fit: contain; "></canvas>
+      <div style="width:100%; height:10vw; background:#000; border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+        <canvas id="picker-preview-canvas" width="{{frameWidth}}" height="{{frameHeight}}" style="image-rendering:pixelated; width:100%; height:100%; object-fit: contain;"></canvas>
       </div>
     </div>
   </div>
