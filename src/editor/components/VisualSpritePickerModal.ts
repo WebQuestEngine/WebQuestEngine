@@ -42,6 +42,8 @@ export class VisualSpritePickerModal {
       imgUrl,
       rows,
       cols,
+      cellW,
+      cellH,
       gridOffsetX,
       gridOffsetY,
       showGridOverlay,
@@ -206,9 +208,9 @@ export class VisualSpritePickerModal {
       framesListEl.querySelector('#btn-add-frame-end')?.addEventListener('click', () => {
         if (rawFrames.length > 0) {
           const lastRect = getFrameRect(rawFrames[rawFrames.length - 1]);
-          rawFrames.push({ x: lastRect.x + lastRect.w, y: lastRect.y, w: lastRect.w, h: lastRect.h });
+          rawFrames.push({ x: lastRect.x + lastRect.w, y: lastRect.y });
         } else {
-          rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: cellW, h: cellH });
+          rawFrames.push({ x: gridOffsetX, y: gridOffsetY });
         }
         selectedFrameIndex = rawFrames.length - 1;
         renderFramesList();
@@ -386,8 +388,6 @@ export class VisualSpritePickerModal {
         rawFrames[selectedFrameIndex] = {
           x: initialBoxRect.x,
           y: initialBoxRect.y,
-          w: newW,
-          h: newH
         };
         renderFramesList();
         renderOverlayBoxes();
@@ -410,8 +410,6 @@ export class VisualSpritePickerModal {
         rawFrames[selectedFrameIndex] = {
           x: newX,
           y: newY,
-          w: initialBoxRect.w,
-          h: initialBoxRect.h
         };
         renderFramesList();
         renderOverlayBoxes();
@@ -476,12 +474,9 @@ export class VisualSpritePickerModal {
     // Direct Frame Inputs
     const updateSelectedFrameFromEditInputs = () => {
       if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) return;
-        const x = parseInt(editFrameX.value) || 0;
-        const y = parseInt(editFrameY.value) || 0;
-        // Force width/height to current character frame size for uniformity
-        const w = cellW;
-        const h = cellH;
-        rawFrames[selectedFrameIndex] = { x, y, w, h };
+      const x = parseInt(editFrameX.value) || 0;
+      const y = parseInt(editFrameY.value) || 0;
+      rawFrames[selectedFrameIndex] = { x, y };
       renderFramesList();
       renderOverlayBoxes();
       startPreview();

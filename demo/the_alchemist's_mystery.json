@@ -1127,8 +1127,8 @@
           "id": "npc_eldrin",
           "name": "Master Eldrin",
           "spriteSheetUrl": "assets/characters/master_eldrin.png",
-          "frameWidth": 315,
-          "frameHeight": 570,
+          "frameWidth": 2,
+          "frameHeight": 4,
           "position": {
             "x": 454,
             "y": 697

@@ -1,7 +1,7 @@
 <!-- CharacterInspector.html — Character properties tab -->
 <!-- Used by: EntityInspectors.template.ts -->
 <!-- Slots: {{cIdx}}, {{name}}, {{thumbnailHTML}}, {{spriteSheetUrl}},
-            {{posX}}, {{posY}}, {{scale}}, {{speed}}, {{frameWidth}}, {{frameHeight}},
+            {{posX}}, {{posY}}, {{scale}}, {{speed}}, {{spritesheetrows}}, {{spritesheetcols}},
             {{depthY}}, {{animationsHTML}} -->
 <div class="sidebar-section">
   <div class="form-group">
@@ -38,12 +38,12 @@
       <input type="number" class="form-input char-speed" data-idx="{{cIdx}}" value="{{speed}}" />
     </div>
     <div>
-      <label style="font-size:0.65rem; color:var(--text-muted);">Frame Width</label>
-      <input type="number" class="form-input char-fw" data-idx="{{cIdx}}" value="{{frameWidth}}" />
+      <label style="font-size:0.65rem; color:var(--text-muted);">Rows</label>
+      <input type="number" class="form-input char-fw" data-idx="{{cIdx}}" value="{{spritesheetRows}}" />
     </div>
     <div>
-      <label style="font-size:0.65rem; color:var(--text-muted);">Frame Height</label>
-      <input type="number" class="form-input char-fh" data-idx="{{cIdx}}" value="{{frameHeight}}" />
+      <label style="font-size:0.65rem; color:var(--text-muted);">Columns</label>
+      <input type="number" class="form-input char-fh" data-idx="{{cIdx}}" value="{{spritesheetCols}}" />
     </div>
     <div style="grid-column: span 2;">
       <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet
