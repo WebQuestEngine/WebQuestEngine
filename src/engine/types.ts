@@ -141,8 +141,8 @@ export interface HotspotData {
 export interface CharacterAnimFrame {
   x: number;
   y: number;
-  w: number;
-  h: number;
+  // w: number;
+  // h: number;
 }
 
 export interface CharacterData {
@@ -151,6 +151,8 @@ export interface CharacterData {
   spriteSheetUrl: string;
   frameWidth: number;
   frameHeight: number;
+  rows?: number;
+  cols?: number;
   gridOffsetX?: number;
   gridOffsetY?: number;
   position: Vector2D;

@@ -450,7 +450,7 @@ export class CharacterInspector {
       input.addEventListener('input', (e) => {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (currentScene.characters[idx]) {
-          currentScene.characters[idx].frameWidth = parseInt((e.target as HTMLInputElement).value) || 64;
+          currentScene.characters[idx].rows = parseInt((e.target as HTMLInputElement).value) || 1;
           VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
           onUpdate();
         }
@@ -461,7 +461,7 @@ export class CharacterInspector {
       input.addEventListener('input', (e) => {
         const idx = parseInt((e.target as HTMLElement).dataset.idx!);
         if (currentScene.characters[idx]) {
-          currentScene.characters[idx].frameHeight = parseInt((e.target as HTMLInputElement).value) || 64;
+          currentScene.characters[idx].cols = parseInt((e.target as HTMLInputElement).value) || 1;
           VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
           onUpdate();
         }

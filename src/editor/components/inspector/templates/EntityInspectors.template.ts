@@ -132,7 +132,7 @@ export class CharacterInspectorTemplate {
     const cIdx = scene.characters.indexOf(char);
 
     const animationsHTML = Object.entries(char.animations || {}).map(([key, val]) => {
-      const framesStr = Array.isArray(val) ? val.length : ((val as any).frames || []).length;
+      const framesStr = Array.isArray(val) ? val.join(',') : ((val as any).frames || []).join(',');
       return `
         <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
           <input type="text" class="form-input char-anim-key" data-cidx="${cIdx}" data-oldkey="${TemplateUtils.escapeHtml(key)}" value="${TemplateUtils.escapeHtml(key)}" placeholder="Clip Name" style="font-size:0.75rem; flex:1; font-weight:600;" />
@@ -151,8 +151,8 @@ export class CharacterInspectorTemplate {
       posY: char.position.y,
       scale: char.scale,
       speed: char.speed,
-      frameWidth: char.frameWidth,
-      frameHeight: char.frameHeight,
+      spritesheetCols: char.cols,
+      spritesheetRows: char.rows,
       depthY: char.depthY ?? '',
       animCount: Object.keys(char.animations || {}).length,
       animationsHTML,

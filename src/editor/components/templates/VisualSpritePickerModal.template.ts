@@ -7,8 +7,10 @@ export class VisualSpritePickerModalTemplate {
     character: CharacterData;
     animKey: string;
     imgUrl: string;
-    gridW: number;
-    gridH: number;
+    rows: number;
+    cols: number;
+    cellW: number;
+    cellH: number;
     gridOffsetX: number;
     gridOffsetY: number;
     showGridOverlay: boolean;
@@ -21,8 +23,10 @@ export class VisualSpritePickerModalTemplate {
       character,
       animKey,
       imgUrl,
-      gridW,
-      gridH,
+      rows,
+      cols,
+      cellW,
+      cellH,
       gridOffsetX,
       gridOffsetY,
       showGridOverlay,
@@ -40,8 +44,10 @@ export class VisualSpritePickerModalTemplate {
       charName: TemplateUtils.escapeHtml(character.name),
       animKey: TemplateUtils.escapeHtml(animKey),
       imgUrl: TemplateUtils.escapeHtml(imgUrl),
-      gridW,
-      gridH,
+      rows,
+      cols,
+      cellW,
+      cellH,
       gridOffsetX,
       gridOffsetY,
       gridBtnClass: showGridOverlay ? 'btn-gold' : 'btn-primary',
@@ -51,8 +57,8 @@ export class VisualSpritePickerModalTemplate {
       selectedFrameNum: selectedFrameIndex + 1,
       copyClipOptionsHtml,
       frameCount,
-      previewCanvasW: gridW * 1.4,
-      previewCanvasH: gridH * 1.4,
+      previewCanvasW: cellW * 1.4,
+      previewCanvasH: cellH * 1.4,
     });
   }
 
