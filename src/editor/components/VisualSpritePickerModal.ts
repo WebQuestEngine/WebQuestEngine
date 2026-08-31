@@ -20,13 +20,14 @@ export class VisualSpritePickerModal {
     const overlay = document.createElement('div');
     overlay.className = 'sprite-picker-overlay';
 
-    let gridW = char.frameWidth || 64;
-    let gridH = char.frameHeight || 64;
-    let gridOffsetX = char.gridOffsetX || 0;
-    let gridOffsetY = char.gridOffsetY || 0;
-    // Grid overlay removed per new requirements
+    let rows = char.rows || 1;
+    let cols = char.cols || 1;
+    let cellW = 64;
+    let cellH = 64;
+    let gridOffsetX = 0;
+    let gridOffsetY = 0;
     let showGridOverlay = false;
-    let snapToGrid = false; // snapping disabled as frames are uniform
+    let snapToGrid = true; // always snap to grid
     let currentZoom = 1; // 1 = 100%, 2 = 200%, 4 = 400%
     let selectedFrameIndex = rawFrames.length > 0 ? 0 : -1;
 
@@ -39,8 +40,8 @@ export class VisualSpritePickerModal {
       character: char,
       animKey,
       imgUrl,
-      gridW,
-      gridH,
+      rows,
+      cols,
       gridOffsetX,
       gridOffsetY,
       showGridOverlay,
@@ -60,23 +61,30 @@ export class VisualSpritePickerModal {
     const previewCanvas = overlay.querySelector('#picker-preview-canvas') as HTMLCanvasElement;
     const ctx = previewCanvas?.getContext('2d');
 
-    const inputFrameW = overlay.querySelector('#input-frame-w') as HTMLInputElement;
-    const inputFrameH = overlay.querySelector('#input-frame-h') as HTMLInputElement;
+    const inputRows = overlay.querySelector('#input-rows') as HTMLInputElement;
+    const inputCols = overlay.querySelector('#input-cols') as HTMLInputElement;
 
-    // Update character frame size when inputs change
-    inputFrameW?.addEventListener('input', () => {
-      const newW = parseInt(inputFrameW.value) || 64;
-      gridW = newW;
-      char.frameWidth = newW;
+    // Update rows and columns when inputs change with validation
+    inputRows?.addEventListener('input', () => {
+      const newRows = Math.max(1, parseInt(inputRows.value) || 1);
+      rows = newRows;
+      char.rows = newRows;
+      // Recalculate cell dimensions based on image size
+      if (sheetImg && sheetImg.naturalWidth && sheetImg.naturalHeight) {
+        cellW = Math.floor(sheetImg.naturalWidth / cols);
+        cellH = Math.floor(sheetImg.naturalHeight / rows);
+      }
       renderOverlayBoxes();
-      updateEditPanelInputs();
     });
-    inputFrameH?.addEventListener('input', () => {
-      const newH = parseInt(inputFrameH.value) || 64;
-      gridH = newH;
-      char.frameHeight = newH;
+    inputCols?.addEventListener('input', () => {
+      const newCols = Math.max(1, parseInt(inputCols.value) || 1);
+      cols = newCols;
+      char.cols = newCols;
+      if (sheetImg && sheetImg.naturalWidth && sheetImg.naturalHeight) {
+        cellW = Math.floor(sheetImg.naturalWidth / cols);
+        cellH = Math.floor(sheetImg.naturalHeight / rows);
+      }
       renderOverlayBoxes();
-      updateEditPanelInputs();
     });
 
     const editFrameX = overlay.querySelector('#edit-frame-x') as HTMLInputElement;
@@ -96,11 +104,13 @@ export class VisualSpritePickerModal {
     let isPanning = false;
     let panStart = { x: 0, y: 0 };
     let dragStartPos = { x: 0, y: 0 };
-    let initialBoxRect = { x: 0, y: 0, w: gridW, h: gridH };
+    let initialBoxRect = { x: 0, y: 0, w: cellW, h: cellH };
 
     const saveCharacterGridConfig = () => {
-      char.frameWidth = gridW;
-      char.frameHeight = gridH;
+      char.rows = rows;
+      char.cols = cols;
+      char.frameWidth = cellW;
+      char.frameHeight = cellH;
       char.gridOffsetX = gridOffsetX;
       char.gridOffsetY = gridOffsetY;
     };
@@ -112,14 +122,12 @@ export class VisualSpritePickerModal {
 
     const getFrameRect = (f: AnimFrameRef): { x: number; y: number; w: number; h: number } => {
       if (typeof f === 'object' && f !== null && 'x' in f) {
-        return { x: f.x, y: f.y, w: f.h !== undefined ? f.w : gridW, h: f.h !== undefined ? f.h : gridH };
+        return { x: f.x, y: f.y, w: cellW, h: cellH };
       }
       const idx = typeof f === 'number' ? f : 0;
-      const nw = sheetImg.naturalWidth || 256;
-      const cols = Math.max(1, Math.floor((nw - gridOffsetX) / gridW));
-      const c = idx % cols;
-      const r = Math.floor(idx / cols);
-      return { x: gridOffsetX + c * gridW, y: gridOffsetY + r * gridH, w: gridW, h: gridH };
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      return { x: col * cellW, y: row * cellH, w: cellW, h: cellH };
     };
 
     const updateEditPanelInputs = () => {
@@ -130,7 +138,6 @@ export class VisualSpritePickerModal {
       const rect = getFrameRect(rawFrames[selectedFrameIndex]);
       editFrameX.value = `${rect.x}`;
       editFrameY.value = `${rect.y}`;
-
     };
 
     const renderFramesList = () => {
@@ -201,7 +208,7 @@ export class VisualSpritePickerModal {
           const lastRect = getFrameRect(rawFrames[rawFrames.length - 1]);
           rawFrames.push({ x: lastRect.x + lastRect.w, y: lastRect.y, w: lastRect.w, h: lastRect.h });
         } else {
-          rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: gridW, h: gridH });
+          rawFrames.push({ x: gridOffsetX, y: gridOffsetY, w: cellW, h: cellH });
         }
         selectedFrameIndex = rawFrames.length - 1;
         renderFramesList();
@@ -331,9 +338,8 @@ export class VisualSpritePickerModal {
       const clickY = Math.round((e.clientY - rect.top) * scaleY);
 
       // Single click: place a frame of current size at click location
-      const cols = Math.max(1, Math.floor((nw - gridOffsetX) / gridW));
-      const c = Math.floor((clickX - gridOffsetX) / gridW);
-      const r = Math.floor((clickY - gridOffsetY) / gridH);
+      const c = Math.floor((clickX - gridOffsetX) / cellW);
+      const r = Math.floor((clickY - gridOffsetY) / cellH);
       const newIdx = r * cols + c;
       rawFrames.push(newIdx);
       selectedFrameIndex = rawFrames.length - 1;
@@ -341,9 +347,6 @@ export class VisualSpritePickerModal {
       renderOverlayBoxes();
       updateEditPanelInputs();
       startPreview();
-      return;
-      isDrawingRect = true;
-      drawStartPos = { x: clickX, y: clickY };
     });
 
     overlay.addEventListener('mousemove', (e) => {
@@ -376,8 +379,8 @@ export class VisualSpritePickerModal {
         let newH = Math.max(5, initialBoxRect.h + dy);
 
         if (snapToGrid) {
-          newW = Math.max(gridW, Math.round(newW / gridW) * gridW);
-          newH = Math.max(gridH, Math.round(newH / gridH) * gridH);
+          newW = Math.max(cellW, Math.round(newW / cellW) * cellW);
+          newH = Math.max(cellH, Math.round(newH / cellH) * cellH);
         }
 
         rawFrames[selectedFrameIndex] = {
@@ -436,20 +439,18 @@ export class VisualSpritePickerModal {
         return;
       }
       if (isDrawingRect && tempDrawRect) {
-        gridW = tempDrawRect.w;
-        gridH = tempDrawRect.h;
+        cellW = tempDrawRect.w;
+        cellH = tempDrawRect.h;
         gridOffsetX = tempDrawRect.x;
         gridOffsetY = tempDrawRect.y;
         rawFrames = rawFrames.map(f => {
           if (typeof f === 'number') return f;
-          const cols = Math.max(1, Math.floor((sheetImg.naturalWidth - gridOffsetX) / gridW));
-          const c = Math.floor((f.x - gridOffsetX) / gridW);
-          const r = Math.floor((f.y - gridOffsetY) / gridH);
+          const c = Math.floor((f.x - gridOffsetX) / cellW);
+          const r = Math.floor((f.y - gridOffsetY) / cellH);
           return r * cols + c;
         });
-        const cols = Math.max(1, Math.floor((sheetImg.naturalWidth - gridOffsetX) / gridW));
-        const c = Math.floor((tempDrawRect.x - gridOffsetX) / gridW);
-        const r = Math.floor((tempDrawRect.y - gridOffsetY) / gridH);
+        const c = Math.floor((tempDrawRect.x - gridOffsetX) / cellW);
+        const r = Math.floor((tempDrawRect.y - gridOffsetY) / cellH);
         const newIdx = r * cols + c;
         rawFrames = [newIdx];
         selectedFrameIndex = rawFrames.length - 1;
@@ -472,16 +473,14 @@ export class VisualSpritePickerModal {
       });
     });
 
-
-
     // Direct Frame Inputs
     const updateSelectedFrameFromEditInputs = () => {
       if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) return;
         const x = parseInt(editFrameX.value) || 0;
         const y = parseInt(editFrameY.value) || 0;
         // Force width/height to current character frame size for uniformity
-        const w = gridW;
-        const h = gridH;
+        const w = cellW;
+        const h = cellH;
         rawFrames[selectedFrameIndex] = { x, y, w, h };
       renderFramesList();
       renderOverlayBoxes();
@@ -576,12 +575,17 @@ export class VisualSpritePickerModal {
     };
 
     sheetImg.onload = () => {
+      // Compute cell size based on rows and cols
+      cellW = Math.floor(sheetImg.naturalWidth / cols);
+      cellH = Math.floor(sheetImg.naturalHeight / rows);
       renderFramesList();
       renderOverlayBoxes();
       updateEditPanelInputs();
       startPreview();
     };
     if (sheetImg.complete) {
+      cellW = Math.floor(sheetImg.naturalWidth / cols);
+      cellH = Math.floor(sheetImg.naturalHeight / rows);
       renderFramesList();
       renderOverlayBoxes();
       updateEditPanelInputs();

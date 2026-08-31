@@ -1127,11 +1127,11 @@
           "id": "npc_eldrin",
           "name": "Master Eldrin",
           "spriteSheetUrl": "assets/characters/master_eldrin.png",
-          "frameWidth": 298,
-          "frameHeight": 282,
+          "frameWidth": 315,
+          "frameHeight": 570,
           "position": {
-            "x": 416,
-            "y": 679
+            "x": 454,
+            "y": 697
           },
           "speed": 0,
           "scale": 0.8,
@@ -1154,10 +1154,10 @@
           "animations": {
             "idleDown": [
               {
-                "x": 616,
-                "y": 35,
-                "w": 298,
-                "h": 564
+                "x": 6,
+                "y": 17,
+                "w": 325,
+                "h": 574
               }
             ],
             "idleSide": [

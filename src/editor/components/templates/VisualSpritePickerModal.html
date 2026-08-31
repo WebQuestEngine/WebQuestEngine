@@ -5,18 +5,7 @@
   </div>
 
   <!-- Control Bar -->
-  <div style="padding:8px 16px; background:#0f172a; border-bottom:1px solid var(--panel-border); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
-<!-- Character Frame Size -->
-<div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; margin-bottom:8px;">
-  <span style="font-weight:700; color:var(--accent-gold);">Frame Size:</span>
-  <label style="color:var(--text-muted); font-size:0.65rem;">W
-    <input type="number" id="input-frame-w" value="{{frameWidth}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Width" />
-  </label>
-  <label style="color:var(--text-muted); font-size:0.65rem;">H
-    <input type="number" id="input-frame-h" value="{{frameHeight}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Height" />
-  </label>
-</div>
-  </div>
+  
 
   <!-- Main Workspace (Canvas Left + Properties Right) -->
   <div style="flex:1; display:grid; grid-template-columns:1fr 280px; gap:12px; padding:12px; min-height:0; overflow:hidden;">
@@ -33,7 +22,28 @@
     <!-- Properties Panel (Right) -->
     <div style="display:flex; flex-direction:column; gap:10px; background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid var(--panel-border); overflow-y:auto; height:100%;">
 
-
+<div style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
+  <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">Sprite Sheet Grid:</div>
+  <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; margin-bottom:8px;">
+    <label style="color:var(--text-muted); font-size:0.65rem;">Rows
+      <input type="number" id="input-rows" min="1" value="{{rows}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Rows" />
+    </label>
+    <label style="color:var(--text-muted); font-size:0.65rem;">Cols
+      <input type="number" id="input-cols" min="1" value="{{cols}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Columns" />
+    </label>
+  </div>
+</div>
+<div style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
+  <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">Frame Size:</div>
+  <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; margin-bottom:8px;">
+    <label style="color:var(--text-muted); font-size:0.65rem;">W
+      <input type="number" id="input-frame-w" value="{{frameWidth}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Width" />
+    </label>
+    <label style="color:var(--text-muted); font-size:0.65rem;">H
+      <input type="number" id="input-frame-h" value="{{frameHeight}}" style="width:46px; font-size:0.75rem; padding:2px 4px;" title="Frame Height" />
+    </label>
+  </div>
+</div>
       <!-- Selected Frame Edit & Pixel Nudging -->
       <div id="frame-edit-panel" style="background:rgba(30,41,59,0.9); padding:10px; border-radius:6px; border:1px solid var(--panel-border);">
         <div style="font-size:0.75rem; font-weight:700; color:var(--accent-gold); margin-bottom:6px;">
