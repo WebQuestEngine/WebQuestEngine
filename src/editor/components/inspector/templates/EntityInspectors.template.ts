@@ -151,7 +151,7 @@ export class CharacterInspectorTemplate {
       posY: char.position.y,
       scale: char.scale,
       speed: char.speed,
-      spritesheetColumns: char.cols,
+      spritesheetCols: char.cols,
       spritesheetRows: char.rows,
       depthY: char.depthY ?? '',
       animCount: Object.keys(char.animations || {}).length,

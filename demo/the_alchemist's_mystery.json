@@ -658,8 +658,8 @@
           "id": "player",
           "name": "Sir Ronald",
           "spriteSheetUrl": "assets/characters/sir_ronald.png",
-          "frameWidth": 86,
-          "frameHeight": 156,
+          "frameWidth": 183,
+          "frameHeight": 226,
           "position": {
             "x": 133,
             "y": 809
@@ -669,119 +669,40 @@
           "talkColor": "#fef08a",
           "animations": {
             "idleDown": [
-              {
-                "x": 325,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              12
             ],
             "idleSide": [
-              {
-                "x": 325,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              }
+              16
             ],
             "idleUp": [
-              {
-                "x": 325,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              }
+              21
             ],
             "walkDown": [
-              {
-                "x": 325,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              0,
+              1,
+              2
             ],
             "walkSide": [
-              {
-                "x": 325,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              }
+              7,
+              4,
+              5
             ],
             "walkUp": [
-              {
-                "x": 325,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              }
+              8,
+              9,
+              10
             ],
             "talk": [
-              {
-                "x": 841,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              24,
+              25,
+              26
             ]
           },
-          "gridOffsetX": 67,
+          "gridOffsetX": 0,
           "gridOffsetY": 0,
-          "currentHoldingItemId": "item_key"
+          "currentHoldingItemId": "item_key",
+          "rows": 8,
+          "cols": 4
         }
       ]
     },
@@ -998,128 +919,47 @@
           "id": "player",
           "name": "Sir Ronald",
           "spriteSheetUrl": "assets/characters/sir_ronald.png",
-          "frameWidth": 86,
-          "frameHeight": 156,
+          "frameWidth": 183,
+          "frameHeight": 226,
           "position": {
             "x": 1398,
             "y": 643
           },
           "speed": 4,
-          "scale": 2.47,
+          "scale": 1.6,
           "talkColor": "#fef08a",
           "animations": {
             "idleDown": [
-              {
-                "x": 325,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              12
             ],
             "idleSide": [
-              {
-                "x": 325,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              }
+              16
             ],
             "idleUp": [
-              {
-                "x": 325,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              }
+              21
             ],
             "walkDown": [
-              {
-                "x": 325,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              0,
+              1,
+              2
             ],
             "walkSide": [
-              {
-                "x": 325,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 936,
-                "w": 86,
-                "h": 156
-              }
+              7,
+              4,
+              5
             ],
             "walkUp": [
-              {
-                "x": 325,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 497,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 669,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              },
-              {
-                "x": 841,
-                "y": 624,
-                "w": 86,
-                "h": 156
-              }
+              8,
+              9,
+              10
             ],
             "talk": [
-              {
-                "x": 841,
-                "y": 0,
-                "w": 86,
-                "h": 156
-              }
+              24,
+              25,
+              26
             ]
           },
-          "gridOffsetX": 67,
+          "gridOffsetX": 0,
           "gridOffsetY": 0,
           "currentHoldingItemId": "item_crystal"
         },
@@ -1127,14 +967,14 @@
           "id": "npc_eldrin",
           "name": "Master Eldrin",
           "spriteSheetUrl": "assets/characters/master_eldrin.png",
-          "frameWidth": 2,
-          "frameHeight": 4,
+          "frameWidth": 360,
+          "frameHeight": 570,
           "position": {
             "x": 454,
             "y": 697
           },
           "speed": 0,
-          "scale": 0.8,
+          "scale": 0.75,
           "talkColor": "#60a5fa",
           "cursor": "talk",
           "actions": [
@@ -1153,12 +993,7 @@
           ],
           "animations": {
             "idleDown": [
-              {
-                "x": 6,
-                "y": 17,
-                "w": 325,
-                "h": 574
-              }
+              0
             ],
             "idleSide": [
               4
@@ -1167,32 +1002,24 @@
               8
             ],
             "walkDown": [
-              0,
-              1,
-              2,
-              3
+              0
             ],
             "walkSide": [
-              4,
-              5,
-              6,
-              7
+              4
             ],
             "walkUp": [
-              8,
-              9,
-              10,
-              11
+              0
             ],
             "talk": [
-              12,
-              13,
-              14,
-              15
+              5,
+              7,
+              4
             ]
           },
-          "gridOffsetX": -278,
-          "gridOffsetY": 35
+          "gridOffsetX": 0,
+          "gridOffsetY": 0,
+          "rows": 2,
+          "cols": 4
         }
       ],
       "locked": false
