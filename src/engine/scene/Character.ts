@@ -64,6 +64,14 @@ export class Character extends MovableElement {
   public async init(): Promise<void> {
     const assetManager = AssetManager.getInstance();
     this.textureSheet = await assetManager.loadTexture(this.data.spriteSheetUrl);
+    if (this.textureSheet && this.textureSheet.width > 0) {
+      if (this.data.cols) {
+        this.data.frameWidth = Math.floor(this.textureSheet.width / this.data.cols);
+      }
+      if (this.data.rows) {
+        this.data.frameHeight = Math.floor(this.textureSheet.height / this.data.rows);
+      }
+    }
     this.container.x = this.data.position.x;
     this.container.y = this.data.position.y;
     this.container.scale.set(this.data.scale || 1);
@@ -112,44 +120,60 @@ export class Character extends MovableElement {
     }, 3000);
   }
 
-  public playCustomAnimation(animName: string, durationMs = 1500, onComplete?: () => void): void {
+  public playCustomAnimation(animKey: string, durationOrCb?: number | (() => void), onComplete?: () => void): void {
+    const cb = typeof durationOrCb === 'function' ? durationOrCb : onComplete;
+    const customDuration = typeof durationOrCb === 'number' ? durationOrCb : undefined;
+
+    if (!this.data.animations || !this.data.animations[animKey]) {
+      if (cb) cb();
+      return;
+    }
+
     this.state = 'custom_anim';
-    this.currentCustomAnimKey = animName;
+    this.currentCustomAnimKey = animKey;
     this.animFrame = 0;
+    this.animTimer = 0;
+
+    const frames = this.resolveAnimFrames(this.data.animations[animKey]);
+    const duration = customDuration !== undefined ? customDuration : frames.length * this.animSpeed * 1000;
+
     if (this.customAnimTimer) clearTimeout(this.customAnimTimer);
     this.customAnimTimer = setTimeout(() => {
       this.state = 'idle';
       this.currentCustomAnimKey = null;
-      if (onComplete) onComplete();
-    }, durationMs);
+      this.updateSpriteFrame();
+      if (cb) cb();
+    }, duration);
   }
 
   public pickUp(targetPos: Vector2D, onComplete?: () => void): void {
     this.faceTarget(targetPos);
-    this.playCustomAnimation('pick_up', 1200, onComplete);
+    this.playCustomAnimation('pick_up', onComplete);
   }
 
   public holdItem(itemId: string | null): void {
     this.data.currentHoldingItemId = itemId || undefined;
     if (itemId) {
-      this.playCustomAnimation(`hold_${itemId}`, 1000);
+      this.playCustomAnimation(`hold_${itemId}`);
     } else {
       this.state = 'idle';
       this.currentCustomAnimKey = null;
     }
   }
 
-  public update(delta: number, walkPath?: WalkPath): void {
+  public override update(delta: number = 0.016, walkPath?: WalkPath): void {
     if (!this.container || (this.container as any).destroyed || !this.container.position) return;
+    this.animTimer += delta;
 
-    // Movement logic
     if (this.state === 'walking' && this.path.length > 0) {
       const target = this.path[this.currentPathIndex];
       const dx = target.x - this.container.x;
       const dy = target.y - this.container.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 4) {
+      const step = (this.data.speed || 200) * delta;
+
+      if (dist <= step) {
         this.container.x = target.x;
         this.container.y = target.y;
         this.currentPathIndex++;
@@ -157,42 +181,32 @@ export class Character extends MovableElement {
         if (this.currentPathIndex >= this.path.length) {
           this.state = 'idle';
           this.path = [];
+          this.currentPathIndex = 0;
           if (this.onWalkCompleteCallback) {
             const cb = this.onWalkCompleteCallback;
             this.onWalkCompleteCallback = null;
             cb();
-            return;
           }
         } else {
           this.faceTarget(this.path[this.currentPathIndex]);
         }
       } else {
-        const step = this.data.speed * delta * 60;
-        const vx = (dx / dist) * Math.min(step, dist);
-        const vy = (dy / dist) * Math.min(step, dist);
-
-        this.container.x += vx;
-        this.container.y += vy;
-
-        // Determine 8-way facing direction
-        this.direction8Way = calculate8WayDirection({ x: 0, y: 0 }, { x: dx, y: dy });
-        this.isFacingLeft = this.direction8Way === 'left' || this.direction8Way === 'up_left' || this.direction8Way === 'down_left';
+        this.container.x += (dx / dist) * step;
+        this.container.y += (dy / dist) * step;
       }
     }
 
-    if (!this.container || (this.container as any).destroyed || !this.container.position) return;
+    this.data.position.x = this.container.x;
+    this.data.position.y = this.container.y;
 
-    // Perspective scaling based on WalkPath Y position
-    if (walkPath) {
-      const calculatedScale = walkPath.getScaleAt(this.container.y);
-      const finalScale = calculatedScale * this.data.scale;
+    if (walkPath && this.state === 'walking') {
+      const dynamicScale = walkPath.getScaleAt(this.container.y);
+      const finalScale = dynamicScale * (this.data.scale || 1);
       this.container.scale.set(this.isFacingLeft ? -finalScale : finalScale, finalScale);
     } else {
-      this.container.scale.set(this.isFacingLeft ? -this.data.scale : this.data.scale, this.data.scale);
+      this.container.scale.set(this.isFacingLeft ? -(this.data.scale || 1) : (this.data.scale || 1), this.data.scale || 1);
     }
 
-    // Animation frame update
-    this.animTimer += delta;
     if (this.animTimer >= this.animSpeed) {
       this.animTimer = 0;
       this.animFrame++;
@@ -227,11 +241,11 @@ export class Character extends MovableElement {
       frames = this.resolveAnimFrames(anims[this.currentCustomAnimKey]);
     } else if (this.state === 'walking') {
       frames = this.resolveAnimFrames(
-        anims[`walk_${dir}`] || anims[`walk_${dir4}`] || (dir4 === 'side' ? anims.walkSide : (dir4 === 'up' ? anims.walkUp : anims.walkDown))
+        anims[`walk_${dir}`] || anims[`walk_${dir4}`] || (dir4 === 'side' ? anims.walkSide : (dir4 === 'up' ? anims.walkUp : anims.walkDown)) || anims.walk || anims.walkFront || anims.walkBack
       );
     } else if (this.state === 'talking') {
       frames = this.resolveAnimFrames(
-        anims[`talk_${dir}`] || anims[`talk_${dir4}`] || anims.talk
+        anims[`talk_${dir}`] || anims[`talk_${dir4}`] || anims.talk || anims.talkFront || anims.talkSide || anims.talkUp
       );
     } else if (this.state === 'picking_up') {
       frames = this.resolveAnimFrames(
@@ -243,7 +257,15 @@ export class Character extends MovableElement {
       frames = this.resolveAnimFrames(anims['hold_item']);
     } else {
       frames = this.resolveAnimFrames(
-        anims[`idle_${dir}`] || anims[`idle_${dir4}`] || (dir4 === 'side' ? anims.idleSide : (dir4 === 'up' ? anims.idleUp : anims.idleDown))
+        anims[`idle_${dir}`] ||
+        anims[`idle_${dir4}`] ||
+        (dir4 === 'side' ? (anims.idleSide || anims.idle_side) : (dir4 === 'up' ? (anims.idleUp || anims.idleBack || anims.idle_up) : (anims.idleDown || anims.idleFront || anims.idle_down))) ||
+        anims.idle ||
+        anims.idleFront ||
+        anims.idleDown ||
+        anims.idleSide ||
+        anims.idleUp ||
+        Object.values(anims)[0]
       );
     }
 
@@ -254,14 +276,18 @@ export class Character extends MovableElement {
     if (typeof currentFrame === 'object' && currentFrame !== null && 'x' in currentFrame) {
       // Custom drawn bounding rectangle frame!
       const f = currentFrame as any;
-      frameRect = new PIXI.Rectangle(f.x, f.y, f.w, f.h);
+      frameRect = new PIXI.Rectangle(f.x, f.y, f.w || this.data.frameWidth || 64, f.h || this.data.frameHeight || 64);
     } else {
       // Grid index frame
       const frameIndex = typeof currentFrame === 'number' ? currentFrame : 0;
       const texWidth = this.textureSheet.width || 256;
+      const texHeight = this.textureSheet.height || 256;
       const cols = this.data.cols || Math.max(1, Math.floor(texWidth / (this.data.frameWidth || 64)));
-      const fw = this.data.frameWidth || 64;
-      const fh = this.data.frameHeight || 64;
+      const rows = this.data.rows || Math.max(1, Math.floor(texHeight / (this.data.frameHeight || 64)));
+      const fw = this.data.cols ? Math.floor(texWidth / cols) : (this.data.frameWidth || Math.floor(texWidth / cols));
+      const fh = this.data.rows ? Math.floor(texHeight / rows) : (this.data.frameHeight || Math.floor(texHeight / rows));
+      this.data.frameWidth = fw;
+      this.data.frameHeight = fh;
       const ox = this.data.gridOffsetX || 0;
       const oy = this.data.gridOffsetY || 0;
       const col = frameIndex % cols;

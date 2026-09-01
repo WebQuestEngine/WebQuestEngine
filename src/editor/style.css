@@ -570,6 +570,19 @@ body {
   box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
 }
 
+.frame-thumb-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+  border: 2px dashed #3b82f6;
+}
+
+.frame-thumb-card.drag-over {
+  border: 2px solid var(--accent-gold);
+  background: rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+  transform: scale(1.05);
+}
+
 .frame-thumb-badge {
   position: absolute;
   top: 2px;

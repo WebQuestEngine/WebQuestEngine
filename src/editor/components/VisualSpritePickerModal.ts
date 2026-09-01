@@ -124,12 +124,13 @@ export class VisualSpritePickerModal {
 
     const getFrameRect = (f: AnimFrameRef): { x: number; y: number; w: number; h: number } => {
       if (typeof f === 'object' && f !== null && 'x' in f) {
-        return { x: f.x, y: f.y, w: cellW, h: cellH };
+        const custom = f as any;
+        return { x: custom.x, y: custom.y, w: custom.w || cellW, h: custom.h || cellH };
       }
       const idx = typeof f === 'number' ? f : 0;
       const col = idx % cols;
       const row = Math.floor(idx / cols);
-      return { x: col * cellW, y: row * cellH, w: cellW, h: cellH };
+      return { x: gridOffsetX + col * cellW, y: gridOffsetY + row * cellH, w: cellW, h: cellH };
     };
 
     const updateEditPanelInputs = () => {
@@ -166,10 +167,58 @@ export class VisualSpritePickerModal {
         }
       });
 
+      let draggedCardIndex: number | null = null;
+
       framesListEl.querySelectorAll('.frame-thumb-card').forEach(card => {
-        card.addEventListener('click', (e) => {
+        const cardEl = card as HTMLElement;
+
+        cardEl.addEventListener('dragstart', (e) => {
+          draggedCardIndex = parseInt(cardEl.dataset.idx!);
+          cardEl.classList.add('dragging');
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', `${draggedCardIndex}`);
+          }
+        });
+
+        cardEl.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'move';
+          }
+          cardEl.classList.add('drag-over');
+        });
+
+        cardEl.addEventListener('dragleave', () => {
+          cardEl.classList.remove('drag-over');
+        });
+
+        cardEl.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          cardEl.classList.remove('drag-over');
+          const targetIdx = parseInt(cardEl.dataset.idx!);
+          if (draggedCardIndex !== null && draggedCardIndex !== targetIdx && draggedCardIndex >= 0 && draggedCardIndex < rawFrames.length) {
+            const [moved] = rawFrames.splice(draggedCardIndex, 1);
+            rawFrames.splice(targetIdx, 0, moved);
+            selectedFrameIndex = targetIdx;
+            draggedCardIndex = null;
+            renderFramesList();
+            renderOverlayBoxes();
+            updateEditPanelInputs();
+            startPreview();
+          }
+        });
+
+        cardEl.addEventListener('dragend', () => {
+          cardEl.classList.remove('dragging');
+          cardEl.classList.remove('drag-over');
+          draggedCardIndex = null;
+        });
+
+        cardEl.addEventListener('click', (e) => {
           if ((e.target as HTMLElement).tagName === 'BUTTON') return;
-          selectedFrameIndex = parseInt((card as HTMLElement).dataset.idx!);
+          selectedFrameIndex = parseInt(cardEl.dataset.idx!);
           renderFramesList();
           renderOverlayBoxes();
           updateEditPanelInputs();
@@ -405,15 +454,17 @@ export class VisualSpritePickerModal {
             dx = 0;
           }
         }
-        let newX = Math.max(0, initialBoxRect.x + dx);
-        let newY = Math.max(0, initialBoxRect.y + dy);
-        rawFrames[selectedFrameIndex] = {
-          x: newX,
-          y: newY,
-        };
-        renderFramesList();
-        renderOverlayBoxes();
-        updateEditPanelInputs();
+        const targetX = initialBoxRect.x + dx;
+        const targetY = initialBoxRect.y + dy;
+        const c = Math.max(0, Math.min(cols - 1, Math.round((targetX - gridOffsetX) / cellW)));
+        const r = Math.max(0, Math.min(rows - 1, Math.round((targetY - gridOffsetY) / cellH)));
+        const newIdx = r * cols + c;
+        if (rawFrames[selectedFrameIndex] !== newIdx) {
+          rawFrames[selectedFrameIndex] = newIdx;
+          renderFramesList();
+          renderOverlayBoxes();
+          updateEditPanelInputs();
+        }
         return;
       }
 
@@ -476,7 +527,9 @@ export class VisualSpritePickerModal {
       if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) return;
       const x = parseInt(editFrameX.value) || 0;
       const y = parseInt(editFrameY.value) || 0;
-      rawFrames[selectedFrameIndex] = { x, y };
+      const c = Math.max(0, Math.min(cols - 1, Math.round((x - gridOffsetX) / cellW)));
+      const r = Math.max(0, Math.min(rows - 1, Math.round((y - gridOffsetY) / cellH)));
+      rawFrames[selectedFrameIndex] = r * cols + c;
       renderFramesList();
       renderOverlayBoxes();
       startPreview();
@@ -485,18 +538,27 @@ export class VisualSpritePickerModal {
     editFrameX?.addEventListener('input', updateSelectedFrameFromEditInputs);
     editFrameY?.addEventListener('input', updateSelectedFrameFromEditInputs);
 
-    // Pixel Nudge Buttons
+    // Cell Nudge Buttons (Left / Right / Up / Down across grid cells)
     overlay.querySelectorAll('.btn-nudge').forEach(btn => {
       btn.addEventListener('click', (e) => {
         if (selectedFrameIndex < 0 || selectedFrameIndex >= rawFrames.length) return;
         const dir = (e.currentTarget as HTMLElement).dataset.dir;
-        const rect = getFrameRect(rawFrames[selectedFrameIndex]);
-        if (dir === 'left') rect.x = Math.max(0, rect.x - 1);
-        if (dir === 'right') rect.x += 1;
-        if (dir === 'up') rect.y = Math.max(0, rect.y - 1);
-        if (dir === 'down') rect.y += 1;
+        const cur = rawFrames[selectedFrameIndex];
+        const idx = typeof cur === 'number' ? cur : (
+          Math.max(0, Math.min(rows - 1, Math.round((cur.y - gridOffsetY) / cellH))) * cols +
+          Math.max(0, Math.min(cols - 1, Math.round((cur.x - gridOffsetX) / cellW)))
+        );
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
 
-        rawFrames[selectedFrameIndex] = { ...rect };
+        let newCol = col;
+        let newRow = row;
+        if (dir === 'left') newCol = Math.max(0, col - 1);
+        if (dir === 'right') newCol = Math.min(cols - 1, col + 1);
+        if (dir === 'up') newRow = Math.max(0, row - 1);
+        if (dir === 'down') newRow = Math.min(rows - 1, row + 1);
+
+        rawFrames[selectedFrameIndex] = newRow * cols + newCol;
         renderFramesList();
         renderOverlayBoxes();
         updateEditPanelInputs();
@@ -521,14 +583,20 @@ export class VisualSpritePickerModal {
       }
     });
 
-    // Duplicate Next Frame Buttons
+    // Duplicate Next Frame Buttons (Right / Down)
     overlay.querySelector('#btn-dup-frame-right')?.addEventListener('click', () => {
       if (rawFrames.length === 0) {
-        // first frame index is 0
         rawFrames.push(0);
       } else {
-        const lastIdx = rawFrames[rawFrames.length - 1] as number;
-        rawFrames.push(lastIdx + 1);
+        const last = rawFrames[rawFrames.length - 1];
+        const lastIdx = typeof last === 'number' ? last : (
+          Math.max(0, Math.min(rows - 1, Math.round((last.y - gridOffsetY) / cellH))) * cols +
+          Math.max(0, Math.min(cols - 1, Math.round((last.x - gridOffsetX) / cellW)))
+        );
+        const col = lastIdx % cols;
+        const row = Math.floor(lastIdx / cols);
+        const nextCol = Math.min(cols - 1, col + 1);
+        rawFrames.push(row * cols + nextCol);
       }
       selectedFrameIndex = rawFrames.length - 1;
       renderFramesList();
@@ -541,8 +609,15 @@ export class VisualSpritePickerModal {
       if (rawFrames.length === 0) {
         rawFrames.push(0);
       } else {
-        const lastIdx = rawFrames[rawFrames.length - 1] as number;
-        rawFrames.push(lastIdx + 1);
+        const last = rawFrames[rawFrames.length - 1];
+        const lastIdx = typeof last === 'number' ? last : (
+          Math.max(0, Math.min(rows - 1, Math.round((last.y - gridOffsetY) / cellH))) * cols +
+          Math.max(0, Math.min(cols - 1, Math.round((last.x - gridOffsetX) / cellW)))
+        );
+        const col = lastIdx % cols;
+        const row = Math.floor(lastIdx / cols);
+        const nextRow = Math.min(rows - 1, row + 1);
+        rawFrames.push(nextRow * cols + col);
       }
       selectedFrameIndex = rawFrames.length - 1;
       renderFramesList();

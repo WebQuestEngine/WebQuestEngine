@@ -73,7 +73,7 @@ export class VisualSpritePickerModalTemplate {
       const isSel = i === selectedFrameIndex;
       const rect = getFrameRect(f);
       return `
-        <div class="frame-thumb-card ${isSel ? 'active' : ''}" data-idx="${i}">
+        <div class="frame-thumb-card ${isSel ? 'active' : ''}" data-idx="${i}" draggable="true">
           <div class="frame-thumb-badge">#${i + 1}</div>
           <div class="frame-thumb-canvas-box">
             <canvas class="frame-mini-canvas" data-idx="${i}" width="${rect.w}" height="${rect.h}"></canvas>
