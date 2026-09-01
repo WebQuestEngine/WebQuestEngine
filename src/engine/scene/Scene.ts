@@ -60,15 +60,23 @@ export class Scene {
       this.characters.set(charData.id, char);
       this.entityContainer.addChild(char.container);
 
-      if (charData.id === 'player') {
+      if (charData.id === 'player' || charData.id.toLowerCase() === 'hero' || charData.name.toLowerCase() === 'hero') {
         this.playerCharacter = char;
         hasPlayer = true;
         camera.follow(char.container);
       }
     }
 
-    // Automatically spawn player at playerSpawn ONLY in GameRuntime (not in Editor)
-    if (!hasPlayer && !isEditor) {
+    // If no character was explicitly named player/hero, pick the first character in the scene
+    if (!hasPlayer && this.characters.size > 0) {
+      const firstChar = Array.from(this.characters.values())[0];
+      this.playerCharacter = firstChar;
+      hasPlayer = true;
+      camera.follow(firstChar.container);
+    }
+
+    // Automatically spawn player at playerSpawn ONLY if the scene has 0 characters and not in Editor
+    if (!hasPlayer && this.characters.size === 0 && !isEditor) {
       const defaultPlayerData = {
         id: 'player',
         name: 'Hero',
@@ -76,7 +84,7 @@ export class Scene {
         frameWidth: 64,
         frameHeight: 96,
         position: { ...(this.data.playerSpawn || { x: 300, y: 750 }) },
-        speed: 4,
+        speed: 200,
         scale: 1,
         talkColor: '#fef08a',
         animations: {

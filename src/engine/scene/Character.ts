@@ -105,6 +105,7 @@ export class Character extends MovableElement {
 
     if (this.path.length > 0) {
       this.faceTarget(this.path[0]);
+      this.updateSpriteFrame();
     }
   }
 
@@ -171,7 +172,9 @@ export class Character extends MovableElement {
       const dy = target.y - this.container.y;
       const dist = Math.hypot(dx, dy);
 
-      const step = (this.data.speed || 200) * delta;
+      const speedVal = this.data.speed || 200;
+      const speedPixelsPerSec = speedVal <= 20 ? speedVal * 60 : speedVal;
+      const step = speedPixelsPerSec * delta;
 
       if (dist <= step) {
         this.container.x = target.x;
@@ -182,6 +185,7 @@ export class Character extends MovableElement {
           this.state = 'idle';
           this.path = [];
           this.currentPathIndex = 0;
+          this.updateSpriteFrame();
           if (this.onWalkCompleteCallback) {
             const cb = this.onWalkCompleteCallback;
             this.onWalkCompleteCallback = null;
