@@ -18,8 +18,35 @@ export function normalizeImagePath(pathStr: string): string {
 }
 
 /**
+ * Resolves the effective base folder path for a scene or project.
+ * E.g., if project base is "assets" and scene base is "c1s1", resolves to "assets/c1s1".
+ * If scene base is not defined, returns the project base (defaulting to "assets").
+ */
+export function getEffectiveBasePath(scene?: SceneData | null, project?: ProjectData | null): string {
+  const projBase = (project?.assetBasePath?.trim() || 'assets').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const sceneBase = scene?.assetBasePath?.trim()?.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+
+  if (!sceneBase) {
+    return projBase || 'assets';
+  }
+
+  // If sceneBase already starts with projBase (e.g. "assets/c1s1" starts with "assets"), use sceneBase
+  if (projBase && (sceneBase === projBase || sceneBase.startsWith(`${projBase}/`))) {
+    return sceneBase;
+  }
+
+  // Otherwise, automatically prefix with parent project base path (e.g. "assets" + "c1s1" => "assets/c1s1")
+  if (projBase) {
+    return `${projBase}/${sceneBase}`;
+  }
+
+  return sceneBase;
+}
+
+/**
  * Combines the active base folder of the scene or project with the asset category folder and filename.
- * E.g., scene base `assets/scene1` + audio + `look_at_object.mp3` => `assets/scene1/audio/look_at_object.mp3`
+ * E.g., scene base `assets/c1s1` + audio + `bgm.mp3` => `assets/c1s1/audio/bgm.mp3`
+ * E.g., project base `assets` + items + `key.png` => `assets/items/key.png`
  */
 export function resolvePickedAssetPath(
   file: File,
@@ -45,52 +72,58 @@ export function resolvePickedAssetPath(
     }
   }
 
-  // Resolve the effective base path: scene overrides project, both override 'assets'
-  const rawBase = scene?.assetBasePath?.trim() || project?.assetBasePath?.trim() || 'assets';
-  const cleanBase = rawBase.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  // Resolve the effective base path: automatically nested under project base
+  const projBase = (project?.assetBasePath?.trim() || 'assets').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const effectiveBase = getEffectiveBasePath(scene, project);
   const fileName = file.name;
 
   if (category === 'audio') {
-    if (cleanBase.endsWith('/audio') || cleanBase === 'audio') {
-      return `${cleanBase}/${fileName}`;
+    if (effectiveBase.endsWith('/audio') || effectiveBase === 'audio') {
+      return `${effectiveBase}/${fileName}`;
     }
-    return `${cleanBase}/audio/${fileName}`;
+    return `${effectiveBase}/audio/${fileName}`;
   }
 
   if (category === 'video') {
-    if (cleanBase.endsWith('/video') || cleanBase === 'video') {
-      return `${cleanBase}/${fileName}`;
+    if (effectiveBase.endsWith('/video') || effectiveBase === 'video') {
+      return `${effectiveBase}/${fileName}`;
     }
-    return `${cleanBase}/video/${fileName}`;
+    return `${effectiveBase}/video/${fileName}`;
   }
 
   if (category === 'cursors') {
-    if (cleanBase.endsWith('/cursors') || cleanBase === 'cursors') {
-      return `${cleanBase}/${fileName}`;
+    const base = projBase || effectiveBase;
+    if (base.endsWith('/cursors') || base === 'cursors') {
+      return `${base}/${fileName}`;
     }
-    return `${cleanBase}/cursors/${fileName}`;
+    return `${base}/cursors/${fileName}`;
   }
 
   if (category === 'items') {
-    if (cleanBase.endsWith('/items') || cleanBase === 'items') {
-      return `${cleanBase}/${fileName}`;
+    const base = projBase || effectiveBase;
+    if (base.endsWith('/items') || base === 'items') {
+      return `${base}/${fileName}`;
     }
-    return `${cleanBase}/items/${fileName}`;
+    return `${base}/items/${fileName}`;
   }
 
   if (category === 'characters') {
-    if (cleanBase.endsWith('/characters') || cleanBase === 'characters') {
-      return `${cleanBase}/${fileName}`;
-    }
     if (scene?.assetBasePath && scene.assetBasePath.trim() !== '') {
-      return `${cleanBase}/${fileName}`;
+      if (effectiveBase.endsWith('/characters') || effectiveBase === 'characters') {
+        return `${effectiveBase}/${fileName}`;
+      }
+      return `${effectiveBase}/${fileName}`;
     }
-    return `${cleanBase}/characters/${fileName}`;
+    const base = projBase || 'assets';
+    if (base.endsWith('/characters') || base === 'characters') {
+      return `${base}/${fileName}`;
+    }
+    return `${base}/characters/${fileName}`;
   }
 
   // For all image-like assets (images, layers)
-  // just place them under the effective base folder
-  return `${cleanBase}/${fileName}`;
+  // place them under the effective scene base folder
+  return `${effectiveBase}/${fileName}`;
 }
 
 export function getRelativeFilePath(

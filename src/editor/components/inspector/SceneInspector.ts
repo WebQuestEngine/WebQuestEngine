@@ -43,8 +43,13 @@ export class SceneInspector {
 
     container.querySelector('#btn-pick-scene-base-folder')?.addEventListener('click', async () => {
       await pickFolderPath((folderPath) => {
-        currentScene.assetBasePath = folderPath;
-        if (scBase) scBase.value = folderPath;
+        const projBase = (project?.assetBasePath?.trim() || 'assets').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        let clean = folderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        if (projBase && clean !== projBase && !clean.startsWith(`${projBase}/`)) {
+          clean = `${projBase}/${clean}`;
+        }
+        currentScene.assetBasePath = clean;
+        if (scBase) scBase.value = clean;
         onUpdate();
       });
     });
