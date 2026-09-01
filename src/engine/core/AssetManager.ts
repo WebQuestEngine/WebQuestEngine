@@ -137,10 +137,10 @@ export class AssetManager {
   }
 
   public async cacheDataUrl(url: string, dataUrl: string): Promise<PIXI.Texture> {
-    // Always store the raw data URL so resolveImageSrc can use it for inspector thumbnails
     this.dataUrls.set(url, dataUrl);
+    this.textures.delete(url);
     try {
-      const texture = await PIXI.Assets.load(dataUrl);
+      const texture = await PIXI.Assets.load({ src: dataUrl, loadParser: 'loadTextures' }).catch(() => PIXI.Assets.load(dataUrl));
       if (texture) {
         this.textures.set(url, texture);
         return texture;

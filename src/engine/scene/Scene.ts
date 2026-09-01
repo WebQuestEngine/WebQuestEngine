@@ -113,27 +113,20 @@ export class Scene {
 
     // Add new or update existing characters
     for (const charData of this.data.characters) {
-      const existing = this.characters.get(charData.id);
+      let existing = this.characters.get(charData.id);
       if (!existing) {
-        const newChar = new Character(charData);
-        await newChar.init();
-        this.characters.set(charData.id, newChar);
-        this.entityContainer.addChild(newChar.container);
-        if (charData.id === 'player') {
-          this.playerCharacter = newChar;
-        }
+        existing = new Character(charData);
+        await existing.init();
+        this.characters.set(charData.id, existing);
+        this.entityContainer.addChild(existing.container);
       } else {
-        const needsReInit = existing.data.spriteSheetUrl !== charData.spriteSheetUrl;
         existing.data = charData;
         existing.imageUrl = charData.spriteSheetUrl;
-        if (needsReInit) {
-          await existing.init();
-        } else {
-          existing.freezeFrame(this.getWalkPath());
-        }
-        if (charData.id === 'player') {
-          this.playerCharacter = existing;
-        }
+        await existing.init();
+        existing.freezeFrame(this.getWalkPath());
+      }
+      if (charData.id === 'player') {
+        this.playerCharacter = existing;
       }
     }
   }
@@ -161,11 +154,9 @@ export class Scene {
           this.entityContainer.addChild(existing.container);
         }
       } else {
-        const needsReInit = existing.data.imageUrl !== hsData.imageUrl;
         existing.data = hsData;
-        if (needsReInit) {
-          await existing.init();
-        }
+        existing.imageUrl = hsData.imageUrl;
+        await existing.init();
       }
     }
   }
@@ -192,11 +183,9 @@ export class Scene {
         this.layers.push(existing);
         this.container.addChild(existing.container);
       } else {
-        const needsReInit = existing.data.imageUrl !== lData.imageUrl;
         existing.data = lData;
-        if (needsReInit) {
-          await existing.init();
-        }
+        existing.imageUrl = lData.imageUrl;
+        await existing.init();
       }
     }
 

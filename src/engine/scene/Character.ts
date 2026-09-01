@@ -45,7 +45,7 @@ export class Character extends MovableElement {
     this.cursor = data.cursor || 'talk';
     this.actions = data.actions || [];
     this.speed = data.speed;
-    this.sprite.anchor.set(0.5, 0.9); // Foot placement anchor
+    this.sprite.anchor.set(0.5, 1.0); // Foot placement anchor: entire frame rendered from bottom up
   }
 
   public override containsPointInEditor(p: Vector2D): boolean {
