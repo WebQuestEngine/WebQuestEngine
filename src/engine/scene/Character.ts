@@ -259,13 +259,15 @@ export class Character extends MovableElement {
       // Grid index frame
       const frameIndex = typeof currentFrame === 'number' ? currentFrame : 0;
       const texWidth = this.textureSheet.width || 256;
-      const cols = Math.max(1, Math.floor(texWidth / (this.data.frameWidth || 64)));
+      const cols = this.data.cols || Math.max(1, Math.floor(texWidth / (this.data.frameWidth || 64)));
       const fw = this.data.frameWidth || 64;
       const fh = this.data.frameHeight || 64;
+      const ox = this.data.gridOffsetX || 0;
+      const oy = this.data.gridOffsetY || 0;
       const col = frameIndex % cols;
       const row = Math.floor(frameIndex / cols);
 
-      frameRect = new PIXI.Rectangle(col * fw, row * fh, fw, fh);
+      frameRect = new PIXI.Rectangle(ox + col * fw, oy + row * fh, fw, fh);
     }
 
     this.sprite.texture = new PIXI.Texture({

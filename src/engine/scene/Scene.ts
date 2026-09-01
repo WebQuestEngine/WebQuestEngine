@@ -22,7 +22,7 @@ export class Scene {
     this.entityContainer = new PIXI.Container();
   }
 
-  public async init(camera: Camera): Promise<void> {
+  public async init(camera: Camera, isEditor = false): Promise<void> {
     camera.setBounds(this.data.width, this.data.height);
 
     // Initialize background layers sorted by zIndex
@@ -67,8 +67,8 @@ export class Scene {
       }
     }
 
-    // Automatically spawn player at playerSpawn if not explicitly listed in scene characters
-    if (!hasPlayer) {
+    // Automatically spawn player at playerSpawn ONLY in GameRuntime (not in Editor)
+    if (!hasPlayer && !isEditor) {
       const defaultPlayerData = {
         id: 'player',
         name: 'Hero',
@@ -94,6 +94,82 @@ export class Scene {
     }
   }
 
+  public async syncCharacters(): Promise<void> {
+    const validIds = new Set(this.data.characters.map(c => c.id));
+
+    // Remove characters that no longer exist in data
+    for (const [id, char] of Array.from(this.characters.entries())) {
+      if (!validIds.has(id)) {
+        if (this.entityContainer && this.entityContainer.children.includes(char.container)) {
+          this.entityContainer.removeChild(char.container);
+        }
+        char.destroy();
+        this.characters.delete(id);
+        if (this.playerCharacter === char) {
+          this.playerCharacter = null;
+        }
+      }
+    }
+
+    // Add new or update existing characters
+    for (const charData of this.data.characters) {
+      const existing = this.characters.get(charData.id);
+      if (!existing) {
+        const newChar = new Character(charData);
+        await newChar.init();
+        this.characters.set(charData.id, newChar);
+        this.entityContainer.addChild(newChar.container);
+        if (charData.id === 'player') {
+          this.playerCharacter = newChar;
+        }
+      } else {
+        const needsReInit = existing.data.spriteSheetUrl !== charData.spriteSheetUrl;
+        existing.data = charData;
+        existing.imageUrl = charData.spriteSheetUrl;
+        if (needsReInit) {
+          await existing.init();
+        } else {
+          existing.freezeFrame(this.getWalkPath());
+        }
+        if (charData.id === 'player') {
+          this.playerCharacter = existing;
+        }
+      }
+    }
+  }
+
+  public async syncHotspots(): Promise<void> {
+    const validIds = new Set(this.data.hotspots.map(h => h.id));
+    for (let i = this.hotspots.length - 1; i >= 0; i--) {
+      const hs = this.hotspots[i];
+      if (!validIds.has(hs.data.id)) {
+        if (this.entityContainer && this.entityContainer.children.includes(hs.container)) {
+          this.entityContainer.removeChild(hs.container);
+        }
+        hs.destroy();
+        this.hotspots.splice(i, 1);
+      }
+    }
+
+    for (const hsData of this.data.hotspots) {
+      let existing = this.hotspots.find(h => h.data.id === hsData.id);
+      if (!existing) {
+        existing = new Hotspot(hsData);
+        await existing.init();
+        this.hotspots.push(existing);
+        if (hsData.imageUrl) {
+          this.entityContainer.addChild(existing.container);
+        }
+      } else {
+        const needsReInit = existing.data.imageUrl !== hsData.imageUrl;
+        existing.data = hsData;
+        if (needsReInit) {
+          await existing.init();
+        }
+      }
+    }
+  }
+
   public async syncLayers(): Promise<void> {
     this.data.layers.forEach((lData, idx) => {
       if (lData.zIndex === undefined) lData.zIndex = idx + 1;
@@ -116,7 +192,11 @@ export class Scene {
         this.layers.push(existing);
         this.container.addChild(existing.container);
       } else {
+        const needsReInit = existing.data.imageUrl !== lData.imageUrl;
         existing.data = lData;
+        if (needsReInit) {
+          await existing.init();
+        }
       }
     }
 

@@ -208,6 +208,8 @@ export class EditorCanvas {
     EventBus.getInstance().on('editor:project_updated', async () => {
       if (this.currentScene) {
         await this.currentScene.syncLayers();
+        await this.currentScene.syncCharacters();
+        await this.currentScene.syncHotspots();
         this.renderDebugOverlay();
       }
     });
@@ -275,7 +277,7 @@ export class EditorCanvas {
     }
 
     this.currentScene = new Scene(sceneData);
-    await this.currentScene.init(this.camera);
+    await this.currentScene.init(this.camera, true);
 
     const activeWalkPath = this.currentScene.getWalkPath();
     // Freeze actors on static frame with NO animation in Editor Mode, but respecting scale and position

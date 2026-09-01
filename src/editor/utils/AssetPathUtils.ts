@@ -108,12 +108,6 @@ export function resolvePickedAssetPath(
   }
 
   if (category === 'characters') {
-    if (scene?.assetBasePath && scene.assetBasePath.trim() !== '') {
-      if (effectiveBase.endsWith('/characters') || effectiveBase === 'characters') {
-        return `${effectiveBase}/${fileName}`;
-      }
-      return `${effectiveBase}/${fileName}`;
-    }
     const base = projBase || 'assets';
     if (base.endsWith('/characters') || base === 'characters') {
       return `${base}/${fileName}`;
