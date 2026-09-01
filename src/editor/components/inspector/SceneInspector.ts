@@ -1,6 +1,6 @@
 import { SceneData, ProjectData } from '../../../engine/types';
 import { EventBus } from '../../../engine/core/EventBus';
-import { resolvePickedAssetPath, handleFileInputChange } from '../../utils/AssetPathUtils';
+import { resolvePickedAssetPath, pickFolderPath } from '../../utils/AssetPathUtils';
 import { SceneInspectorTemplate } from './templates/SceneInspector.template';
 
 export class SceneInspector {
@@ -41,6 +41,14 @@ export class SceneInspector {
       });
     }
 
+    container.querySelector('#btn-pick-scene-base-folder')?.addEventListener('click', async () => {
+      await pickFolderPath((folderPath) => {
+        currentScene.assetBasePath = folderPath;
+        if (scBase) scBase.value = folderPath;
+        onUpdate();
+      });
+    });
+
     const scBgUrl = container.querySelector('#sc-bg-url') as HTMLInputElement;
     if (scBgUrl) {
       scBgUrl.addEventListener('input', () => {
@@ -51,19 +59,7 @@ export class SceneInspector {
       });
     }
 
-    const scBgFile = container.querySelector('#sc-bg-file') as HTMLInputElement;
-    if (scBgFile) {
-      scBgFile.addEventListener('change', (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (file && currentScene.layers[0]) {
-          handleFileInputChange(file, 'images', currentScene, project, (cleanUrl) => {
-            currentScene.layers[0].imageUrl = cleanUrl;
-            onReRender();
-            onUpdate();
-          });
-        }
-      });
-    }
+
 
     const scBgmUrl = container.querySelector('#sc-bgm-url') as HTMLInputElement;
     if (scBgmUrl) {

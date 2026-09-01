@@ -45,7 +45,7 @@ export function resolvePickedAssetPath(
     }
   }
 
-  // 2. Combine base folder + category folder + filename
+  // Resolve the effective base path: scene overrides project, both override 'assets'
   const rawBase = scene?.assetBasePath?.trim() || project?.assetBasePath?.trim() || 'assets';
   const cleanBase = rawBase.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
   const fileName = file.name;
@@ -57,28 +57,39 @@ export function resolvePickedAssetPath(
     return `${cleanBase}/audio/${fileName}`;
   }
 
-  if (category === 'characters') {
-    if (cleanBase.endsWith('/characters') || cleanBase === 'characters') {
+  if (category === 'video') {
+    if (cleanBase.endsWith('/video') || cleanBase === 'video') {
       return `${cleanBase}/${fileName}`;
     }
-    return `assets/characters/${fileName}`;
+    return `${cleanBase}/video/${fileName}`;
   }
 
   if (category === 'cursors') {
     if (cleanBase.endsWith('/cursors') || cleanBase === 'cursors') {
       return `${cleanBase}/${fileName}`;
     }
-    return `assets/cursors/${fileName}`;
+    return `${cleanBase}/cursors/${fileName}`;
   }
 
   if (category === 'items') {
     if (cleanBase.endsWith('/items') || cleanBase === 'items') {
       return `${cleanBase}/${fileName}`;
     }
-    return `assets/items/${fileName}`;
+    return `${cleanBase}/items/${fileName}`;
   }
 
-  // For images / layers:
+  if (category === 'characters') {
+    if (cleanBase.endsWith('/characters') || cleanBase === 'characters') {
+      return `${cleanBase}/${fileName}`;
+    }
+    if (scene?.assetBasePath && scene.assetBasePath.trim() !== '') {
+      return `${cleanBase}/${fileName}`;
+    }
+    return `${cleanBase}/characters/${fileName}`;
+  }
+
+  // For all image-like assets (images, layers)
+  // just place them under the effective base folder
   return `${cleanBase}/${fileName}`;
 }
 
@@ -89,6 +100,46 @@ export function getRelativeFilePath(
   project?: ProjectData | null
 ): string {
   return resolvePickedAssetPath(file, category, scene, project);
+}
+
+/**
+ * Opens the standard native OS directory picker dialog (showDirectoryPicker)
+ * to select a base asset folder.
+ */
+export async function pickFolderPath(callback: (folderPath: string) => void): Promise<void> {
+  if ('showDirectoryPicker' in window) {
+    try {
+      const handle = await (window as any).showDirectoryPicker();
+      if (handle && handle.name) {
+        callback(handle.name);
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') return; // User cancelled in OS dialog
+      console.warn('showDirectoryPicker error', err);
+    }
+  }
+
+  // Fallback for browsers without File System Access API
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.setAttribute('webkitdirectory', '');
+  input.style.display = 'none';
+  document.body.appendChild(input);
+
+  input.onchange = () => {
+    const files = input.files;
+    document.body.removeChild(input);
+    if (!files || files.length === 0) return;
+    const rel = files[0].webkitRelativePath || '';
+    if (rel) {
+      callback(rel.split('/')[0]);
+      return;
+    }
+    callback(files[0].name.replace(/\.[^.]+$/, ''));
+  };
+
+  input.click();
 }
 
 export function handleFileInputChange(

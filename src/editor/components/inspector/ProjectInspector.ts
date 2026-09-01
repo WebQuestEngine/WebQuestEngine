@@ -1,6 +1,6 @@
 import { ProjectData, ChapterData, VerbType, AspectRatioType, UIPresetType } from '../../../engine/types';
 import { EventBus } from '../../../engine/core/EventBus';
-import { resolvePickedAssetPath } from '../../utils/AssetPathUtils';
+import { resolvePickedAssetPath, pickFolderPath } from '../../utils/AssetPathUtils';
 import { VisualCursorHotspotModal } from '../VisualCursorHotspotModal';
 import { ProjectInspectorTemplate } from './templates/ProjectInspector.template';
 
@@ -62,6 +62,14 @@ export class ProjectInspector {
         onUpdate();
       });
     }
+
+    container.querySelector('#btn-pick-proj-base-folder')?.addEventListener('click', async () => {
+      await pickFolderPath((folderPath) => {
+        project.assetBasePath = folderPath;
+        if (projBase) projBase.value = folderPath;
+        onUpdate();
+      });
+    });
 
     const uiPreset = container.querySelector('#ui-preset') as HTMLSelectElement;
     if (uiPreset) {

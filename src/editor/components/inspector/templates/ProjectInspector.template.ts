@@ -98,7 +98,10 @@ export class ProjectInspectorTemplate {
         </div>
         <div class="form-group">
           <label>Base Asset Folder</label>
-          <input type="text" class="form-input" id="proj-base-folder" value="${TemplateUtils.escapeHtml(project.assetBasePath || '')}" placeholder="e.g. demo or assets" />
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" class="form-input" id="proj-base-folder" value="${TemplateUtils.escapeHtml(project.assetBasePath || '')}" placeholder="e.g. demo or assets" style="flex:1;" />
+            <button class="btn btn-secondary" id="btn-pick-proj-base-folder" style="padding:6px 10px; flex-shrink:0;" title="Browse for folder">📂</button>
+          </div>
         </div>
       </div>
 

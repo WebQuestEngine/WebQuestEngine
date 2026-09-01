@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js';
 export class AssetManager {
   private static instance: AssetManager;
   private textures: Map<string, PIXI.Texture> = new Map();
+  private dataUrls: Map<string, string> = new Map();
   private baseFolders: Set<string> = new Set(['assets', 'demo/assets', 'demo', 'src']);
 
   private constructor() { }
@@ -32,6 +33,11 @@ export class AssetManager {
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) {
       return url;
+    }
+
+    // Return cached data URL for locally-picked files not yet on the server
+    if (this.dataUrls.has(url)) {
+      return this.dataUrls.get(url)!;
     }
 
     let clean = url.replace(/\\/g, '/');
@@ -131,6 +137,8 @@ export class AssetManager {
   }
 
   public async cacheDataUrl(url: string, dataUrl: string): Promise<PIXI.Texture> {
+    // Always store the raw data URL so resolveImageSrc can use it for inspector thumbnails
+    this.dataUrls.set(url, dataUrl);
     try {
       const texture = await PIXI.Assets.load(dataUrl);
       if (texture) {
