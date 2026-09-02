@@ -15,8 +15,8 @@ Sir Ronald travels to the ancient stronghold of Eldoria to seek out the enigmati
 
 ## 🎮 Play Online & Open in Editor
 
-* 🕹️ **[Play Demo Quest (Fullscreen Game)](https://itaibh.github.io/WebQuestEngine/player.html)** — Play the standalone point-and-click adventure demo directly in your browser.
-* 🛠️ **[Launch WebQuestEngine Studio](https://itaibh.github.io/WebQuestEngine/)** — Open the full visual authoring editor loaded with the demo project to inspect and tweak scenes, characters, dialog trees, and logic rules.
+* 🕹️ **[Play Demo Quest (Fullscreen Game)](https://webquestengine.github.io/WebQuestEngine/player.html)** — Play the standalone point-and-click adventure demo directly in your browser.
+* 🛠️ **[Launch WebQuestEngine Studio](https://webquestengine.github.io/WebQuestEngine/)** — Open the full visual authoring editor loaded with the demo project to inspect and tweak scenes, characters, dialog trees, and logic rules.
 
 ---
 
