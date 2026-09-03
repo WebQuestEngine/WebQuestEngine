@@ -252,11 +252,11 @@ export class EditorApp {
     });
 
     EventBus.getInstance().on('editor:toggle_story_graph', () => {
-      this.storyGraphView.show();
+      this.dialogEditor.show({ viewMode: 'storyboard' });
     });
 
     EventBus.getInstance().on('editor:toggle_dialog_editor', () => {
-      this.dialogEditor.show();
+      this.dialogEditor.show({ viewMode: 'sequences' });
     });
 
     // Decoupled Mode Switching

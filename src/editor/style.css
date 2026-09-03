@@ -2125,3 +2125,36 @@ body {
   font-weight: 700;
   font-size: 0.95rem;
 }
+
+/* Storyboard Scene Card and Progression Flow Styles */
+.storyboard-scene-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+}
+
+.storyboard-scene-card:hover {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.35);
+  border-color: #60a5fa !important;
+}
+
+.storyboard-card-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.btn-jump-to-sequence:hover {
+  color: var(--accent-gold) !important;
+  text-decoration: underline;
+}
+
+.storyboard-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.graph-view-switcher .btn-tab-mode {
+  transition: all 0.15s ease;
+}
+
+.graph-view-switcher .btn-tab-mode:hover {
+  filter: brightness(1.2);
+}

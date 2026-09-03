@@ -21,23 +21,131 @@ export class DialogEditorTemplate {
   public static renderTreeList(params: {
     dialogs: DialogTree[];
     selectedTreeId: string | null;
+    project: ProjectData | null;
+    sceneFilter?: string;
   }): string {
-    const { dialogs, selectedTreeId } = params;
-    return TemplateUtils.renderList<DialogTree>(dialogs, (dlg: DialogTree) => {
+    const { dialogs, selectedTreeId, project, sceneFilter } = params;
+    const filter = sceneFilter || 'all';
+
+    const filtered = dialogs.filter(dlg => {
+      if (filter === 'all') return true;
+      const sId = DialogEditorUtils.getSequenceSceneId(project, dlg);
+      return sId === filter;
+    });
+
+    if (filtered.length === 0) {
+      return '<div style="font-size:0.75rem; color:var(--text-muted); padding:10px; font-style:italic;">No sequences found for this scene filter.</div>';
+    }
+
+    return filtered.map((dlg: DialogTree) => {
       const isSel = dlg.id === selectedTreeId;
       const nodeCount = Object.keys(dlg.nodes || {}).length;
-      return TemplateUtils.populate(dialogTreeListItemHtml, {
-        id: dlg.id,
-        activeClass: isSel ? 'active' : '',
-        bgStyle: isSel ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.03)',
-        borderStyle: isSel ? 'var(--accent-gold)' : 'transparent',
-        fontWeight: isSel ? '700' : '500',
-        titleColor: isSel ? 'var(--accent-gold)' : 'var(--text-main)',
-        escapedTitle: TemplateUtils.escapeHtml(dlg.title || dlg.id),
-        nodeCount,
-        plural: nodeCount !== 1 ? 's' : '',
-      });
+      const sId = DialogEditorUtils.getSequenceSceneId(project, dlg);
+      const sceneObj = project?.scenes?.find(s => s.id === sId);
+      const sceneBadge = sId === 'global' ? '🌐 Global' : `🏰 ${sceneObj?.name || sId}`;
+
+      return `
+        <div class="tree-item ${isSel ? 'active' : ''}" data-treeid="${dlg.id}" style="padding:6px 10px; border-radius:6px; background:${isSel ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isSel ? 'var(--accent-gold)' : 'transparent'}; cursor:pointer; display:flex; flex-direction:column; gap:2px; transition:all 0.15s ease;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:${isSel ? '700' : '600'}; color:${isSel ? 'var(--accent-gold)' : 'var(--text-main)'}; font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              🎬 ${TemplateUtils.escapeHtml(dlg.title || dlg.id)}
+            </span>
+            <span style="font-size:0.6rem; color:var(--text-muted);">${nodeCount} node${nodeCount !== 1 ? 's' : ''}</span>
+          </div>
+          <div style="font-size:0.62rem; color:${sId === 'global' ? '#94a3b8' : '#38bdf8'};">${TemplateUtils.escapeHtml(sceneBadge)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  public static renderStoryboardCanvas(params: {
+    project: ProjectData | null;
+    activeSceneId?: string;
+  }): string {
+    const { project, activeSceneId } = params;
+    if (!project || !project.scenes) return '';
+
+    const scenes = project.scenes;
+    let html = '';
+
+    scenes.forEach((sc, idx) => {
+      const isCurrentScene = sc.id === activeSceneId;
+      const x = sc.storyPosition?.x ?? (80 + (idx % 3) * 390);
+      const y = sc.storyPosition?.y ?? (80 + Math.floor(idx / 3) * 360);
+
+      const seqs = DialogEditorUtils.getSequencesForScene(project, sc.id);
+      const transitions = DialogEditorUtils.getSceneTransitions(project).filter(t => t.fromSceneId === sc.id);
+
+      html += `
+        <div class="storyboard-scene-card" data-sceneid="${sc.id}" style="position:absolute; left:${x}px; top:${y}px; width:340px; background:rgba(15,23,42,0.96); border:2px solid ${isCurrentScene ? 'var(--accent-gold)' : '#38bdf8'}; border-radius:10px; padding:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6); pointer-events:auto; cursor:default; z-index:10;">
+          <div class="storyboard-card-header" data-sceneid="${sc.id}" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:6px; cursor:move;">
+            <div style="font-weight:700; font-size:0.95rem; color:${isCurrentScene ? 'var(--accent-gold)' : '#38bdf8'}; display:flex; align-items:center; gap:6px;">
+              <span>🏰 ${TemplateUtils.escapeHtml(sc.name)}</span>
+              ${isCurrentScene ? '<span style="font-size:0.6rem; background:var(--accent-gold); color:#000; padding:1px 4px; border-radius:4px; font-weight:800;">ACTIVE</span>' : ''}
+            </div>
+            <span style="font-size:0.65rem; color:var(--text-muted);">${sc.id}</span>
+          </div>
+
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px; display:flex; gap:12px;">
+            <span>👥 ${sc.characters?.length || 0} Actors</span>
+            <span>📦 ${sc.hotspots?.length || 0} Hotspots</span>
+            <span>🎬 ${seqs.length} Sequences</span>
+          </div>
+
+          <!-- Associated Sequences -->
+          <div style="background:rgba(0,0,0,0.3); border-radius:6px; padding:6px 8px; margin-bottom:8px;">
+            <div style="font-size:0.65rem; color:#94a3b8; font-weight:700; margin-bottom:4px;">🎬 Sequences & Dialogues:</div>
+            ${seqs.length > 0 ? seqs.map(s => `
+              <div class="btn-jump-to-sequence" data-treeid="${s.id}" data-sceneid="${sc.id}" style="font-size:0.7rem; color:#38bdf8; cursor:pointer; padding:2px 0; display:flex; justify-content:space-between;" title="Open sequence in editor">
+                <span>▶ ${TemplateUtils.escapeHtml(s.title || s.id)}</span>
+                <span style="font-size:0.6rem; color:var(--text-muted);">${Object.keys(s.nodes || {}).length} nodes</span>
+              </div>
+            `).join('') : '<div style="font-size:0.65rem; color:var(--text-muted); font-style:italic;">No sequences tied to this scene yet.</div>'}
+          </div>
+
+          <!-- Outgoing Exits -->
+          ${transitions.length > 0 ? `
+            <div style="background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.25); border-radius:6px; padding:6px 8px; margin-bottom:8px;">
+              <div style="font-size:0.65rem; color:#10b981; font-weight:700; margin-bottom:2px;">🚪 Outgoing Scene Transitions:</div>
+              ${transitions.map(ex => {
+                const targetScene = project.scenes.find(s => s.id === ex.toSceneId);
+                return `<div style="font-size:0.7rem; color:#e2e8f0;">➔ <b>${TemplateUtils.escapeHtml(targetScene?.name || ex.toSceneId)}</b> (${TemplateUtils.escapeHtml(ex.label)})</div>`;
+              }).join('')}
+            </div>
+          ` : ''}
+
+          <!-- Action Buttons -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px;">
+            <button class="btn btn-primary btn-open-scene-graphs" data-sceneid="${sc.id}" style="font-size:0.75rem; padding:6px 8px; background:linear-gradient(135deg, #1e293b, #0f172a); border-color:#38bdf8; color:#38bdf8; font-weight:700;" title="Double-click node to open">🎬 Open Graphs</button>
+            <button class="btn btn-jump-main-scene" data-sceneid="${sc.id}" style="font-size:0.75rem; padding:6px 8px; background:rgba(255,255,255,0.06); border-color:var(--panel-border); color:#f8fafc;" title="Switch active scene in main editor">🏰 Edit Scene</button>
+          </div>
+        </div>
+      `;
     });
+
+    return html;
+  }
+
+  public static renderStoryboardSidebar(params: {
+    project: ProjectData | null;
+    activeSceneId?: string;
+  }): string {
+    const { project, activeSceneId } = params;
+    if (!project || !project.scenes) return '';
+
+    return project.scenes.map(sc => {
+      const isCur = sc.id === activeSceneId;
+      const seqCount = DialogEditorUtils.getSequencesForScene(project, sc.id).length;
+      return `
+        <div class="storyboard-sidebar-item" data-sceneid="${sc.id}" style="padding:8px 10px; border-radius:6px; background:${isCur ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isCur ? 'var(--accent-gold)' : 'transparent'}; cursor:pointer; display:flex; justify-content:space-between; align-items:center; transition:background 0.15s ease;">
+          <div>
+            <div style="font-weight:700; font-size:0.78rem; color:${isCur ? 'var(--accent-gold)' : '#f8fafc'};">🏰 ${TemplateUtils.escapeHtml(sc.name)}</div>
+            <div style="font-size:0.62rem; color:var(--text-muted);">${sc.id}</div>
+          </div>
+          <span style="font-size:0.65rem; background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 6px; border-radius:4px; font-weight:700;">${seqCount} seqs</span>
+        </div>
+      `;
+    }).join('');
   }
 
   public static renderEmptySequencePrompt(): string {

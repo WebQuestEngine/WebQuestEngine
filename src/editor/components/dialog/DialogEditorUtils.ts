@@ -176,4 +176,77 @@ export class DialogEditorUtils {
     if (found && found.animations && found.animations.length > 0) return found.animations;
     return ['idle', 'talk', 'walk', 'gesture', 'stir_cauldron', 'look_around', 'cower', 'celebrate'];
   }
+
+  public static getSequenceSceneId(project: ProjectData | null, dTree: DialogTree): string {
+    if (dTree.sceneId) return dTree.sceneId;
+    if (!project || !project.scenes) return 'global';
+
+    // Check characters & hotspots in scenes
+    for (const sc of project.scenes) {
+      for (const ch of sc.characters || []) {
+        if (ch.actions?.some(a => a.dialogId === dTree.id)) return sc.id;
+      }
+      for (const hs of sc.hotspots || []) {
+        if (hs.actions?.some(a => a.dialogId === dTree.id)) return sc.id;
+      }
+      const strippedId = sc.id.replace(/^scene_/, '');
+      if (strippedId && dTree.id.includes(strippedId)) return sc.id;
+    }
+
+    // Check event nodes inside sequence
+    for (const node of Object.values(dTree.nodes || {})) {
+      if (node.eventScope === 'scene' && node.eventTargetId) return node.eventTargetId;
+    }
+
+    return 'global';
+  }
+
+  public static getSequencesForScene(project: ProjectData | null, sceneId: string): DialogTree[] {
+    if (!project || !project.dialogs) return [];
+    return project.dialogs.filter(d => {
+      const sId = DialogEditorUtils.getSequenceSceneId(project, d);
+      return sId === sceneId;
+    });
+  }
+
+  public static getSceneTransitions(project: ProjectData | null): { fromSceneId: string; toSceneId: string; label: string }[] {
+    const transitions: { fromSceneId: string; toSceneId: string; label: string }[] = [];
+    if (!project || !project.scenes) return transitions;
+
+    for (const sc of project.scenes) {
+      // Hotspots with targetSceneId
+      for (const hs of sc.hotspots || []) {
+        for (const action of hs.actions || []) {
+          if (action.targetSceneId && action.targetSceneId !== sc.id) {
+            if (!transitions.some(t => t.fromSceneId === sc.id && t.toSceneId === action.targetSceneId)) {
+              transitions.push({
+                fromSceneId: sc.id,
+                toSceneId: action.targetSceneId,
+                label: `🚪 ${hs.name}`
+              });
+            }
+          }
+        }
+      }
+
+      // Action nodes with scene_change
+      for (const dt of project.dialogs || []) {
+        const dSceneId = DialogEditorUtils.getSequenceSceneId(project, dt);
+        if (dSceneId === sc.id) {
+          for (const node of Object.values(dt.nodes || {})) {
+            if (node.actionCategory === 'scene_change' && node.targetSceneId && node.targetSceneId !== sc.id) {
+              if (!transitions.some(t => t.fromSceneId === sc.id && t.toSceneId === node.targetSceneId)) {
+                transitions.push({
+                  fromSceneId: sc.id,
+                  toSceneId: node.targetSceneId,
+                  label: `🎬 ${dt.title || dt.id}`
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    return transitions;
+  }
 }

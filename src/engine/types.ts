@@ -216,6 +216,7 @@ export interface SceneData {
   assetBasePath?: string;
   locked?: boolean;
   choreographyGroups?: ChoreographyGroup[];
+  storyPosition?: Vector2D;
 }
 
 export interface DialogChoice {
@@ -298,6 +299,7 @@ export interface DialogTree {
   title: string;
   startNodeId: string;
   nodes: Record<string, DialogNode>;
+  sceneId?: string;
 }
 
 export interface StoryNodeData {

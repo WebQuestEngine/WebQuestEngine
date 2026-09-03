@@ -1,32 +1,67 @@
 <div class="view-modal-header" style="display:flex; justify-content:space-between; align-items:center;">
-  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-    <h2 style="font-family: var(--font-heading); color: var(--accent-gold); margin-right:4px;">🕸️ Visual Graph & Scripting Editor</h2>
-    <button class="btn btn-primary" id="btn-add-beat-node" style="font-size:0.75rem; background:#1e293b; border-color:#38bdf8; color:#38bdf8;">🎬 + Beat (Dialogue)</button>
-    <button class="btn btn-primary" id="btn-add-router-node" style="font-size:0.75rem; background:linear-gradient(135deg, #7e22ce, #a855f7); border-color:#c084fc;">🔀 + Router (Logic)</button>
-    <button class="btn btn-primary" id="btn-add-event-node" style="font-size:0.75rem; background:linear-gradient(135deg, #b45309, #d97706); border-color:#f59e0b; color:#fff;">⚡ + Event Trigger</button>
-    <button class="btn btn-primary" id="btn-add-action-node" style="font-size:0.75rem; background:linear-gradient(135deg, #047857, #059669); border-color:#10b981; color:#fff;">✨ + Action / FX</button>
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <h2 style="font-family: var(--font-heading); color: var(--accent-gold); margin:0; font-size:1.1rem;">🕸️ Graph Editor</h2>
+    
+    <!-- View Switcher Segmented Control -->
+    <div class="graph-view-switcher" style="display:flex; background:rgba(15,23,42,0.85); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:2px; gap:2px;">
+      <button class="btn btn-sm btn-tab-mode" id="btn-tab-storyboard" style="font-size:0.75rem; padding:4px 10px; border-radius:4px; font-weight:700;">🗺️ Storyboard</button>
+      <button class="btn btn-sm btn-tab-mode" id="btn-tab-sequences" style="font-size:0.75rem; padding:4px 10px; border-radius:4px; font-weight:700;">🎬 Sequence Nodes</button>
+    </div>
+
+    <!-- Node creation buttons: visible in Sequence view -->
+    <div id="sequence-node-buttons" style="display:flex; gap:6px; align-items:center;">
+      <button class="btn btn-primary" id="btn-add-beat-node" style="font-size:0.75rem; background:#1e293b; border-color:#38bdf8; color:#38bdf8;">🎬 + Beat</button>
+      <button class="btn btn-primary" id="btn-add-router-node" style="font-size:0.75rem; background:linear-gradient(135deg, #7e22ce, #a855f7); border-color:#c084fc;">🔀 + Router</button>
+      <button class="btn btn-primary" id="btn-add-event-node" style="font-size:0.75rem; background:linear-gradient(135deg, #b45309, #d97706); border-color:#f59e0b; color:#fff;">⚡ + Event</button>
+      <button class="btn btn-primary" id="btn-add-action-node" style="font-size:0.75rem; background:linear-gradient(135deg, #047857, #059669); border-color:#10b981; color:#fff;">✨ + Action</button>
+    </div>
+
+    <!-- Breadcrumb back button to Storyboard -->
+    <button class="btn btn-primary" id="btn-back-to-storyboard" style="display:none; font-size:0.75rem; padding:4px 10px; background:rgba(245,158,11,0.15); border-color:var(--accent-gold); color:var(--accent-gold); font-weight:700;">⬅ Back to Storyboard</button>
   </div>
   <button class="btn btn-close-modal" id="btn-close-dialog-editor" style="background:#dc2626; border:1px solid #ef4444; color:#fff; font-size:0.8rem; padding:5px 12px; font-weight:700; border-radius:6px; cursor:pointer;" title="Close Graph Editor (Esc)">✕ Close</button>
 </div>
-<div class="view-modal-content" style="display: flex; gap: 16px; height: calc(100% - 60px);">
-  <div style="width: 260px; border-right: 1px solid var(--panel-border); padding-right: 14px; display:flex; flex-direction:column; gap:10px;">
+
+<div class="view-modal-content" style="display: flex; gap: 16px; height: calc(100% - 52px);">
+  <div style="width: 270px; border-right: 1px solid var(--panel-border); padding-right: 14px; display:flex; flex-direction:column; gap:10px;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h3 style="font-size: 0.9rem; color: var(--accent-gold); margin:0;">Sequence & Logic Graphs</h3>
-      <button class="btn btn-primary" id="btn-add-tree" style="font-size:0.75rem; padding:4px 8px;">+ New Graph</button>
+      <h3 id="panel-sidebar-title" style="font-size: 0.85rem; color: var(--accent-gold); margin:0;">Sequence & Logic Graphs</h3>
+      <button class="btn btn-primary" id="btn-add-tree" style="font-size:0.75rem; padding:3px 8px;">+ New</button>
     </div>
+
+    <!-- Scene Filter in Sequence View -->
+    <div id="sequence-scene-filter-wrap" style="display:flex; flex-direction:column; gap:4px;">
+      <label style="font-size:0.65rem; color:var(--text-muted);">Scene Filter:</label>
+      <select id="select-sequence-scene-filter" class="form-input" style="font-size:0.75rem; padding:4px 6px;">
+        <option value="all">🌐 All Scenes & Sequences</option>
+      </select>
+    </div>
+
     <div id="dialog-tree-list" style="display: flex; flex-direction: column; gap: 6px; overflow-y:auto; flex:1;"></div>
   </div>
   
   <!-- Pan & Zoom Interactive Viewport Canvas -->
   <div style="flex: 1; position:relative; overflow:hidden; background:#0f172a; cursor:grab; user-select:none;" class="graph-canvas" id="dialog-nodes-viewport">
     
-    <!-- Fixed Top Toolbar Overlay for Dialogue Title & Start Node & Delete -->
-    <div id="dialog-tree-header-bar" style="position:absolute; top:16px; left:16px; display:flex; gap:10px; align-items:center; z-index:100; background:rgba(15,23,42,0.92); padding:8px 14px; border-radius:8px; border:1px solid var(--panel-border); box-shadow:0 4px 16px rgba(0,0,0,0.6);">
-      <label style="font-size:0.8rem; color:var(--accent-gold); font-weight:700;">Sequence Title:</label>
-      <input type="text" id="tree-title-input" class="form-input" value="" style="width:220px;" />
-      <label style="font-size:0.8rem; color:var(--accent-gold); font-weight:700;">Start Beat ID:</label>
-      <input type="text" id="tree-start-node-input" class="form-input" value="" style="width:110px;" />
-      <button class="btn btn-primary" id="btn-delete-tree" style="font-size:0.75rem; padding:4px 10px; color:#ef4444; border-color:rgba(239,68,68,0.4);" title="Delete this sequence graph">🗑️ Delete Sequence</button>
+    <!-- Fixed Top Toolbar Overlay for Dialogue Title, Scene Assignment, Start Node & Delete -->
+    <div id="dialog-tree-header-bar" style="position:absolute; top:16px; left:16px; display:flex; gap:10px; align-items:center; z-index:100; background:rgba(15,23,42,0.94); padding:8px 14px; border-radius:8px; border:1px solid var(--panel-border); box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+      <label style="font-size:0.75rem; color:var(--accent-gold); font-weight:700;">Title:</label>
+      <input type="text" id="tree-title-input" class="form-input" value="" style="width:190px;" />
+      
+      <label style="font-size:0.75rem; color:#38bdf8; font-weight:700;">Scene:</label>
+      <select id="tree-scene-select" class="form-input" style="width:150px; font-size:0.75rem;">
+        <option value="global">🌐 Global / Any Scene</option>
+      </select>
+
+      <label style="font-size:0.75rem; color:var(--accent-gold); font-weight:700;">Start Beat:</label>
+      <input type="text" id="tree-start-node-input" class="form-input" value="" style="width:90px;" />
+      <button class="btn btn-primary" id="btn-delete-tree" style="font-size:0.75rem; padding:4px 8px; color:#ef4444; border-color:rgba(239,68,68,0.4);" title="Delete this sequence graph">🗑️ Delete</button>
+    </div>
+
+    <!-- Storyboard Top Overlay Banner -->
+    <div id="storyboard-header-bar" style="display:none; position:absolute; top:16px; left:16px; display:flex; gap:12px; align-items:center; z-index:100; background:rgba(15,23,42,0.94); padding:8px 16px; border-radius:8px; border:1px solid rgba(245,158,11,0.4); box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+      <span style="font-size:0.8rem; color:var(--accent-gold); font-weight:700;">🗺️ Game Storyboard & Progression Flow</span>
+      <span style="font-size:0.75rem; color:var(--text-muted);">Double-click any scene node to enter its sequence graphs</span>
     </div>
 
     <div id="dialog-graph-transform-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; overflow:visible; transform-origin: 0 0;">
@@ -34,6 +69,12 @@
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
+          </marker>
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981"/>
+          </marker>
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
           </marker>
         </defs>
       </svg>
