@@ -55,16 +55,23 @@ export class GameRuntime {
       }
     });
 
-    // Load initial scene
+    // Check if project has a defined Game Start sequence (intro video, cutscene, etc.)
+    const hasGameStart = this.hasGameStartEvent();
     const initialSceneData = this.context.story.getCurrentScene();
     if (initialSceneData) {
-      await this.loadScene(initialSceneData);
+      await this.loadScene(initialSceneData, undefined, {
+        playMusic: !hasGameStart,
+        triggerEnterEvents: !hasGameStart
+      });
     }
 
-    // Trigger Game Start Event
-    this.checkAndTriggerEvent('game', 'game', 'start');
+    if (hasGameStart) {
+      this.pendingSceneOfficialStart = initialSceneData ? initialSceneData.id : null;
+      this.checkAndTriggerEvent('game', 'game', 'start');
+    }
   }
 
+  private pendingSceneOfficialStart: string | null = null;
   private isLoadingScene = false;
   private currentHoverTarget: Hotspot | Character | null = null;
   private targetActionIndex = 0;
@@ -193,6 +200,9 @@ export class GameRuntime {
           this.containerElement.querySelectorAll('.dialog-box-overlay').forEach(el => el.remove());
           this.containerElement.querySelectorAll('.character-emote-bubble').forEach(el => el.remove());
         }
+        if (this.pendingSceneOfficialStart) {
+          this.startPendingScene();
+        }
       })
     );
 
@@ -279,27 +289,37 @@ export class GameRuntime {
     });
   }
 
-  public async loadScene(sceneData: SceneData, spawnPoint?: Vector2D): Promise<void> {
+  public async loadScene(
+    sceneData: SceneData, 
+    spawnPoint?: Vector2D, 
+    options: { playMusic?: boolean; triggerEnterEvents?: boolean } = {}
+  ): Promise<void> {
     if (this.isLoadingScene) return;
     this.isLoadingScene = true;
 
+    const shouldPlayMusic = options.playMusic !== false;
+    const shouldTriggerEnter = options.triggerEnterEvents !== false;
+
     try {
-      if (this.currentScene) {
+      const oldScene = this.currentScene;
+      this.currentScene = null;
+
+      if (oldScene) {
         if (this.viewportMask && this.viewportMask.parent) {
           this.viewportMask.parent.removeChild(this.viewportMask);
         }
-        this.app.stage.removeChild(this.currentScene.container);
-        this.currentScene.destroy();
-        this.currentScene = null;
+        this.app.stage.removeChild(oldScene.container);
+        oldScene.destroy();
       }
 
       // Deselect held item when switching scenes
       this.context.inventory.selectItem(null);
       this.context.ui.setActiveVerb('walk');
 
-    this.visitedScenes.add(sceneData.id);
-    this.currentScene = new Scene(sceneData);
-      await this.currentScene.init(this.camera);
+      this.visitedScenes.add(sceneData.id);
+      const newScene = new Scene(sceneData);
+      await newScene.init(this.camera);
+      this.currentScene = newScene;
 
       // Position player
       if (spawnPoint && this.currentScene.playerCharacter) {
@@ -318,27 +338,64 @@ export class GameRuntime {
       this.app.stage.addChild(this.currentScene.container);
       this.currentScene.container.addChild(this.viewportMask);
 
-      // Play scene BGM
-      if (sceneData.backgroundMusicUrl) {
-        this.context.audio.playMusic(sceneData.backgroundMusicUrl);
-      } else {
-        this.context.audio.stopMusic(500);
+      // Play scene BGM (if permitted)
+      if (shouldPlayMusic) {
+        if (sceneData.backgroundMusicUrl) {
+          this.context.audio.playMusic(sceneData.backgroundMusicUrl);
+        } else {
+          this.context.audio.stopMusic(500);
+        }
       }
 
       // Refresh inventory UI on scene load
       this.context.ui.renderInventoryItems(this.context.inventory.getItems());
 
-      // Trigger Scene Events (First Enter and Enter)
-      const visitedFlag = `scene_visited_${sceneData.id}`;
-      const isFirstEnter = !this.context.story.getFlag(visitedFlag);
-      if (isFirstEnter) {
-        this.context.story.setFlag(visitedFlag, true);
-        this.checkAndTriggerEvent('scene', sceneData.id, 'first_enter');
+      // Trigger Scene Events (First Enter and Enter) (if permitted)
+      if (shouldTriggerEnter) {
+        const visitedFlag = `scene_visited_${sceneData.id}`;
+        const isFirstEnter = !this.context.story.getFlag(visitedFlag);
+        if (isFirstEnter) {
+          this.context.story.setFlag(visitedFlag, true);
+          this.checkAndTriggerEvent('scene', sceneData.id, 'first_enter');
+        }
+        this.checkAndTriggerEvent('scene', sceneData.id, 'enter');
       }
-      this.checkAndTriggerEvent('scene', sceneData.id, 'enter');
     } finally {
       this.isLoadingScene = false;
     }
+  }
+
+  public hasGameStartEvent(): boolean {
+    if (!this.context.project?.dialogs) return false;
+    for (const tree of this.context.project.dialogs) {
+      for (const node of Object.values(tree.nodes)) {
+        if (node.nodeType === 'event_listener' && node.eventScope === 'game') {
+          if (!node.eventName || node.eventName === 'start') {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  public startPendingScene(): void {
+    if (!this.pendingSceneOfficialStart || !this.currentScene) return;
+    const sceneData = this.currentScene.data;
+    this.pendingSceneOfficialStart = null;
+
+    console.log(`%c[GameRuntime] 🎬 Intro sequence completed -> Officially starting initial scene "${sceneData.id}"`, 'color: #10b981; font-weight: bold;');
+
+    if (sceneData.backgroundMusicUrl) {
+      this.context.audio.playMusic(sceneData.backgroundMusicUrl);
+    }
+    const visitedFlag = `scene_visited_${sceneData.id}`;
+    const isFirstEnter = !this.context.story.getFlag(visitedFlag);
+    if (isFirstEnter) {
+      this.context.story.setFlag(visitedFlag, true);
+      this.checkAndTriggerEvent('scene', sceneData.id, 'first_enter');
+    }
+    this.checkAndTriggerEvent('scene', sceneData.id, 'enter');
   }
 
   private registerSceneDialogs(_sceneData: SceneData): void {
@@ -1262,6 +1319,9 @@ export class GameRuntime {
         return;
       }
 
+      // Stop any background music so the video cutscene has exclusive audio focus
+      this.context.audio.stopMusic(0);
+
       const videoOverlay = document.createElement('div');
       videoOverlay.className = 'cinematic-video-overlay';
       videoOverlay.style.cssText = `
@@ -1285,6 +1345,8 @@ export class GameRuntime {
       const finish = () => {
         if (isFinished) return;
         isFinished = true;
+        videoEl.pause();
+        videoEl.removeAttribute('src');
         videoOverlay.remove();
         onComplete();
       };
@@ -1319,8 +1381,27 @@ export class GameRuntime {
 
       videoOverlay.appendChild(videoEl);
       this.containerElement.appendChild(videoOverlay);
+
       videoEl.play().catch(() => {
-        finish();
+        const playBtn = document.createElement('button');
+        playBtn.className = 'btn btn-gold';
+        playBtn.innerText = '▶️ Play Video';
+        playBtn.style.cssText = `
+          position: absolute;
+          z-index: 9002;
+          font-size: 1.1rem;
+          padding: 10px 22px;
+          background: rgba(15, 23, 42, 0.9);
+          border: 2px solid var(--accent-gold);
+          color: var(--accent-gold);
+          border-radius: 8px;
+          cursor: pointer;
+        `;
+        playBtn.onclick = () => {
+          playBtn.remove();
+          videoEl.play().catch(() => finish());
+        };
+        videoOverlay.appendChild(playBtn);
       });
       return;
     }
@@ -1431,6 +1512,7 @@ export class GameRuntime {
     }
 
     if (category === 'scene_change' && node.targetSceneId) {
+      this.pendingSceneOfficialStart = null;
       this.context.story.changeScene(node.targetSceneId, node.targetSpawnPoint);
       onComplete();
       return;

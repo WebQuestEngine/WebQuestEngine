@@ -153,6 +153,27 @@ export class AudioSystem {
     });
   }
 
+  public pauseMusic(): void {
+    if (this.currentMusicAudio && !this.currentMusicAudio.paused) {
+      this.currentMusicAudio.pause();
+    }
+  }
+
+  public resumeMusic(fadeDurationMs = 1000): void {
+    if (this.currentMusicAudio && this.currentMusicAudio.paused) {
+      const targetVol = this.config.masterVolume * this.config.musicVolume;
+      this.currentMusicAudio.play().then(() => {
+        this.fadeIn(this.currentMusicAudio!, targetVol, fadeDurationMs);
+      }).catch(err => {
+        console.warn('[AudioSystem] Music resume blocked or failed:', err);
+      });
+    }
+  }
+
+  public getCurrentMusicUrl(): string | null {
+    return this.currentMusicUrl;
+  }
+
   private fadeIn(audio: HTMLAudioElement, targetVol: number, durationMs: number): void {
     if (durationMs <= 0) {
       audio.volume = targetVol;
