@@ -4,7 +4,9 @@ import { EventBus } from '../../../engine/core/EventBus';
 export class DialogEditorUtils {
   public static startViewportPick(onPicked: (pt: Vector2D) => void): void {
     const editorModal = document.querySelector('.dialog-editor-container');
+    const backdrop = document.querySelector('.dialog-editor-backdrop');
     editorModal?.classList.add('viewport-picking-active');
+    backdrop?.classList.add('viewport-picking-active');
 
     const banner = document.createElement('div');
     banner.className = 'viewport-picker-banner';
@@ -20,6 +22,7 @@ export class DialogEditorUtils {
       isDone = true;
       banner.remove();
       editorModal?.classList.remove('viewport-picking-active');
+      backdrop?.classList.remove('viewport-picking-active');
       window.removeEventListener('keydown', onKeyDown);
     };
 

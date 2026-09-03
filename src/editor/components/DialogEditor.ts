@@ -9,6 +9,7 @@ import { ZoomWidget } from './ZoomWidget';
 
 export class DialogEditor {
   public element: HTMLElement;
+  public backdropElement: HTMLElement;
   private project: ProjectData | null = null;
   private selectedTreeId: string | null = null;
   private canvasController: GraphCanvasController;
@@ -16,7 +17,11 @@ export class DialogEditor {
 
   constructor() {
     this.element = document.createElement('div');
-    this.element.className = 'dialog-editor-container view-modal hidden';
+    this.element.className = 'dialog-editor-container hidden';
+
+    this.backdropElement = document.createElement('div');
+    this.backdropElement.className = 'dialog-editor-backdrop hidden';
+    this.backdropElement.addEventListener('click', () => this.hide());
 
     this.canvasController = new GraphCanvasController(this.element, {
       getActiveTree: () => this.getActiveTree(),
@@ -34,6 +39,13 @@ export class DialogEditor {
     this.canvasController.setZoomWidget(this.zoomWidget);
 
     this.render();
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.element.classList.contains('hidden')) {
+        if (this.element.classList.contains('viewport-picking-active')) return;
+        this.hide();
+      }
+    });
 
     EventBus.getInstance().on('editor:open_dialog_editor', (data?: { dialogId?: string }) => {
       if (data?.dialogId) {
@@ -59,12 +71,17 @@ export class DialogEditor {
   }
 
   public show(): void {
+    if (!this.backdropElement.parentElement && this.element.parentElement) {
+      this.element.parentElement.insertBefore(this.backdropElement, this.element);
+    }
+    this.backdropElement.classList.remove('hidden');
     this.element.classList.remove('hidden');
     this.renderTree();
   }
 
   public hide(): void {
     this.canvasController.stopAutoPan();
+    this.backdropElement.classList.add('hidden');
     this.element.classList.add('hidden');
   }
 

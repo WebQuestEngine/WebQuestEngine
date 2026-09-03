@@ -1953,9 +1953,158 @@ body {
   }
 }
 
+/* Dialog / Sequence Studio Modal Backdrop & Floating Popup */
+.dialog-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  z-index: 240;
+  transition: opacity 0.2s ease;
+}
+
+.dialog-editor-backdrop.hidden {
+  display: none !important;
+}
+
+.dialog-editor-backdrop.viewport-picking-active {
+  display: none !important;
+}
+
+.dialog-editor-container {
+  position: fixed !important;
+  top: 24px !important;
+  bottom: 24px !important;
+  left: 36px !important;
+  right: 36px !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 1750px !important;
+  margin: 0 auto !important;
+  background: rgba(13, 19, 33, 0.98) !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.92), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(20px) !important;
+  z-index: 250 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.dialog-editor-container.hidden {
+  display: none !important;
+}
+
+/* Complete hiding during viewport picking to guarantee zero canvas conflict */
 .dialog-editor-container.viewport-picking-active {
-  opacity: 0.15 !important;
-  pointer-events: none !important;
+  display: none !important;
+}
+
+.dialog-editor-container .view-modal-header {
+  height: 52px;
+  min-height: 52px;
+  padding: 0 20px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialog-editor-container .view-modal-content {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  padding: 14px 18px;
+  overflow: hidden;
+  height: calc(100% - 52px);
+}
+
+.dialog-editor-container #dialog-nodes-viewport {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* High-Contrast, Crystal-Clear Dropdown Select Boxes inside Nodes */
+.dialog-editor-container select,
+.dialog-editor-container select.form-input,
+.dialog-graph-card select,
+.dialog-graph-card select.form-input {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #475569 !important;
+  border-radius: 6px !important;
+  padding: 5px 8px !important;
+  font-weight: 600 !important;
+  font-size: 0.75rem !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35) !important;
+  outline: none !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dialog-editor-container select:hover,
+.dialog-editor-container select.form-input:hover,
+.dialog-graph-card select:hover,
+.dialog-graph-card select.form-input:hover {
+  background-color: #2e3d55 !important;
+  border-color: #94a3b8 !important;
+}
+
+.dialog-editor-container select:focus,
+.dialog-editor-container select.form-input:focus,
+.dialog-graph-card select:focus,
+.dialog-graph-card select.form-input:focus {
+  background-color: #1e293b !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4) !important;
+}
+
+/* Explicit high-contrast option item styling */
+.dialog-editor-container select option,
+.dialog-graph-card select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  padding: 8px 12px !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+}
+
+.dialog-editor-container select option:checked,
+.dialog-graph-card select option:checked {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+/* Node card inputs and textareas */
+.dialog-graph-card input.form-input,
+.dialog-graph-card textarea.form-input {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+  border-radius: 5px !important;
+}
+
+.dialog-graph-card input.form-input:focus,
+.dialog-graph-card textarea.form-input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
 }
 
 .viewport-picker-banner {
@@ -1964,14 +2113,14 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(15, 23, 42, 0.96);
   border: 2px solid var(--accent-gold);
   border-radius: 8px;
   padding: 10px 20px;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(245, 158, 11, 0.4);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(245, 158, 11, 0.4);
   color: var(--accent-gold);
   font-weight: 700;
   font-size: 0.95rem;
