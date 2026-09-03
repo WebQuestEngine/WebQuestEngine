@@ -1184,8 +1184,8 @@
           "speaker": "Hero",
           "text": "Greetings, adventurer! What news do you bring?",
           "position": {
-            "x": 758,
-            "y": 201.39061737060547
+            "x": 1191,
+            "y": 190.390625
           },
           "nodeType": "action",
           "isRouterNode": false,
@@ -1208,6 +1208,23 @@
             "x": 160,
             "y": 180
           },
+          "nextNodeId": "action_3"
+        },
+        "action_3": {
+          "id": "action_3",
+          "nodeType": "action",
+          "actionCategory": "video",
+          "screenEffectType": "fade_in",
+          "screenEffectDuration": 1,
+          "screenEffectColor": "#000000",
+          "speaker": "Action",
+          "text": "",
+          "position": {
+            "x": 670,
+            "y": 193
+          },
+          "isRouterNode": false,
+          "videoUrl": "assets/videos/opening.webm",
           "nextNodeId": "beat_1"
         }
       }
