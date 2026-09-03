@@ -2158,3 +2158,37 @@ body {
 .graph-view-switcher .btn-tab-mode:hover {
   filter: brightness(1.2);
 }
+
+/* Storyboard Switch Scene Node Styling */
+.storyboard-switch-node {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+}
+
+.storyboard-switch-node:hover {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85), 0 0 16px rgba(16, 185, 129, 0.5) !important;
+  border-color: #34d399 !important;
+}
+
+.switch-node-header:hover {
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+/* Draggable Bezier Curvature Handles */
+.storyboard-bezier-handle {
+  transition: r 0.15s ease, fill 0.15s ease, stroke-width 0.15s ease;
+}
+
+.storyboard-bezier-handle:hover {
+  r: 10 !important;
+  fill: #f59e0b !important;
+  stroke: #ffffff !important;
+  stroke-width: 3 !important;
+  filter: drop-shadow(0 0 8px #f59e0b) !important;
+  cursor: grab !important;
+}
+
+.storyboard-bezier-handle:active {
+  cursor: grabbing !important;
+}

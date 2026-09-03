@@ -1,6 +1,17 @@
 import { ProjectData, SceneData, DialogTree, Vector2D } from '../../../engine/types';
 import { EventBus } from '../../../engine/core/EventBus';
 
+export interface SceneTransitionData {
+  id: string;
+  fromSceneId: string;
+  toSceneId: string;
+  label: string;
+  causeName: string;
+  type: 'hotspot' | 'action';
+  dialogId?: string;
+  hotspotId?: string;
+}
+
 export class DialogEditorUtils {
   public static startViewportPick(onPicked: (pt: Vector2D) => void): void {
     const editorModal = document.querySelector('.dialog-editor-container');
@@ -209,8 +220,8 @@ export class DialogEditorUtils {
     });
   }
 
-  public static getSceneTransitions(project: ProjectData | null): { fromSceneId: string; toSceneId: string; label: string }[] {
-    const transitions: { fromSceneId: string; toSceneId: string; label: string }[] = [];
+  public static getSceneTransitions(project: ProjectData | null): SceneTransitionData[] {
+    const transitions: SceneTransitionData[] = [];
     if (!project || !project.scenes) return transitions;
 
     for (const sc of project.scenes) {
@@ -218,11 +229,16 @@ export class DialogEditorUtils {
       for (const hs of sc.hotspots || []) {
         for (const action of hs.actions || []) {
           if (action.targetSceneId && action.targetSceneId !== sc.id) {
-            if (!transitions.some(t => t.fromSceneId === sc.id && t.toSceneId === action.targetSceneId)) {
+            const trId = `tr_hs_${sc.id}_${action.targetSceneId}_${hs.id}`;
+            if (!transitions.some(t => t.id === trId)) {
               transitions.push({
+                id: trId,
                 fromSceneId: sc.id,
                 toSceneId: action.targetSceneId,
-                label: `🚪 ${hs.name}`
+                label: `🚪 ${hs.name}`,
+                causeName: hs.name,
+                type: 'hotspot',
+                hotspotId: hs.id
               });
             }
           }
@@ -235,11 +251,16 @@ export class DialogEditorUtils {
         if (dSceneId === sc.id) {
           for (const node of Object.values(dt.nodes || {})) {
             if (node.actionCategory === 'scene_change' && node.targetSceneId && node.targetSceneId !== sc.id) {
-              if (!transitions.some(t => t.fromSceneId === sc.id && t.toSceneId === node.targetSceneId)) {
+              const trId = `tr_act_${sc.id}_${node.targetSceneId}_${dt.id}_${node.id}`;
+              if (!transitions.some(t => t.id === trId)) {
                 transitions.push({
+                  id: trId,
                   fromSceneId: sc.id,
                   toSceneId: node.targetSceneId,
-                  label: `🎬 ${dt.title || dt.id}`
+                  label: `🎬 ${dt.title || dt.id}`,
+                  causeName: dt.title || dt.id,
+                  type: 'action',
+                  dialogId: dt.id
                 });
               }
             }
@@ -248,5 +269,63 @@ export class DialogEditorUtils {
       }
     }
     return transitions;
+  }
+
+  public static getSwitchNodePosition(
+    project: ProjectData | null,
+    tr: SceneTransitionData,
+    allTransitions: SceneTransitionData[]
+  ): Vector2D {
+    // 1. Saved custom position
+    if (project?.storyboardSettings?.switchNodePositions?.[tr.id]) {
+      return project.storyboardSettings.switchNodePositions[tr.id];
+    }
+
+    if (!project || !project.scenes) return { x: 200, y: 200 };
+
+    const fromIdx = project.scenes.findIndex(s => s.id === tr.fromSceneId);
+    const toIdx = project.scenes.findIndex(s => s.id === tr.toSceneId);
+
+    const fromSc = project.scenes[fromIdx];
+    const toSc = project.scenes[toIdx];
+
+    const fromX = fromSc?.storyPosition?.x ?? (80 + (fromIdx >= 0 ? (fromIdx % 3) * 390 : 0));
+    const fromY = fromSc?.storyPosition?.y ?? (80 + (fromIdx >= 0 ? Math.floor(fromIdx / 3) * 360 : 0));
+
+    const toX = toSc?.storyPosition?.x ?? (80 + (toIdx >= 0 ? (toIdx % 3) * 390 : 0));
+    const toY = toSc?.storyPosition?.y ?? (80 + (toIdx >= 0 ? Math.floor(toIdx / 3) * 360 : 0));
+
+    const midX = (fromX + toX) / 2 + 60;
+    const midY = (fromY + toY) / 2 + 70;
+
+    // Check if there is a reverse transition (two-way loop)
+    const hasReverse = allTransitions.some(t => t.fromSceneId === tr.toSceneId && t.toSceneId === tr.fromSceneId);
+
+    if (hasReverse) {
+      const dy = toY - fromY;
+      const dx = toX - fromX;
+
+      if (Math.abs(dy) >= Math.abs(dx)) {
+        // Vertical layout: bow to left or right
+        if (fromY < toY) {
+          // Going downwards (e.g. Lab -> Gates): bow out to the LEFT
+          return { x: midX - 260, y: midY };
+        } else {
+          // Going upwards (e.g. Gates -> Lab): bow out to the RIGHT
+          return { x: midX + 260, y: midY };
+        }
+      } else {
+        // Horizontal layout: bow above or below
+        if (fromX < toX) {
+          // Going rightwards: bow above
+          return { x: midX, y: midY - 160 };
+        } else {
+          // Going leftwards: bow below
+          return { x: midX, y: midY + 160 };
+        }
+      }
+    }
+
+    return { x: midX, y: midY };
   }
 }

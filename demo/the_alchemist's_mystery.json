@@ -704,7 +704,11 @@
           "rows": 8,
           "cols": 4
         }
-      ]
+      ],
+      "storyPosition": {
+        "x": -130,
+        "y": 80
+      }
     },
     {
       "id": "scene_lab",
@@ -1022,7 +1026,11 @@
           "cols": 4
         }
       ],
-      "locked": false
+      "locked": false,
+      "storyPosition": {
+        "x": 674,
+        "y": 82
+      }
     }
   ],
   "items": [

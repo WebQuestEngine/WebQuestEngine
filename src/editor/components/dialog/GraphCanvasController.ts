@@ -7,6 +7,8 @@ export interface CanvasControllerCallbacks {
   getActiveTree: () => DialogTree | null;
   onUpdate: () => void;
   onReRenderTree: () => void;
+  getViewMode?: () => 'storyboard' | 'sequences';
+  onReRenderStoryboardWires?: () => void;
 }
 
 export class GraphCanvasController {
@@ -70,17 +72,7 @@ export class GraphCanvasController {
         this.zoomLevel = newZoom;
 
         this.updateTransform();
-        if (tree && svgEl && transformLayer) {
-          GraphWireRenderer.renderConnectionLines({
-            tree,
-            svgEl,
-            transformLayer,
-            zoomLevel: this.zoomLevel,
-            isWiring: this.isWiring,
-            tempWirePath: this.tempWirePath,
-            onWireDeleted: this.callbacks.onReRenderTree
-          });
-        }
+        this.reRenderWires();
       }, { passive: false });
 
       viewport.addEventListener('mousedown', (e: MouseEvent) => {
@@ -378,15 +370,9 @@ export class GraphCanvasController {
   }
 
   public fitToNodes(): void {
-    const tree = this.callbacks.getActiveTree();
+    const isStoryboard = this.callbacks.getViewMode?.() === 'storyboard';
     const viewport = this.element.querySelector('#dialog-nodes-viewport') as HTMLElement;
-    if (!tree || !viewport) {
-      this.resetZoom();
-      return;
-    }
-
-    const nodes = Object.values(tree.nodes);
-    if (nodes.length === 0) {
+    if (!viewport) {
       this.resetZoom();
       return;
     }
@@ -396,12 +382,43 @@ export class GraphCanvasController {
     let minY = Infinity;
     let maxY = -Infinity;
 
-    for (const node of nodes) {
-      const pos = node.position || { x: 0, y: 0 };
-      minX = Math.min(minX, pos.x);
-      maxX = Math.max(maxX, pos.x + 360);
-      minY = Math.min(minY, pos.y);
-      maxY = Math.max(maxY, pos.y + 240);
+    if (isStoryboard) {
+      const cards = this.element.querySelectorAll('.storyboard-scene-card, .storyboard-switch-node');
+      if (cards.length === 0) {
+        this.resetZoom();
+        return;
+      }
+      cards.forEach(card => {
+        const el = card as HTMLElement;
+        const x = parseFloat(el.style.left) || 0;
+        const y = parseFloat(el.style.top) || 0;
+        const w = el.offsetWidth || 340;
+        const h = el.offsetHeight || 220;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x + w);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y + h);
+      });
+    } else {
+      const tree = this.callbacks.getActiveTree();
+      if (!tree) {
+        this.resetZoom();
+        return;
+      }
+
+      const nodes = Object.values(tree.nodes);
+      if (nodes.length === 0) {
+        this.resetZoom();
+        return;
+      }
+
+      for (const node of nodes) {
+        const pos = node.position || { x: 0, y: 0 };
+        minX = Math.min(minX, pos.x);
+        maxX = Math.max(maxX, pos.x + 360);
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y + 240);
+      }
     }
 
     const graphW = Math.max(100, maxX - minX);
@@ -423,6 +440,11 @@ export class GraphCanvasController {
   }
 
   public reRenderWires(): void {
+    if (this.callbacks.getViewMode?.() === 'storyboard') {
+      this.callbacks.onReRenderStoryboardWires?.();
+      return;
+    }
+
     const tree = this.callbacks.getActiveTree();
     const svgEl = this.element.querySelector('#dialog-connections-svg') as SVGElement;
     const transformLayer = this.element.querySelector('#dialog-graph-transform-layer') as HTMLElement;

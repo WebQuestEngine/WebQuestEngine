@@ -339,7 +339,13 @@ export interface AudioConfig {
   voiceVolume: number;
 }
 
+export interface StoryboardSettings {
+  switchNodePositions?: Record<string, Vector2D>;
+  bezierOffsets?: Record<string, Vector2D>;
+}
+
 export interface ProjectData {
+  id?: string;
   version: string;
   title: string;
   author: string;
@@ -355,6 +361,7 @@ export interface ProjectData {
   choreographyGroups?: ChoreographyGroup[];
   initialFlags: Record<string, boolean>;
   startChapterId: string;
+  storyboardSettings?: StoryboardSettings;
 }
 
 export interface SaveGameData {

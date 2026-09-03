@@ -123,6 +123,29 @@ export class DialogEditorTemplate {
       `;
     });
 
+    const allTransitions = DialogEditorUtils.getSceneTransitions(project);
+    allTransitions.forEach(tr => {
+      const pos = DialogEditorUtils.getSwitchNodePosition(project, tr, allTransitions);
+      const targetScene = project.scenes.find(s => s.id === tr.toSceneId);
+      const targetSceneName = targetScene?.name || tr.toSceneId;
+
+      html += `
+        <div class="storyboard-switch-node" data-trid="${tr.id}" data-fromsceneid="${tr.fromSceneId}" data-tosceneid="${tr.toSceneId}" style="position:absolute; left:${pos.x}px; top:${pos.y}px; width:220px; background:#0f172a; border:2px solid #10b981; border-radius:8px; padding:8px 10px; box-shadow:0 8px 24px rgba(0,0,0,0.7), 0 0 12px rgba(16,185,129,0.3); pointer-events:auto; z-index:15;">
+          <div class="switch-node-header" data-trid="${tr.id}" style="display:flex; justify-content:space-between; align-items:center; cursor:move; margin-bottom:4px; padding-bottom:3px; border-bottom:1px solid rgba(16,185,129,0.3);">
+            <span style="font-size:0.65rem; font-weight:800; color:#10b981; letter-spacing:0.5px; text-transform:uppercase;">🔀 Switch Scene</span>
+            <span style="font-size:0.58rem; color:#94a3b8; background:rgba(255,255,255,0.06); padding:1px 4px; border-radius:3px;">${tr.type === 'hotspot' ? 'Hotspot Exit' : 'Action'}</span>
+          </div>
+          <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; margin-bottom:4px; word-break:break-word;">
+            ${TemplateUtils.escapeHtml(tr.label)}
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.66rem; color:#94a3b8;">
+            <span>➔ <b>${TemplateUtils.escapeHtml(targetSceneName)}</b></span>
+            ${tr.dialogId ? `<button class="btn btn-sm btn-open-tr-dialog" data-dialogid="${tr.dialogId}" style="font-size:0.6rem; padding:1px 6px; background:#1e293b; border:1px solid #38bdf8; color:#38bdf8; border-radius:3px;" title="Open Sequence Graph">🎬 Edit</button>` : ''}
+          </div>
+        </div>
+      `;
+    });
+
     return html;
   }
 
