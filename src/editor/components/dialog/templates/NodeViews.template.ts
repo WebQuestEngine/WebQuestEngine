@@ -180,6 +180,34 @@ export class NodeViewsTemplate {
           <div class="node-port node-port-out" data-nodeid="${node.id}" style="position:absolute; right:-15px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#38bdf8; border:2px solid #0f172a; cursor:crosshair; box-shadow:0 0 10px rgba(56,189,248,0.9); z-index:10;" title="▶ Next Beat: Drag arrow to connect to target node Input Port"></div>
         </div>`;
 
+    const actorsList = DialogEditorUtils.getAllProjectActors(project);
+    const currentSpeaker = (node.speaker || '').trim();
+
+    const matchedActor = actorsList.find(a =>
+      (node.actorId && a.id === node.actorId) ||
+      (currentSpeaker && (
+        a.displayName.toLowerCase() === currentSpeaker.toLowerCase() ||
+        a.id.toLowerCase() === currentSpeaker.toLowerCase() ||
+        a.name.toLowerCase() === currentSpeaker.toLowerCase()
+      ))
+    );
+
+    const isNarrator = currentSpeaker.toLowerCase() === 'narrator' || (!currentSpeaker && !node.actorId);
+    const isCustom = !isNarrator && !matchedActor && currentSpeaker.length > 0;
+
+    const speakerActorsOptionsHtml = actorsList.map(a => {
+      const isSel = (!isNarrator && matchedActor?.id === a.id);
+      return `<option value="${a.id}" data-name="${TemplateUtils.escapeHtml(a.displayName)}" ${isSel ? 'selected' : ''}>${TemplateUtils.escapeHtml(a.name)}</option>`;
+    }).join('');
+
+    const speakerNarratorSelected = isNarrator ? 'selected' : '';
+    const speakerCustomSelected = isCustom ? 'selected' : '';
+    const customSpeakerStyle = isCustom ? 'display:block;' : 'display:none;';
+
+    const currentActor = matchedActor || (isNarrator ? null : actorsList[0]);
+    const anims = currentActor?.animations || ['talk', 'idle', 'gesture', 'listen', 'look_around'];
+    const speakerAnimOptionsHtml = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}"></option>`).join('');
+
     return TemplateUtils.populate(beatNodeCardHtml, {
       nodeId: node.id,
       posX: node.position?.x ?? 50,
@@ -190,6 +218,11 @@ export class NodeViewsTemplate {
       startBtnHtml,
       speaker: TemplateUtils.escapeHtml(node.speaker || ''),
       speakerAnimation: TemplateUtils.escapeHtml(node.speakerAnimation || ''),
+      speakerActorsOptionsHtml,
+      speakerNarratorSelected,
+      speakerCustomSelected,
+      customSpeakerStyle,
+      speakerAnimOptionsHtml,
       text: TemplateUtils.escapeHtml(node.text || ''),
       voiceAudioUrl: TemplateUtils.escapeHtml(node.voiceAudioUrl || ''),
       directivesCount: directives.length,

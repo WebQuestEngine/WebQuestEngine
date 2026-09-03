@@ -22,14 +22,27 @@
   </div>
 
   <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px; margin-bottom:8px;">
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; position:relative;">
+    <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:6px; margin-bottom:6px; position:relative;">
       <div>
-        <label style="font-size:0.65rem; color:var(--text-muted);">🗣️ Speaker Name</label>
-        <input type="text" class="form-input node-speaker" data-nodeid="{{nodeId}}" value="{{speaker}}" placeholder="e.g. Hero, Guard, Merchant" style="width:100%; font-weight:600; font-size:0.75rem;" />
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+          <label style="font-size:0.65rem; color:var(--text-muted);">🗣️ Speaker / Character</label>
+          <span class="btn-toggle-custom-speaker" data-nodeid="{{nodeId}}" style="font-size:0.6rem; color:#38bdf8; cursor:pointer;" title="Toggle text input to type custom speaker name">✏️ Custom</span>
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <select class="form-input node-speaker-select" data-nodeid="{{nodeId}}" style="flex:1; font-weight:600; font-size:0.75rem; color:#38bdf8;">
+            <option value="Narrator" {{speakerNarratorSelected}}>🎙️ Narrator</option>
+            {{speakerActorsOptionsHtml}}
+            <option value="__custom__" {{speakerCustomSelected}}>✏️ Custom Name...</option>
+          </select>
+          <input type="text" class="form-input node-speaker" data-nodeid="{{nodeId}}" value="{{speaker}}" placeholder="Speaker Name" style="{{customSpeakerStyle}} width:100px; font-weight:600; font-size:0.75rem;" />
+        </div>
       </div>
       <div>
         <label style="font-size:0.65rem; color:#f59e0b;">🎭 Speaker Talk Anim</label>
-        <input type="text" class="form-input node-speaker-anim" data-nodeid="{{nodeId}}" value="{{speakerAnimation}}" placeholder="e.g. talk, gesture" style="width:100%; font-size:0.75rem;" />
+        <input type="text" list="anims_{{nodeId}}" class="form-input node-speaker-anim" data-nodeid="{{nodeId}}" value="{{speakerAnimation}}" placeholder="e.g. talk, gesture" style="width:100%; font-size:0.75rem;" />
+        <datalist id="anims_{{nodeId}}">
+          {{speakerAnimOptionsHtml}}
+        </datalist>
       </div>
     </div>
 

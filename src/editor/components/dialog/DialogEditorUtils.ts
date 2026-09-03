@@ -141,25 +141,25 @@ export class DialogEditorUtils {
     return project.scenes[0] || null;
   }
 
-  public static getAllProjectActors(project: ProjectData | null): { id: string; name: string; animations: string[] }[] {
+  public static getAllProjectActors(project: ProjectData | null): { id: string; name: string; displayName: string; animations: string[] }[] {
     const playerChar = project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
     const playerName = playerChar?.name || 'Hero';
     const playerAnims = playerChar?.animations ? Object.keys(playerChar.animations) : ['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower'];
 
-    const actors: { id: string; name: string; animations: string[] }[] = [
-      { id: 'player', name: `👤 ${playerName} (Player)`, animations: playerAnims }
+    const actors: { id: string; name: string; displayName: string; animations: string[] }[] = [
+      { id: 'player', name: `👤 ${playerName} (Player)`, displayName: playerName, animations: playerAnims }
     ];
     if (project?.scenes) {
       for (const sc of project.scenes) {
         for (const c of sc.characters) {
           const anims = c.animations ? Object.keys(c.animations) : ['idle', 'talk', 'walk', 'gesture', 'look_around'];
           if (!actors.some(a => a.id === c.id)) {
-            actors.push({ id: c.id, name: `🎭 ${c.name} (${c.id})`, animations: anims });
+            actors.push({ id: c.id, name: `🎭 ${c.name} (${c.id})`, displayName: c.name, animations: anims });
           }
         }
         for (const hs of sc.hotspots) {
           if (!actors.some(a => a.id === hs.id)) {
-            actors.push({ id: hs.id, name: `📦 ${hs.name} (${hs.id})`, animations: ['idle', 'active', 'open', 'close'] });
+            actors.push({ id: hs.id, name: `📦 ${hs.name} (${hs.id})`, displayName: hs.name, animations: ['idle', 'active', 'open', 'close'] });
           }
         }
       }

@@ -98,6 +98,57 @@ export class NodeViewFactory {
       });
     });
 
+    // Speaker Selection Dropdown
+    container.querySelectorAll('.node-speaker-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const nid = target.dataset.nodeid!;
+        if (!tree.nodes[nid]) return;
+
+        const val = target.value;
+        const customInput = container.querySelector(`.node-speaker[data-nodeid="${nid}"]`) as HTMLInputElement;
+
+        if (val === '__custom__') {
+          if (customInput) {
+            customInput.style.display = 'block';
+            customInput.focus();
+          }
+        } else if (val === 'Narrator') {
+          tree.nodes[nid].speaker = 'Narrator';
+          tree.nodes[nid].actorId = undefined;
+          if (customInput) {
+            customInput.value = 'Narrator';
+            customInput.style.display = 'none';
+          }
+          onUpdate();
+        } else {
+          const selectedOption = target.options[target.selectedIndex];
+          const displayName = selectedOption?.dataset.name || val;
+          tree.nodes[nid].speaker = displayName;
+          tree.nodes[nid].actorId = val;
+          if (customInput) {
+            customInput.value = displayName;
+            customInput.style.display = 'none';
+          }
+          onUpdate();
+        }
+      });
+    });
+
+    // Toggle Custom Speaker Name Textbox
+    container.querySelectorAll('.btn-toggle-custom-speaker').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const nid = (btn as HTMLElement).dataset.nodeid!;
+        const customInput = container.querySelector(`.node-speaker[data-nodeid="${nid}"]`) as HTMLInputElement;
+        if (customInput) {
+          const isHidden = customInput.style.display === 'none';
+          customInput.style.display = isHidden ? 'block' : 'none';
+          if (isHidden) customInput.focus();
+        }
+      });
+    });
+
     // Speaker Edit
     container.querySelectorAll('.node-speaker').forEach(input => {
       input.addEventListener('input', (e) => {
