@@ -532,6 +532,40 @@ export class NodeViewFactory {
       });
     });
 
+    container.querySelectorAll('.dir-walk-ignore-walkpath').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const nid = (chk as HTMLElement).dataset.nodeid!;
+        const didx = parseInt((chk as HTMLElement).dataset.didx!);
+        if (tree.nodes[nid]?.directives?.[didx]) {
+          tree.nodes[nid].directives![didx].ignoreWalkPath = (chk as HTMLInputElement).checked;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-pick-dir-pos').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const nid = (btn as HTMLElement).dataset.nodeid!;
+        const didx = parseInt((btn as HTMLElement).dataset.didx!);
+        DialogEditorUtils.startViewportPick((pt) => {
+          if (!tree.nodes[nid]?.directives?.[didx]) return;
+          if (!tree.nodes[nid].directives![didx].targetPosition) {
+            tree.nodes[nid].directives![didx].targetPosition = { x: 0, y: 0 };
+          }
+          tree.nodes[nid].directives![didx].targetPosition!.x = pt.x;
+          tree.nodes[nid].directives![didx].targetPosition!.y = pt.y;
+
+          const xInput = container.querySelector(`.dir-walk-x[data-nodeid="${nid}"][data-didx="${didx}"]`) as HTMLInputElement;
+          const yInput = container.querySelector(`.dir-walk-y[data-nodeid="${nid}"][data-didx="${didx}"]`) as HTMLInputElement;
+          if (xInput) xInput.value = String(pt.x);
+          if (yInput) yInput.value = String(pt.y);
+          onUpdate();
+        });
+      });
+    });
+
     container.querySelectorAll('.dir-sfx-url').forEach(input => {
       input.addEventListener('input', (e) => {
         const nid = (input as HTMLElement).dataset.nodeid!;
@@ -740,6 +774,80 @@ export class NodeViewFactory {
           tree.nodes[nid].targetActorId = (sel as HTMLSelectElement).value;
           onUpdate();
         }
+      });
+    });
+
+    // Character Action Handlers
+    container.querySelectorAll('.node-char-actor').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].actorId = (sel as HTMLSelectElement).value;
+          tree.nodes[nid].targetActorId = (sel as HTMLSelectElement).value;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.node-char-action-type').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const nid = (sel as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].characterAction = (sel as HTMLSelectElement).value as any;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.node-char-x').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (input as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          if (!tree.nodes[nid].targetPosition) tree.nodes[nid].targetPosition = { x: 500, y: 750 };
+          tree.nodes[nid].targetPosition!.x = parseFloat((input as HTMLInputElement).value) || 0;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.node-char-y').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const nid = (input as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          if (!tree.nodes[nid].targetPosition) tree.nodes[nid].targetPosition = { x: 500, y: 750 };
+          tree.nodes[nid].targetPosition!.y = parseFloat((input as HTMLInputElement).value) || 0;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.node-char-ignore-walkpath').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const nid = (chk as HTMLElement).dataset.nodeid!;
+        if (tree.nodes[nid]) {
+          tree.nodes[nid].ignoreWalkPath = (chk as HTMLInputElement).checked;
+          onUpdate();
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-pick-node-pos').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const nid = (btn as HTMLElement).dataset.nodeid!;
+        DialogEditorUtils.startViewportPick((pt) => {
+          if (!tree.nodes[nid]) return;
+          if (!tree.nodes[nid].targetPosition) tree.nodes[nid].targetPosition = { x: 0, y: 0 };
+          tree.nodes[nid].targetPosition!.x = pt.x;
+          tree.nodes[nid].targetPosition!.y = pt.y;
+
+          const xInput = container.querySelector(`.node-char-x[data-nodeid="${nid}"]`) as HTMLInputElement;
+          const yInput = container.querySelector(`.node-char-y[data-nodeid="${nid}"]`) as HTMLInputElement;
+          if (xInput) xInput.value = String(pt.x);
+          if (yInput) yInput.value = String(pt.y);
+          onUpdate();
+        });
       });
     });
 

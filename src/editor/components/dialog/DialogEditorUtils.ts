@@ -1,6 +1,49 @@
-import { ProjectData, SceneData, DialogTree } from '../../../engine/types';
+import { ProjectData, SceneData, DialogTree, Vector2D } from '../../../engine/types';
+import { EventBus } from '../../../engine/core/EventBus';
 
 export class DialogEditorUtils {
+  public static startViewportPick(onPicked: (pt: Vector2D) => void): void {
+    const editorModal = document.querySelector('.dialog-editor-container');
+    editorModal?.classList.add('viewport-picking-active');
+
+    const banner = document.createElement('div');
+    banner.className = 'viewport-picker-banner';
+    banner.innerHTML = `
+      <span>🎯 Click anywhere on the scene viewport to set position</span>
+      <button class="btn btn-primary" style="font-size:0.75rem; padding:3px 8px; cursor:pointer;">Cancel (Esc)</button>
+    `;
+    document.body.appendChild(banner);
+
+    let isDone = false;
+    const cleanup = () => {
+      if (isDone) return;
+      isDone = true;
+      banner.remove();
+      editorModal?.classList.remove('viewport-picking-active');
+      window.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        EventBus.getInstance().emit('editor:cancel_pick_spawn');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    banner.querySelector('button')?.addEventListener('click', () => {
+      cleanup();
+      EventBus.getInstance().emit('editor:cancel_pick_spawn');
+    });
+
+    EventBus.getInstance().emit('editor:pick_spawn_point', (pt: Vector2D, cancelled?: boolean) => {
+      cleanup();
+      if (!cancelled && pt) {
+        const cleanPt = { x: Math.round(pt.x), y: Math.round(pt.y) };
+        onPicked(cleanPt);
+      }
+    });
+  }
   public static escapeHtml(str: string): string {
     return (str || '')
       .replace(/&/g, '&amp;')

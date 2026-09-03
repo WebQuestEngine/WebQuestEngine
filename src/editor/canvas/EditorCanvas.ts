@@ -205,6 +205,13 @@ export class EditorCanvas {
       this.app.canvas.style.cursor = 'crosshair';
     });
 
+    EventBus.getInstance().on('editor:cancel_pick_spawn', () => {
+      if (this.activeSpawnPickerCallback) {
+        this.activeSpawnPickerCallback = null;
+        this.app.canvas.style.cursor = 'default';
+      }
+    });
+
     EventBus.getInstance().on('editor:project_updated', async () => {
       if (this.currentScene) {
         await this.currentScene.syncLayers();

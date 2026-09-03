@@ -661,8 +661,8 @@
           "frameWidth": 183,
           "frameHeight": 226,
           "position": {
-            "x": 133,
-            "y": 809
+            "x": -154,
+            "y": 811
           },
           "speed": 4,
           "scale": 1,
@@ -1194,7 +1194,8 @@
           "eventName": "enter",
           "actionCategory": "screen_effect",
           "screenEffectType": "fade_in",
-          "screenEffectDuration": 1
+          "screenEffectDuration": 1,
+          "nextNodeId": "action_4"
         },
         "event_2": {
           "id": "event_2",
@@ -1226,6 +1227,66 @@
           "isRouterNode": false,
           "videoUrl": "assets/videos/opening.webm",
           "nextNodeId": "beat_1"
+        },
+        "action_4": {
+          "id": "action_4",
+          "nodeType": "action",
+          "actionCategory": "character",
+          "screenEffectType": "fade_in",
+          "screenEffectDuration": 1,
+          "screenEffectColor": "#000000",
+          "speaker": "Action",
+          "text": "",
+          "position": {
+            "x": 284.0590112063349,
+            "y": 637.7287623723053
+          },
+          "isRouterNode": false,
+          "characterAction": "teleport",
+          "targetPosition": {
+            "x": -102,
+            "y": 790
+          },
+          "nextNodeId": "action_5"
+        },
+        "action_5": {
+          "id": "action_5",
+          "nodeType": "action",
+          "actionCategory": "character",
+          "screenEffectType": "fade_in",
+          "screenEffectDuration": 1,
+          "screenEffectColor": "#000000",
+          "speaker": "Action",
+          "text": "",
+          "position": {
+            "x": 768.176008686285,
+            "y": 649.6782219365708
+          },
+          "ignoreWalkPath": true,
+          "targetPosition": {
+            "x": 133,
+            "y": 809
+          },
+          "nextNodeId": "action_6"
+        },
+        "action_6": {
+          "id": "action_6",
+          "nodeType": "action",
+          "actionCategory": "character",
+          "screenEffectType": "fade_in",
+          "screenEffectDuration": 1,
+          "screenEffectColor": "#000000",
+          "speaker": "Action",
+          "text": "",
+          "position": {
+            "x": 1257.467386010405,
+            "y": 644.3687640337863
+          },
+          "characterAction": "look_at",
+          "targetPosition": {
+            "x": 133,
+            "y": 900
+          }
         }
       }
     },

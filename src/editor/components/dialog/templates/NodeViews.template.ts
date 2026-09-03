@@ -490,6 +490,35 @@ export class NodeViewsTemplate {
           </div>
         </div>
       `;
+    } else if (cat === 'character') {
+      actionCategoryBodyHtml = `
+        <div style="margin-bottom:6px;">
+          <label style="font-size:0.65rem; color:var(--text-muted);">Actor</label>
+          <select class="form-input node-char-actor" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem;">
+            ${TemplateUtils.renderList(actorsList, a => `<option value="${a.id}" ${(node.actorId === a.id || node.targetActorId === a.id) ? 'selected' : ''}>${TemplateUtils.escapeHtml(a.name)}</option>`)}
+          </select>
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:0.65rem; color:var(--text-muted);">Character Action</label>
+          <select class="form-input node-char-action-type" data-nodeid="${node.id}" style="width:100%; font-size:0.7rem;">
+            <option value="walk_to" ${(node.characterAction || 'walk_to') === 'walk_to' ? 'selected' : ''}>🚶 Walk To Position</option>
+            <option value="teleport" ${node.characterAction === 'teleport' ? 'selected' : ''}>⚡ Teleport / Place At</option>
+            <option value="look_at" ${node.characterAction === 'look_at' ? 'selected' : ''}>👀 Face / Look At</option>
+            <option value="animation" ${node.characterAction === 'animation' ? 'selected' : ''}>🎬 Play Animation</option>
+          </select>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:6px; align-items:center; margin-bottom:6px;">
+          <input type="number" class="form-input node-char-x" data-nodeid="${node.id}" value="${node.targetPosition?.x ?? 500}" placeholder="X" style="font-size:0.7rem;" />
+          <input type="number" class="form-input node-char-y" data-nodeid="${node.id}" value="${node.targetPosition?.y ?? 750}" placeholder="Y" style="font-size:0.7rem;" />
+          <button class="btn btn-primary btn-pick-node-pos" data-nodeid="${node.id}" style="font-size:0.65rem; padding:3px 6px; white-space:nowrap;" title="Click on viewport to pick coordinates">🎯 Pick on Viewport</button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; font-size:0.65rem; color:var(--text-muted);">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" class="node-char-ignore-walkpath" data-nodeid="${node.id}" ${node.ignoreWalkPath !== false ? 'checked' : ''} />
+            <span>Direct walk (allow walking outside walkpath / entering viewport)</span>
+          </label>
+        </div>
+      `;
     }
 
     return TemplateUtils.populate(actionNodeCardHtml, {
@@ -500,6 +529,7 @@ export class NodeViewsTemplate {
       headerColor: isStartNode ? 'var(--accent-gold)' : '#10b981',
       startBadgeHtml,
       startBtnHtml,
+      catCharacterSelected: (cat === 'character') ? 'selected' : '',
       catScreenSelected: (cat === 'screen_effect') ? 'selected' : '',
       catVideoSelected: (cat === 'video') ? 'selected' : '',
       catCameraSelected: (cat === 'camera') ? 'selected' : '',
@@ -578,12 +608,19 @@ export class NodeViewsTemplate {
       `;
     } else if (dir.type === 'walk_to') {
       directiveBodyHtml = `
-        <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:4px;">
+        <div style="display:grid; grid-template-columns:1.2fr 0.9fr 0.9fr auto; gap:4px; align-items:center;">
           <select class="form-input dir-actor-select" data-nodeid="${node.id}" data-didx="${dIdx}" style="font-size:0.7rem;">
             ${TemplateUtils.renderList(actorsList, a => `<option value="${a.id}" ${dir.actorId === a.id ? 'selected' : ''}>${TemplateUtils.escapeHtml(a.name)}</option>`)}
           </select>
           <input type="number" class="form-input dir-walk-x" data-nodeid="${node.id}" data-didx="${dIdx}" value="${dir.targetPosition?.x ?? 500}" placeholder="X" style="font-size:0.7rem;" />
           <input type="number" class="form-input dir-walk-y" data-nodeid="${node.id}" data-didx="${dIdx}" value="${dir.targetPosition?.y ?? 700}" placeholder="Y" style="font-size:0.7rem;" />
+          <button class="btn btn-primary btn-pick-dir-pos" data-nodeid="${node.id}" data-didx="${dIdx}" style="font-size:0.6rem; padding:2px 5px; white-space:nowrap;" title="Click on viewport to pick coordinates">🎯 Pick</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:0.6rem; color:var(--text-muted);">
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" class="dir-walk-ignore-walkpath" data-nodeid="${node.id}" data-didx="${dIdx}" ${dir.ignoreWalkPath ? 'checked' : ''} />
+            <span>Direct walk (ignore walkpath / enter viewport)</span>
+          </label>
         </div>
       `;
     } else if (dir.type === 'sfx') {

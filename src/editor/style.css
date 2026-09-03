@@ -1952,3 +1952,27 @@ body {
     transform: translate(-50%, -100%) scale(1);
   }
 }
+
+.dialog-editor-container.viewport-picking-active {
+  opacity: 0.15 !important;
+  pointer-events: none !important;
+}
+
+.viewport-picker-banner {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid var(--accent-gold);
+  border-radius: 8px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(245, 158, 11, 0.4);
+  color: var(--accent-gold);
+  font-weight: 700;
+  font-size: 0.95rem;
+}

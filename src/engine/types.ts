@@ -88,6 +88,7 @@ export interface StageDirective {
   cameraZoom?: number;
   eventName?: string;
   eventPayload?: string;
+  ignoreWalkPath?: boolean;
 }
 
 export interface HotspotAction {
@@ -237,7 +238,7 @@ export type DialogNodeType = 'beat' | 'router' | 'event_listener' | 'action';
 
 export type EventScopeType = 'game' | 'scene' | 'hotspot' | 'character' | 'item';
 
-export type ActionCategoryType = 'video' | 'screen_effect' | 'camera' | 'audio' | 'delay' | 'scene_change' | 'mutation';
+export type ActionCategoryType = 'video' | 'screen_effect' | 'camera' | 'audio' | 'delay' | 'scene_change' | 'mutation' | 'character';
 
 export interface DialogNode {
   id: string;
@@ -272,6 +273,9 @@ export interface DialogNode {
 
   // Action / Cinematic Node Properties
   actionCategory?: ActionCategoryType;
+  actorId?: string;
+  characterAction?: 'walk_to' | 'teleport' | 'look_at' | 'animation';
+  ignoreWalkPath?: boolean;
   videoUrl?: string;
   videoSkippable?: boolean;
   screenEffectType?: 'fade_in' | 'fade_out' | 'flash' | 'shake' | 'tint';

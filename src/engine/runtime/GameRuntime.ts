@@ -1071,7 +1071,9 @@ export class GameRuntime {
     } else if (directive.type === 'walk_to') {
       const actor = this.getCharacterByNameOrId(directive.actorId);
       if (actor && directive.targetPosition) {
-        actor.walkTo(directive.targetPosition, this.currentScene.walkPaths[0]);
+        const ignoreWalkPath = directive.ignoreWalkPath === true;
+        const walkPathToUse = ignoreWalkPath ? undefined : this.currentScene.getWalkPath();
+        actor.walkTo(directive.targetPosition, walkPathToUse);
       }
     } else if (directive.type === 'choreography_group') {
       const allGroups = [
@@ -1403,6 +1405,58 @@ export class GameRuntime {
         };
         videoOverlay.appendChild(playBtn);
       });
+      return;
+    }
+
+    if (category === 'character') {
+      const actorId = node.actorId || node.targetActorId;
+      const actor = this.getCharacterByNameOrId(actorId) || this.currentScene?.playerCharacter;
+      if (!actor) {
+        console.warn(`[GameRuntime] ⚠️ Character Action: Actor "${actorId}" not found in scene.`);
+        onComplete();
+        return;
+      }
+
+      const actionType = node.characterAction || 'walk_to';
+
+      if (actionType === 'teleport' && node.targetPosition) {
+        actor.container.x = node.targetPosition.x;
+        actor.container.y = node.targetPosition.y;
+        if (actor.data) {
+          actor.data.position = { x: node.targetPosition.x, y: node.targetPosition.y };
+        }
+        actor.freezeFrame(this.currentScene?.getWalkPath());
+        onComplete();
+        return;
+      }
+
+      if (actionType === 'look_at') {
+        if (node.targetPosition) {
+          actor.faceTarget(node.targetPosition);
+        } else if (node.targetActorId) {
+          const other = this.getCharacterByNameOrId(node.targetActorId);
+          if (other) actor.faceTarget(other.position);
+        }
+        onComplete();
+        return;
+      }
+
+      if (actionType === 'animation' && node.speakerAnimation) {
+        actor.playCustomAnimation(node.speakerAnimation, 1500, onComplete);
+        return;
+      }
+
+      if (actionType === 'walk_to' && node.targetPosition) {
+        const ignoreWalkPath = node.ignoreWalkPath !== false;
+        const walkPathToUse = ignoreWalkPath ? undefined : this.currentScene?.getWalkPath();
+
+        actor.walkTo(node.targetPosition, walkPathToUse, () => {
+          onComplete();
+        });
+        return;
+      }
+
+      onComplete();
       return;
     }
 
