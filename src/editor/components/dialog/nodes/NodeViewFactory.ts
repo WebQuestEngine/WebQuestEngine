@@ -109,11 +109,18 @@ export class NodeViewFactory {
         const val = target.value;
         const customInput = container.querySelector(`.node-speaker[data-nodeid="${nid}"]`) as HTMLInputElement;
 
-        const updateAnimDatalist = (actorId?: string) => {
-          const datalist = container.querySelector(`#anims_${nid}`);
-          if (datalist) {
+        const updateAnimSelect = (actorId?: string) => {
+          const animSelect = container.querySelector(`.node-speaker-anim-select[data-nodeid="${nid}"]`) as HTMLSelectElement;
+          if (animSelect) {
             const anims = DialogEditorUtils.getActorAnimations(project, actorId);
-            datalist.innerHTML = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}">${TemplateUtils.escapeHtml(an)}</option>`).join('');
+            const currentAnim = (tree.nodes[nid]?.speakerAnimation || '').trim();
+            const isCustom = Boolean(currentAnim && !anims.includes(currentAnim));
+            const optionsHtml = [
+              `<option value="" ${!currentAnim ? 'selected' : ''}>-- None (Default Talk) --</option>`,
+              ...anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}" ${(!isCustom && currentAnim === an) ? 'selected' : ''}>${TemplateUtils.escapeHtml(an)}</option>`),
+              `<option value="__custom__" ${isCustom ? 'selected' : ''}>✏️ Custom Anim...</option>`
+            ].join('');
+            animSelect.innerHTML = optionsHtml;
           }
         };
 
@@ -122,7 +129,7 @@ export class NodeViewFactory {
             customInput.style.display = 'block';
             customInput.focus();
           }
-          updateAnimDatalist(undefined);
+          updateAnimSelect(undefined);
         } else if (val === 'Narrator') {
           tree.nodes[nid].speaker = 'Narrator';
           tree.nodes[nid].actorId = undefined;
@@ -130,7 +137,7 @@ export class NodeViewFactory {
             customInput.value = 'Narrator';
             customInput.style.display = 'none';
           }
-          updateAnimDatalist(undefined);
+          updateAnimSelect(undefined);
           onUpdate();
         } else {
           const selectedOption = target.options[target.selectedIndex];
@@ -141,7 +148,7 @@ export class NodeViewFactory {
             customInput.value = displayName;
             customInput.style.display = 'none';
           }
-          updateAnimDatalist(val);
+          updateAnimSelect(val);
           onUpdate();
         }
       });
@@ -172,19 +179,41 @@ export class NodeViewFactory {
       });
     });
 
-    // Speaker Animation Edit
-    container.querySelectorAll('.node-speaker-anim').forEach(input => {
-      const showPickerIfPossible = (e: Event) => {
-        const inp = e.target as any;
-        if (typeof inp.showPicker === 'function') {
-          try {
-            inp.showPicker();
-          } catch {}
-        }
-      };
-      input.addEventListener('focus', showPickerIfPossible);
-      input.addEventListener('click', showPickerIfPossible);
+    // Speaker Animation Select Dropdown
+    container.querySelectorAll('.node-speaker-anim-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const nid = target.dataset.nodeid!;
+        if (!tree.nodes[nid]) return;
 
+        const val = target.value;
+        const customInput = container.querySelector(`.node-speaker-anim[data-nodeid="${nid}"]`) as HTMLInputElement;
+
+        if (val === '__custom__') {
+          if (customInput) {
+            customInput.style.display = 'block';
+            customInput.focus();
+          }
+        } else if (!val) {
+          tree.nodes[nid].speakerAnimation = undefined;
+          if (customInput) {
+            customInput.value = '';
+            customInput.style.display = 'none';
+          }
+          onUpdate();
+        } else {
+          tree.nodes[nid].speakerAnimation = val;
+          if (customInput) {
+            customInput.value = val;
+            customInput.style.display = 'none';
+          }
+          onUpdate();
+        }
+      });
+    });
+
+    // Speaker Animation Custom Text Input
+    container.querySelectorAll('.node-speaker-anim').forEach(input => {
       input.addEventListener('input', (e) => {
         const nid = (e.target as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nid]) {

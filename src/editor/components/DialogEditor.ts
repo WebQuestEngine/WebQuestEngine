@@ -258,11 +258,14 @@ export class DialogEditor {
 
       const nodeCount = Object.keys(tree.nodes).length + 1;
       const newNodeId = `beat_${nodeCount}`;
+      const playerChar = this.project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
+      const defaultSpeaker = playerChar?.name || 'Hero';
 
       tree.nodes[newNodeId] = {
         id: newNodeId,
         nodeType: 'beat',
-        speaker: 'Hero',
+        speaker: defaultSpeaker,
+        actorId: playerChar ? 'player' : undefined,
         text: 'Character speech or narrative line.',
         directives: [],
         position: { x: 100 + (nodeCount * 30), y: 100 + (nodeCount * 40) }

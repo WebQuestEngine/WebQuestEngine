@@ -319,7 +319,8 @@ export class NodeViewsTemplate {
       (currentSpeaker && (
         a.displayName.toLowerCase() === currentSpeaker.toLowerCase() ||
         a.id.toLowerCase() === currentSpeaker.toLowerCase() ||
-        a.name.toLowerCase() === currentSpeaker.toLowerCase()
+        a.name.toLowerCase() === currentSpeaker.toLowerCase() ||
+        ((currentSpeaker.toLowerCase() === 'hero' || currentSpeaker.toLowerCase() === 'player') && a.id === 'player')
       ))
     );
 
@@ -336,7 +337,18 @@ export class NodeViewsTemplate {
     const customSpeakerStyle = isCustom ? 'display:block;' : 'display:none;';
 
     const anims = DialogEditorUtils.getActorAnimations(project, matchedActor?.id);
-    const speakerAnimOptionsHtml = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}">${TemplateUtils.escapeHtml(an)}</option>`).join('');
+    const currentAnim = (node.speakerAnimation || '').trim();
+    const isAnimInList = anims.includes(currentAnim);
+    const isCustomAnim = currentAnim.length > 0 && !isAnimInList;
+
+    const speakerAnimOptionsHtml = anims.map(an => {
+      const isSel = (!isCustomAnim && currentAnim === an);
+      return `<option value="${TemplateUtils.escapeHtml(an)}" ${isSel ? 'selected' : ''}>${TemplateUtils.escapeHtml(an)}</option>`;
+    }).join('');
+
+    const customAnimOptionSelected = isCustomAnim ? 'selected' : '';
+    const customAnimInputStyle = isCustomAnim ? 'display:block;' : 'display:none;';
+    const noneAnimSelected = (!currentAnim) ? 'selected' : '';
 
     return TemplateUtils.populate(beatNodeCardHtml, {
       nodeId: node.id,
@@ -353,6 +365,9 @@ export class NodeViewsTemplate {
       speakerCustomSelected,
       customSpeakerStyle,
       speakerAnimOptionsHtml,
+      noneAnimSelected,
+      customAnimOptionSelected,
+      customAnimInputStyle,
       text: TemplateUtils.escapeHtml(node.text || ''),
       voiceAudioUrl: TemplateUtils.escapeHtml(node.voiceAudioUrl || ''),
       directivesCount: directives.length,

@@ -1083,7 +1083,8 @@
             "y": 10.000000580606816
           },
           "isRouterNode": false,
-          "setFlag": "eldrinFirstTalkDone"
+          "setFlag": "eldrinFirstTalkDone",
+          "speakerAnimation": "talk"
         },
         "node_2": {
           "id": "node_2",
@@ -1102,7 +1103,8 @@
           "position": {
             "x": 1551.7011858226783,
             "y": 795.7347134340238
-          }
+          },
+          "speakerAnimation": "talk"
         },
         "node_3": {
           "id": "node_3",
@@ -1113,7 +1115,8 @@
           "position": {
             "x": 1557.889990996531,
             "y": 1397.094595407457
-          }
+          },
+          "speakerAnimation": "talk"
         },
         "node_end": {
           "id": "node_end",
@@ -1123,7 +1126,8 @@
           "position": {
             "x": 2203.389872005677,
             "y": 1333.9482811350922
-          }
+          },
+          "speakerAnimation": "talk"
         },
         "router_5": {
           "id": "router_5",
@@ -1178,7 +1182,8 @@
               "voiceAudioUrl": "assets/c1s2/audio/Just exploring your impressive alchemy setup.mp3"
             }
           ],
-          "voiceAudioUrl": "assets/c1s2/audio/Yes, Sir Ronald.mp3"
+          "voiceAudioUrl": "assets/c1s2/audio/Yes, Sir Ronald.mp3",
+          "speakerAnimation": "talk"
         }
       }
     },

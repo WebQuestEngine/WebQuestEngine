@@ -39,10 +39,14 @@
       </div>
       <div>
         <label style="font-size:0.65rem; color:#f59e0b;">🎭 Speaker Talk Anim</label>
-        <input type="text" list="anims_{{nodeId}}" class="form-input node-speaker-anim" data-nodeid="{{nodeId}}" value="{{speakerAnimation}}" placeholder="e.g. talk, gesture" style="width:100%; font-size:0.75rem;" autocomplete="off" />
-        <datalist id="anims_{{nodeId}}">
-          {{speakerAnimOptionsHtml}}
-        </datalist>
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <select class="form-input node-speaker-anim-select" data-nodeid="{{nodeId}}" style="width:100%; font-size:0.75rem; color:#f59e0b; font-weight:600;">
+            <option value="" {{noneAnimSelected}}>-- None (Default Talk) --</option>
+            {{speakerAnimOptionsHtml}}
+            <option value="__custom__" {{customAnimOptionSelected}}>✏️ Custom Anim...</option>
+          </select>
+          <input type="text" class="form-input node-speaker-anim" data-nodeid="{{nodeId}}" value="{{speakerAnimation}}" placeholder="Custom anim name" style="{{customAnimInputStyle}} width:100%; font-size:0.75rem;" />
+        </div>
       </div>
     </div>
 

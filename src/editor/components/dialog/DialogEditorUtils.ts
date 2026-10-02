@@ -160,9 +160,11 @@ export class DialogEditorUtils {
 
     const playerChar = project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
     const playerName = playerChar?.name || 'Hero';
-    const playerAnims = new Set<string>(['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower']);
-    if (playerChar?.animations) {
+    const playerAnims = new Set<string>();
+    if (playerChar?.animations && Object.keys(playerChar.animations).length > 0) {
       Object.keys(playerChar.animations).forEach(k => playerAnims.add(k));
+    } else {
+      ['talk', 'idle', 'walk'].forEach(k => playerAnims.add(k));
     }
 
     actorsMap.set('player', {
@@ -176,9 +178,11 @@ export class DialogEditorUtils {
       for (const sc of project.scenes) {
         for (const c of sc.characters || []) {
           if (!actorsMap.has(c.id)) {
-            const animSet = new Set<string>(['idle', 'talk', 'walk', 'gesture', 'look_around']);
-            if (c.animations) {
+            const animSet = new Set<string>();
+            if (c.animations && Object.keys(c.animations).length > 0) {
               Object.keys(c.animations).forEach(k => animSet.add(k));
+            } else {
+              ['talk', 'idle', 'walk'].forEach(k => animSet.add(k));
             }
             actorsMap.set(c.id, {
               id: c.id,
@@ -218,7 +222,7 @@ export class DialogEditorUtils {
   public static getActorAnimations(project: ProjectData | null, actorId?: string): string[] {
     const animSet = new Set<string>();
 
-    // 1. Primary animations for the specific actor across all scenes
+    // Collect animations from the specific actor across all scenes
     if (project?.scenes && actorId) {
       for (const sc of project.scenes) {
         for (const c of sc.characters || []) {
@@ -234,43 +238,16 @@ export class DialogEditorUtils {
       }
     }
 
-    // 2. All animations defined anywhere across project scenes
-    if (project?.scenes) {
-      for (const sc of project.scenes) {
-        for (const c of sc.characters || []) {
-          if (c.animations) {
-            Object.keys(c.animations).forEach(k => animSet.add(k));
-          }
-        }
-      }
+    if (animSet.size > 0) {
+      // Return exactly the actor's actual animations, putting 'talk' first
+      return Array.from(animSet).sort((a, b) => {
+        if (a === 'talk') return -1;
+        if (b === 'talk') return 1;
+        return a.localeCompare(b);
+      });
     }
 
-    // 3. Standard built-in dialogue & gesture animation keys
-    const standardAnims = [
-      'talk',
-      'gesture',
-      'listen',
-      'look_around',
-      'idle',
-      'walk',
-      'pick_up',
-      'bow',
-      'cower',
-      'celebrate',
-      'stir_cauldron'
-    ];
-    standardAnims.forEach(a => animSet.add(a));
-
-    // Sort with common speech & gesture actions at the top
-    const priority = ['talk', 'gesture', 'listen', 'look_around', 'cower', 'celebrate', 'idle', 'walk'];
-    return Array.from(animSet).sort((a, b) => {
-      const idxA = priority.indexOf(a);
-      const idxB = priority.indexOf(b);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return a.localeCompare(b);
-    });
+    return ['talk', 'idle', 'walk'];
   }
 
   public static getSequenceSceneId(project: ProjectData | null, dTree: DialogTree): string {
