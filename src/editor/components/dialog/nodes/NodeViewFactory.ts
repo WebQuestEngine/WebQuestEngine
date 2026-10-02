@@ -1,5 +1,6 @@
 import { DialogTree, DialogNode, ProjectData, DirectiveActionType } from '../../../../engine/types';
 import { resolvePickedAssetPath } from '../../../utils/AssetPathUtils';
+import { TemplateUtils } from '../../../utils/TemplateUtils';
 import { DialogEditorUtils } from '../DialogEditorUtils';
 import { NodeViewsTemplate } from '../templates/NodeViews.template';
 
@@ -108,11 +109,20 @@ export class NodeViewFactory {
         const val = target.value;
         const customInput = container.querySelector(`.node-speaker[data-nodeid="${nid}"]`) as HTMLInputElement;
 
+        const updateAnimDatalist = (actorId?: string) => {
+          const datalist = container.querySelector(`#anims_${nid}`);
+          if (datalist) {
+            const anims = DialogEditorUtils.getActorAnimations(project, actorId);
+            datalist.innerHTML = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}">${TemplateUtils.escapeHtml(an)}</option>`).join('');
+          }
+        };
+
         if (val === '__custom__') {
           if (customInput) {
             customInput.style.display = 'block';
             customInput.focus();
           }
+          updateAnimDatalist(undefined);
         } else if (val === 'Narrator') {
           tree.nodes[nid].speaker = 'Narrator';
           tree.nodes[nid].actorId = undefined;
@@ -120,6 +130,7 @@ export class NodeViewFactory {
             customInput.value = 'Narrator';
             customInput.style.display = 'none';
           }
+          updateAnimDatalist(undefined);
           onUpdate();
         } else {
           const selectedOption = target.options[target.selectedIndex];
@@ -130,6 +141,7 @@ export class NodeViewFactory {
             customInput.value = displayName;
             customInput.style.display = 'none';
           }
+          updateAnimDatalist(val);
           onUpdate();
         }
       });
@@ -162,6 +174,17 @@ export class NodeViewFactory {
 
     // Speaker Animation Edit
     container.querySelectorAll('.node-speaker-anim').forEach(input => {
+      const showPickerIfPossible = (e: Event) => {
+        const inp = e.target as any;
+        if (typeof inp.showPicker === 'function') {
+          try {
+            inp.showPicker();
+          } catch {}
+        }
+      };
+      input.addEventListener('focus', showPickerIfPossible);
+      input.addEventListener('click', showPickerIfPossible);
+
       input.addEventListener('input', (e) => {
         const nid = (e.target as HTMLElement).dataset.nodeid!;
         if (tree.nodes[nid]) {

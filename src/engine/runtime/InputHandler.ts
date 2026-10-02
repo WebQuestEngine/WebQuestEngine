@@ -198,14 +198,14 @@ export class InputHandler {
               this.host.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
               this.host.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
             if (triggered) return;
-            this.host.executeAction(action, charNPC.position);
+            this.host.executeAction(action, charNPC.position, charNPC);
           });
         } else {
           const triggered =
             this.host.checkAndTriggerEvent('character', charNPC.data.id, chosen.verb) ||
             this.host.checkAndTriggerEvent('character', charNPC.data.id, 'interact');
           if (triggered) return;
-          this.host.executeAction(action, charNPC.position);
+          this.host.executeAction(action, charNPC.position, charNPC);
         }
         return;
       }

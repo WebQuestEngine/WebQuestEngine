@@ -131,11 +131,15 @@ export class ActionExecutor {
         animation: action.playAnimation,
         target: action.animationTarget || 'player'
       });
-    } else if (player) {
+    } else if (!action.dialogId && player) {
       if (action.verb === 'pick_up') {
         player.playCustomAnimation('pick_up', 1200);
       } else if (action.verb === 'talk') {
-        player.talk();
+        if (targetElement && typeof targetElement.talk === 'function') {
+          targetElement.talk();
+        } else {
+          player.talk();
+        }
       } else if (action.verb === 'use' && action.requireItemId) {
         player.holdItem(action.requireItemId);
       }

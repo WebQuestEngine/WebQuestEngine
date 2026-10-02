@@ -335,9 +335,8 @@ export class NodeViewsTemplate {
     const speakerCustomSelected = isCustom ? 'selected' : '';
     const customSpeakerStyle = isCustom ? 'display:block;' : 'display:none;';
 
-    const currentActor = matchedActor || (isNarrator ? null : actorsList[0]);
-    const anims = currentActor?.animations || ['talk', 'idle', 'gesture', 'listen', 'look_around'];
-    const speakerAnimOptionsHtml = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}"></option>`).join('');
+    const anims = DialogEditorUtils.getActorAnimations(project, matchedActor?.id);
+    const speakerAnimOptionsHtml = anims.map(an => `<option value="${TemplateUtils.escapeHtml(an)}">${TemplateUtils.escapeHtml(an)}</option>`).join('');
 
     return TemplateUtils.populate(beatNodeCardHtml, {
       nodeId: node.id,

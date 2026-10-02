@@ -156,36 +156,121 @@ export class DialogEditorUtils {
   }
 
   public static getAllProjectActors(project: ProjectData | null): { id: string; name: string; displayName: string; animations: string[] }[] {
+    const actorsMap = new Map<string, { id: string; name: string; displayName: string; animSet: Set<string> }>();
+
     const playerChar = project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
     const playerName = playerChar?.name || 'Hero';
-    const playerAnims = playerChar?.animations ? Object.keys(playerChar.animations) : ['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower'];
+    const playerAnims = new Set<string>(['idle', 'walk', 'talk', 'pick_up', 'listen', 'gesture', 'bow', 'cower']);
+    if (playerChar?.animations) {
+      Object.keys(playerChar.animations).forEach(k => playerAnims.add(k));
+    }
 
-    const actors: { id: string; name: string; displayName: string; animations: string[] }[] = [
-      { id: 'player', name: `👤 ${playerName} (Player)`, displayName: playerName, animations: playerAnims }
-    ];
+    actorsMap.set('player', {
+      id: 'player',
+      name: `👤 ${playerName} (Player)`,
+      displayName: playerName,
+      animSet: playerAnims
+    });
+
     if (project?.scenes) {
       for (const sc of project.scenes) {
-        for (const c of sc.characters) {
-          const anims = c.animations ? Object.keys(c.animations) : ['idle', 'talk', 'walk', 'gesture', 'look_around'];
-          if (!actors.some(a => a.id === c.id)) {
-            actors.push({ id: c.id, name: `🎭 ${c.name} (${c.id})`, displayName: c.name, animations: anims });
+        for (const c of sc.characters || []) {
+          if (!actorsMap.has(c.id)) {
+            const animSet = new Set<string>(['idle', 'talk', 'walk', 'gesture', 'look_around']);
+            if (c.animations) {
+              Object.keys(c.animations).forEach(k => animSet.add(k));
+            }
+            actorsMap.set(c.id, {
+              id: c.id,
+              name: `🎭 ${c.name} (${c.id})`,
+              displayName: c.name,
+              animSet
+            });
+          } else {
+            const entry = actorsMap.get(c.id)!;
+            if (c.animations) {
+              Object.keys(c.animations).forEach(k => entry.animSet.add(k));
+            }
           }
         }
-        for (const hs of sc.hotspots) {
-          if (!actors.some(a => a.id === hs.id)) {
-            actors.push({ id: hs.id, name: `📦 ${hs.name} (${hs.id})`, displayName: hs.name, animations: ['idle', 'active', 'open', 'close'] });
+        for (const hs of sc.hotspots || []) {
+          if (!actorsMap.has(hs.id)) {
+            const animSet = new Set<string>(['idle', 'active', 'open', 'close']);
+            actorsMap.set(hs.id, {
+              id: hs.id,
+              name: `📦 ${hs.name} (${hs.id})`,
+              displayName: hs.name,
+              animSet
+            });
           }
         }
       }
     }
-    return actors;
+
+    return Array.from(actorsMap.values()).map(a => ({
+      id: a.id,
+      name: a.name,
+      displayName: a.displayName,
+      animations: Array.from(a.animSet)
+    }));
   }
 
-  public static getActorAnimations(project: ProjectData | null, actorId: string): string[] {
-    const actors = DialogEditorUtils.getAllProjectActors(project);
-    const found = actors.find(a => a.id === actorId);
-    if (found && found.animations && found.animations.length > 0) return found.animations;
-    return ['idle', 'talk', 'walk', 'gesture', 'stir_cauldron', 'look_around', 'cower', 'celebrate'];
+  public static getActorAnimations(project: ProjectData | null, actorId?: string): string[] {
+    const animSet = new Set<string>();
+
+    // 1. Primary animations for the specific actor across all scenes
+    if (project?.scenes && actorId) {
+      for (const sc of project.scenes) {
+        for (const c of sc.characters || []) {
+          if (c.id === actorId && c.animations) {
+            Object.keys(c.animations).forEach(k => animSet.add(k));
+          }
+        }
+        for (const hs of sc.hotspots || []) {
+          if (hs.id === actorId) {
+            ['idle', 'active', 'open', 'close'].forEach(k => animSet.add(k));
+          }
+        }
+      }
+    }
+
+    // 2. All animations defined anywhere across project scenes
+    if (project?.scenes) {
+      for (const sc of project.scenes) {
+        for (const c of sc.characters || []) {
+          if (c.animations) {
+            Object.keys(c.animations).forEach(k => animSet.add(k));
+          }
+        }
+      }
+    }
+
+    // 3. Standard built-in dialogue & gesture animation keys
+    const standardAnims = [
+      'talk',
+      'gesture',
+      'listen',
+      'look_around',
+      'idle',
+      'walk',
+      'pick_up',
+      'bow',
+      'cower',
+      'celebrate',
+      'stir_cauldron'
+    ];
+    standardAnims.forEach(a => animSet.add(a));
+
+    // Sort with common speech & gesture actions at the top
+    const priority = ['talk', 'gesture', 'listen', 'look_around', 'cower', 'celebrate', 'idle', 'walk'];
+    return Array.from(animSet).sort((a, b) => {
+      const idxA = priority.indexOf(a);
+      const idxB = priority.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }
 
   public static getSequenceSceneId(project: ProjectData | null, dTree: DialogTree): string {
