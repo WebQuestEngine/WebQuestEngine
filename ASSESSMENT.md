@@ -1,6 +1,6 @@
 # WebQuestEngine — Project Assessment
 
-*Assessed on 2026-10-02, updated on 2026-10-03 against latest commits through `69dc501` (2026-10-02).*
+*Assessed on 2026-10-02, updated on 2026-10-03 against latest commits through `dc8f2a6` and subsequent editor refactorings.*
 
 **Scope and method.** This assessment is based on reading the docs, configs, data model and most of the engine and editor code, plus building the project in a scratch copy (it compiles clean). The editor was not play-tested in a browser, so the maturity judgments come from code and docs.
 
@@ -35,21 +35,22 @@ By extension (an inference, not something the project claims) it would fit escap
 - Pathfinding is real: a visibility graph plus Dijkstra inside concave polygons (`src/engine/scene/WalkPath.ts`).
 - Editor views were refactored into HTML templates plus controllers, with HTML escaping.
 - **Runtime modularization:** `GameRuntime` was successfully decomposed into dedicated controllers (`InputHandler`, `ActionExecutor`, `CinematicsController`, `DialogController`, `DOMOverlayRenderer`, `LetterboxManager`, `SaveRestoreHandler`), leaving `GameRuntime` (down to 370 lines) as a clean lifecycle coordinator.
+- **Editor modularization:** `NodeViewFactory.ts` was refactored down from 1,248 lines to 44 lines by extracting dedicated binders under `binders/` (`CommonNodeBinder`, `SpeechNodeBinder`, `RouterNodeBinder`, `DirectiveNodeBinder`, `ActionNodeBinder`, `EventListenerNodeBinder`). `EditorCanvas.ts` was decomposed by extracting `CanvasGizmoRenderer.ts`, `PolygonEditorController.ts`, and `CanvasInteractionUtils.ts`.
 
 ### What's weak
 
 - **Global event bus as the backbone.** `EventBus.getInstance()` appears 299 times with 74 string event names and `any` payloads. Editor and runtime share one bus, and user-authored event names are emitted on it, so they can collide with internal ones like `scene:change`.
 - **Singletons in disguise.** `RuntimeContext` creates per-session systems, then installs them as static instances that scene objects fetch via `getInstance()`. The docs claim "zero global singleton leakage"; the per-context `eventBus` it creates is never used.
-- **God class (Partially addressed).** `src/engine/runtime/GameRuntime.ts` was refactored down from 1,635 lines to 370 lines, delegating responsibilities to submodules. However, some extracted submodules are still sizable (`InputHandler.ts` at 600 lines), and the editor still contains monolithic controllers (`NodeViewFactory.ts` at 1,247 lines, `EditorCanvas.ts` at 1,210 lines, and `DialogEditor.ts` at 1,003 lines).
+- **God class (Partially addressed).** `src/engine/runtime/GameRuntime.ts` (370 lines), `NodeViewFactory.ts` (44 lines), and `EditorCanvas.ts` have been decomposed into dedicated submodules. However, `DialogEditor.ts` (1,003 lines) and some extracted modules (`InputHandler.ts` at 600 lines) remain sizable.
 - **No polymorphism where the domain needs it.** Actions, directives and dialog nodes are bags of optional fields (`DialogNode` has about 50) interpreted by if-chains. Adding an action type means editing the types, the runtime, the node view factory and the templates. Recent UX improvements added dynamic actor and animation datalists to node cards, but the underlying data structures remain untyped bags.
 - **Legacy and new fields coexist:** `setFlag` and `setFlags`, `giveItem` and `giveItems`, `isRouterNode` and `nodeType`.
 - **Engine isn't UI-free.** The HUD, menu and dialog overlays are DOM with inline CSS inside `engine/` (now grouped in `DOMOverlayRenderer.ts`), and editor file handling also lives there.
-- **Dead code.** `PathfindingSystem` is a stub; the real implementation is in `WalkPath`.
+- **~~Dead code~~ (Addressed):** `PathfindingSystem` stub and its unused references in `RuntimeContext` have been completely purged; pathfinding is cleanly encapsulated in `WalkPath.ts`.
 - **Safety net (Addressed for core logic):** Vitest + JSDOM testing harness is now integrated with 11 test suites and 57 passing tests covering geometric pathfinding/Dijkstra, condition evaluation, inventory combination, story progression, save/restore snapshots, dialog graph branching, action execution, and demo project referential integrity. (Still no linter, 94 uses of `any`, and no schema versioning).
 
 ### Net
 
-Good module boundaries and data model, weak abstractions and extensibility. The recent `GameRuntime` refactoring and test suite implementation resolved two major engineering risks (monolithic runtime and absence of test safety net). Extensibility remains constrained by the untyped event bus and bag-of-optional-fields data model.
+Good module boundaries and data model, weak abstractions and extensibility. The recent `GameRuntime`, `NodeViewFactory`, and `EditorCanvas` refactoring, test suite implementation, and dead code cleanup resolved several major engineering risks. Extensibility remains constrained by the untyped event bus and bag-of-optional-fields data model.
 
 ---
 
@@ -101,7 +102,7 @@ It looks AI-built but is not AI-ready. The signs of AI authorship are `file:///h
 
 **What helps an agent today:** strict TypeScript, a single data-model file, a clean folder split, requirement IDs, a short architecture section in `CONTRIBUTING.md`, and an automated test suite verifying core game logic and referential integrity.
 
-**What hurts:** an agent has no compile-time typing for the 74 event names on the global bus, the remaining 1,000–1,250 line editor files (`NodeViewFactory`, `EditorCanvas`, `DialogEditor`) make change impact hard to trace, and the docs contradict the code.
+**What hurts:** an agent has no compile-time typing for the 74 event names on the global bus, the remaining monolithic editor controller (`DialogEditor` at 1,003 lines) makes change impact hard to trace, and the docs contradict the code.
 
 `clearclass` and `mapgenerator` treat the repo as the agent's operating manual with enforced gates; this one is where a repo sits before any of that is added.
 

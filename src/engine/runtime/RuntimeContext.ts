@@ -5,7 +5,6 @@ import { DialogSystem } from '../systems/DialogSystem';
 import { InventorySystem } from '../systems/InventorySystem';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { UISystem } from '../systems/UISystem';
-import { PathfindingSystem } from '../systems/PathfindingSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 
 export class RuntimeContext {
@@ -15,7 +14,6 @@ export class RuntimeContext {
   public inventory: InventorySystem;
   public story: StoryGraphSystem;
   public ui: UISystem;
-  public pathfinding: PathfindingSystem;
   public save: SaveSystem;
   public project: ProjectData;
 
@@ -33,7 +31,6 @@ export class RuntimeContext {
     this.inventory = new InventorySystem();
     this.story = new StoryGraphSystem();
     this.ui = new UISystem();
-    this.pathfinding = new PathfindingSystem();
     this.save = new SaveSystem(project);
 
     // Initialize systems with project data
