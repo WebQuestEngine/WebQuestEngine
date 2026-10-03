@@ -31,6 +31,7 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [ ] **Cinematic Mode**: Add a letterboxed cinematic mode that temporarily hides UI bars and disables player manual controls during cutscenes.
 - [ ] **Scripted Camera Movement**: Support pan-to-position and smooth camera zooming during cutscenes (`camera.panTo(x, y)`).
 - [ ] **Scripted Sequences**: Support sequential actor walking, animation triggers, and speech subtitles without requiring player interaction.
+- [ ] **Skip Cutscenes & Dialog**: Allow skipping cutscenes and dialog lines by pressing the dot key (`.`) or another custom input.
 
 ---
 
@@ -65,6 +66,7 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [x] **Background Music per Scene**: Support background music audio files per scene (`backgroundMusicUrl`) with smooth fading between scene transitions.
 - [x] **Recorded Dialogues / Voiceover Support**: Add voiceover audio file fields to dialogue nodes (`voiceAudioUrl`) with automatic subtitle duration sync.
 - [x] **Custom Action Sound Effects**: Support custom sound effect triggers on actions (`sfxUrl`) for door opening, item pickup, brewing potions, and inventory interactions.
+- [ ] **Restrict Voiceover to Dialogue Nodes**: Dialog system responses/choices should not contain audio files directly; if voiceover audio is required, connect the choice to a separate dialog speech node instead.
 
 ---
 
@@ -87,3 +89,15 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [ ] **Action & Script Unlock Triggers**: Allow unlocking achievements via hotspot actions, dialogue completion, item combinations, or story flags (`unlockAchievement('first_potion')`).
 - [ ] **In-Game Toast Notifications**: Display an animated toast notification banner when an achievement is unlocked during gameplay.
 - [ ] **Achievements Screen / Modal**: Accessible achievements menu displaying progress, icons, unlock timestamps, and secret achievement placeholders.
+
+---
+
+## 🎭 13. Character Visualization System
+- [ ] **Decouple Character Visuals and Animations from Data**: Separate character visual representation and animation from character data into a dedicated character visualization system, allowing games to use different systems for rendering characters (e.g. spritesheets, skeletal animation, procedural meshes).
+
+---
+
+## 💬 14. Dialog System
+- [ ] **Wait for Dialog Line to Finish**: Wait for the current dialog line/speech subtitle to finish before showing player response options.
+- [ ] **Skip Dialog & Cutscenes**: Allow skipping dialog lines and cutscenes by pressing the dot key (`.`) or another custom input.
+
