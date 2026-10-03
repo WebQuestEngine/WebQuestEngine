@@ -1,5 +1,5 @@
 import { AssetManager } from '../core/AssetManager';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { AudioConfig } from '../types';
 
 export class AudioSystem {
@@ -20,12 +20,20 @@ export class AudioSystem {
     voiceVolume: 1.0
   };
 
-  public constructor() {
-    EventBus.getInstance().on('audio:play_sfx', (payload: { url?: string; type?: 'click' | 'item' | 'door' | 'pickup' }) => {
-      if (this.isPlayMode) {
-        this.playSFX(payload.url, payload.type);
-      }
-    });
+  private eventBus: EventBus<EngineEventMap>;
+  private unsubscribers: (() => void)[] = [];
+  private unlockHandler: ((e: Event) => void) | null = null;
+
+  public constructor(eventBus?: EventBus<EngineEventMap>) {
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
+
+    this.unsubscribers.push(
+      this.eventBus.on('audio:play_sfx', (payload) => {
+        if (this.isPlayMode) {
+          this.playSFX(payload?.url, payload?.type);
+        }
+      })
+    );
 
     const unlock = () => {
       if (!this.isPlayMode) return;
@@ -39,9 +47,24 @@ export class AudioSystem {
         }).catch(() => {});
       }
     };
+    this.unlockHandler = unlock;
     window.addEventListener('click', unlock, { passive: true });
     window.addEventListener('keydown', unlock, { passive: true });
     window.addEventListener('pointerdown', unlock, { passive: true });
+  }
+
+  public destroy(): void {
+    this.stopAll();
+    this.isPlayMode = false;
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
+
+    if (this.unlockHandler) {
+      window.removeEventListener('click', this.unlockHandler);
+      window.removeEventListener('keydown', this.unlockHandler);
+      window.removeEventListener('pointerdown', this.unlockHandler);
+      this.unlockHandler = null;
+    }
   }
 
   public static getInstance(): AudioSystem {

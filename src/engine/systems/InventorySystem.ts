@@ -1,13 +1,20 @@
 import { InventoryItemData } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 
 export class InventorySystem {
   private static instance: InventorySystem;
   private items: Map<string, InventoryItemData> = new Map();
   private playerInventory: Set<string> = new Set();
   private selectedItemId: string | null = null;
+  private eventBus: EventBus<EngineEventMap>;
 
-  public constructor() {}
+  public constructor(eventBus?: EventBus<EngineEventMap>) {
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
+  }
+
+  public setEventBus(bus: EventBus<EngineEventMap>): void {
+    this.eventBus = bus;
+  }
 
   public static getInstance(): InventorySystem {
     if (!InventorySystem.instance) {
@@ -27,9 +34,9 @@ export class InventorySystem {
   public addItem(itemId: string): boolean {
     if (this.items.has(itemId)) {
       this.playerInventory.add(itemId);
-      EventBus.getInstance().emit('inventory:updated', this.getItems());
-      EventBus.getInstance().emit('inventory:item_added', itemId);
-      EventBus.getInstance().emit('ui:notify', `Added to inventory: ${this.items.get(itemId)?.name}`);
+      this.eventBus.emit('inventory:updated', this.getItems());
+      this.eventBus.emit('inventory:item_added', itemId);
+      this.eventBus.emit('ui:notify', `Added to inventory: ${this.items.get(itemId)?.name}`);
       return true;
     }
     return false;
@@ -40,7 +47,7 @@ export class InventorySystem {
     if (this.selectedItemId === itemId) {
       this.selectedItemId = null;
     }
-    EventBus.getInstance().emit('inventory:updated', this.getItems());
+    this.eventBus.emit('inventory:updated', this.getItems());
   }
 
   public hasItem(itemId: string): boolean {
@@ -58,7 +65,7 @@ export class InventorySystem {
 
   public selectItem(itemId: string | null): void {
     this.selectedItemId = itemId;
-    EventBus.getInstance().emit('inventory:selected', itemId ? this.items.get(itemId) : null);
+    this.eventBus.emit('inventory:selected', itemId ? this.items.get(itemId) : null);
   }
 
   public getSelectedItem(): InventoryItemData | null {
@@ -77,10 +84,10 @@ export class InventorySystem {
         this.addItem(combination.resultItemId);
       }
       if (combination.message) {
-        EventBus.getInstance().emit('ui:notify', combination.message);
+        this.eventBus.emit('ui:notify', combination.message);
       }
       if (combination.triggerFlag) {
-        EventBus.getInstance().emit('flag:set', combination.triggerFlag);
+        this.eventBus.emit('flag:set', combination.triggerFlag);
       }
       this.selectItem(null);
       return true;
@@ -91,7 +98,7 @@ export class InventorySystem {
   public clear(): void {
     this.playerInventory.clear();
     this.selectedItemId = null;
-    EventBus.getInstance().emit('inventory:updated', []);
+    this.eventBus.emit('inventory:updated', []);
   }
 
   public setInventory(itemIds: string[]): void {
@@ -102,6 +109,6 @@ export class InventorySystem {
         this.playerInventory.add(id);
       }
     }
-    EventBus.getInstance().emit('inventory:updated', this.getItems());
+    this.eventBus.emit('inventory:updated', this.getItems());
   }
 }

@@ -1,4 +1,3 @@
-import { EventBus } from '../core/EventBus';
 import { SaveGameData, SceneData, Vector2D } from '../types';
 import { Scene } from '../scene/Scene';
 import { RuntimeContext } from './RuntimeContext';
@@ -25,7 +24,7 @@ export class SaveRestoreHandler {
   }
 
   private setupEventListeners(): void {
-    const bus = EventBus.getInstance();
+    const bus = this.host.context.eventBus;
 
     this.unsubscribers.push(
       bus.on('game:pause', () => this.host.pause()),
@@ -89,7 +88,7 @@ export class SaveRestoreHandler {
     await this.host.loadScene(scene, saveData.playerPos);
 
     this.host.checkAndTriggerEvent('game', 'game', 'loaded');
-    EventBus.getInstance().emit('ui:notify', `📂 Loaded: ${saveData.saveName}`);
+    this.host.context.eventBus.emit('ui:notify', `📂 Loaded: ${saveData.saveName}`);
   }
 
   public destroy(): void {

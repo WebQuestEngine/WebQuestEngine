@@ -95,14 +95,15 @@ export class GameRuntime implements CinematicsHost, DialogHost, ActionHost, Inpu
   }
 
   private setupEventHandlers(): void {
-    const bus = EventBus.getInstance();
+    const bus = this.context.eventBus;
 
     // Scene change
     this.unsubscribers.push(
-      bus.on('scene:change', async (payload: any) => {
+      bus.on('scene:change', async (payload) => {
         if (this.isDestroyed) return;
-        const sceneData = payload.scene || payload;
-        await this.loadScene(sceneData, payload.spawnPoint);
+        const sceneData = 'scene' in payload ? payload.scene : payload;
+        const spawnPoint = 'spawnPoint' in payload ? payload.spawnPoint : undefined;
+        await this.loadScene(sceneData, spawnPoint);
       })
     );
 

@@ -1,4 +1,3 @@
-import { EventBus } from '../core/EventBus';
 import { Vector2D, HotspotAction, EventScopeType } from '../types';
 import { Scene } from '../scene/Scene';
 import { RuntimeContext } from './RuntimeContext';
@@ -75,21 +74,21 @@ export class ActionExecutor {
 
   public executeAction(action: HotspotAction | any, targetPos?: Vector2D, targetElement?: any): void {
     if (action.requiredFlag && !this.host.context.story.getFlag(action.requiredFlag)) {
-      EventBus.getInstance().emit('ui:notify', 'You cannot do that right now.');
+      this.host.context.eventBus.emit('ui:notify', 'You cannot do that right now.');
       return;
     }
     if (action.notFlag && this.host.context.story.getFlag(action.notFlag)) {
-      EventBus.getInstance().emit('ui:notify', 'You cannot do that right now.');
+      this.host.context.eventBus.emit('ui:notify', 'You cannot do that right now.');
       return;
     }
 
     // 1. Emit universal action event
-    EventBus.getInstance().emit('action:executed', { action, targetPos, targetElement });
+    this.host.context.eventBus.emit('action:executed', { action, targetPos, targetElement });
 
     // 2. Custom event trigger if specified
     if (action.eventName) {
       console.log(`%c[ActionExecutor] ⚡ Firing custom event: "${action.eventName}"`, 'color: #f59e0b; font-weight: bold;');
-      EventBus.getInstance().emit(action.eventName, {
+      this.host.context.eventBus.emit(action.eventName, {
         action,
         payload: action.eventPayload,
         targetPos,
@@ -127,7 +126,7 @@ export class ActionExecutor {
       } else if (player) {
         player.playCustomAnimation(action.playAnimation);
       }
-      EventBus.getInstance().emit('animation:started', {
+      this.host.context.eventBus.emit('animation:started', {
         animation: action.playAnimation,
         target: action.animationTarget || 'player'
       });
@@ -147,7 +146,7 @@ export class ActionExecutor {
 
     // 5. Speech Event
     if (action.text) {
-      EventBus.getInstance().emit('ui:notify', action.text);
+      this.host.context.eventBus.emit('ui:notify', action.text);
       this.host.context.ui.showSubtitle(action.text);
     }
 

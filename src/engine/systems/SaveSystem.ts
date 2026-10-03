@@ -1,5 +1,5 @@
 import { ProjectData, SaveGameData, Vector2D, AudioConfig, UIPresetType } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { StoryGraphSystem } from './StoryGraphSystem';
 import { InventorySystem } from './InventorySystem';
 import { AudioSystem } from './AudioSystem';
@@ -9,9 +9,15 @@ export class SaveSystem {
   private static instance: SaveSystem;
   private project: ProjectData | null = null;
   private currentSlotCount: number = 6;
+  private eventBus: EventBus<EngineEventMap>;
 
-  constructor(project?: ProjectData) {
+  constructor(project?: ProjectData, eventBus?: EventBus<EngineEventMap>) {
     if (project) this.project = project;
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
+  }
+
+  public setEventBus(bus: EventBus<EngineEventMap>): void {
+    this.eventBus = bus;
   }
 
   public static getInstance(): SaveSystem {
@@ -113,12 +119,12 @@ export class SaveSystem {
     try {
       localStorage.setItem(this.getStorageKey(slotId), JSON.stringify(saveData));
       console.log(`%c[SaveSystem] 💾 Game Saved to Slot [${slotId}]: "${saveData.saveName}"`, 'color: #10b981; font-weight: bold;');
-      EventBus.getInstance().emit('ui:notify', `💾 Game Saved to Slot ${slotId}`);
-      EventBus.getInstance().emit('game:saved', saveData);
+      this.eventBus.emit('ui:notify', `💾 Game Saved to Slot ${slotId}`);
+      this.eventBus.emit('game:saved', saveData);
       return saveData;
     } catch (e) {
       console.error(`[SaveSystem] Failed to write save slot ${slotId}:`, e);
-      EventBus.getInstance().emit('ui:notify', `⚠️ Failed to save: ${e}`);
+      this.eventBus.emit('ui:notify', `⚠️ Failed to save: ${e}`);
       return null;
     }
   }
@@ -126,7 +132,7 @@ export class SaveSystem {
   public deleteSave(slotId: number | string): boolean {
     try {
       localStorage.removeItem(this.getStorageKey(slotId));
-      EventBus.getInstance().emit('ui:notify', `🗑️ Deleted Save Slot ${slotId}`);
+      this.eventBus.emit('ui:notify', `🗑️ Deleted Save Slot ${slotId}`);
       return true;
     } catch (e) {
       console.error(`[SaveSystem] Failed to delete save slot ${slotId}:`, e);
@@ -137,7 +143,7 @@ export class SaveSystem {
   public exportSaveFile(slotId: number | string): void {
     const save = this.getSaveBySlot(slotId);
     if (!save) {
-      EventBus.getInstance().emit('ui:notify', '⚠️ No save data found in this slot.');
+      this.eventBus.emit('ui:notify', '⚠️ No save data found in this slot.');
       return;
     }
 
@@ -152,7 +158,7 @@ export class SaveSystem {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    EventBus.getInstance().emit('ui:notify', '📥 Exported save file successfully.');
+    this.eventBus.emit('ui:notify', '📥 Exported save file successfully.');
   }
 
   public importSaveFromJSON(jsonText: string): SaveGameData | null {
@@ -164,7 +170,7 @@ export class SaveSystem {
       return parsed;
     } catch (e) {
       console.error('[SaveSystem] Invalid import JSON:', e);
-      EventBus.getInstance().emit('ui:notify', '❌ Failed to import save: Invalid format');
+      this.eventBus.emit('ui:notify', '❌ Failed to import save: Invalid format');
       return null;
     }
   }

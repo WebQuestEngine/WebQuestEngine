@@ -1,5 +1,5 @@
 import { ProjectData, AudioConfig, UIConfig } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { AudioSystem } from '../systems/AudioSystem';
 import { DialogSystem } from '../systems/DialogSystem';
 import { InventorySystem } from '../systems/InventorySystem';
@@ -8,7 +8,17 @@ import { UISystem } from '../systems/UISystem';
 import { SaveSystem } from '../systems/SaveSystem';
 
 export class RuntimeContext {
-  public eventBus: EventBus;
+  private static activeContext: RuntimeContext | null = null;
+
+  public static getActive(): RuntimeContext | null {
+    return RuntimeContext.activeContext;
+  }
+
+  public static setActive(ctx: RuntimeContext | null): void {
+    RuntimeContext.activeContext = ctx;
+  }
+
+  public eventBus: EventBus<EngineEventMap>;
   public audio: AudioSystem;
   public dialog: DialogSystem;
   public inventory: InventorySystem;
@@ -18,20 +28,22 @@ export class RuntimeContext {
   public project: ProjectData;
 
   constructor(project: ProjectData, uiContainerElement: HTMLElement) {
+    RuntimeContext.setActive(this);
     this.project = project;
-    this.eventBus = new EventBus();
+    this.eventBus = new EventBus<EngineEventMap>();
+    EventBus.setActiveBusGetter(() => this.eventBus);
 
-    this.audio = new AudioSystem();
+    this.audio = new AudioSystem(this.eventBus);
     if (project.audioConfig) {
       this.audio.setConfig(project.audioConfig);
     }
     this.audio.setPlayMode(true);
 
-    this.dialog = new DialogSystem();
-    this.inventory = new InventorySystem();
-    this.story = new StoryGraphSystem();
-    this.ui = new UISystem();
-    this.save = new SaveSystem(project);
+    this.dialog = new DialogSystem(this.eventBus);
+    this.inventory = new InventorySystem(this.eventBus);
+    this.story = new StoryGraphSystem(this.eventBus);
+    this.ui = new UISystem(this.eventBus);
+    this.save = new SaveSystem(project, this.eventBus);
 
     // Initialize systems with project data
     this.story.loadProject(project);
@@ -63,8 +75,11 @@ export class RuntimeContext {
   }
 
   public destroy(): void {
-    this.audio.stopAll();
-    this.audio.setPlayMode(false);
+    if (RuntimeContext.getActive() === this) {
+      RuntimeContext.setActive(null);
+      EventBus.setActiveBusGetter(null);
+    }
+    this.audio.destroy();
     this.dialog.endDialog();
     this.inventory.clear();
     this.ui.destroy();

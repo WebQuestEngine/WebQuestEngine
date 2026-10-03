@@ -39,18 +39,18 @@ By extension (an inference, not something the project claims) it would fit escap
 
 ### What's weak
 
-- **Global event bus as the backbone.** `EventBus.getInstance()` appears 299 times with 74 string event names and `any` payloads. Editor and runtime share one bus, and user-authored event names are emitted on it, so they can collide with internal ones like `scene:change`.
-- **Singletons in disguise.** `RuntimeContext` creates per-session systems, then installs them as static instances that scene objects fetch via `getInstance()`. The docs claim "zero global singleton leakage"; the per-context `eventBus` it creates is never used.
+- **~~Global event bus as the backbone~~ (Addressed):** Refactored to generic `EventBus<TMap>` with `EngineEventMap` and `EditorEventMap` in `src/engine/core/EventTypes.ts`. Payload shapes (`scene:change`, `dialog:node`, `inventory:give`, `flag:set`, etc.) are strictly checked at compile time while keeping dynamic game entities (item IDs, character IDs, flags, custom directives) as strings.
+- **~~Singletons in disguise~~ (Addressed):** `RuntimeContext` now injects its scoped `EventBus<EngineEventMap>` into `AudioSystem`, `DialogSystem`, `InventorySystem`, `StoryGraphSystem`, `SaveSystem`, `UISystem`, and `InGameMenuModal`. Play-mode sessions clear all listeners and window handlers on `destroy()`, eliminating zombie listener leaks across editor play sessions. Editor events (`editor:*`, `history:*`, `camera:*`) route to the editor bus.
 - **God class (Partially addressed).** `src/engine/runtime/GameRuntime.ts` (370 lines), `NodeViewFactory.ts` (44 lines), and `EditorCanvas.ts` have been decomposed into dedicated submodules. However, `DialogEditor.ts` (1,003 lines) and some extracted modules (`InputHandler.ts` at 600 lines) remain sizable.
 - **No polymorphism where the domain needs it.** Actions, directives and dialog nodes are bags of optional fields (`DialogNode` has about 50) interpreted by if-chains. Adding an action type means editing the types, the runtime, the node view factory and the templates. Recent UX improvements added dynamic actor and animation datalists to node cards, but the underlying data structures remain untyped bags.
 - **Legacy and new fields coexist:** `setFlag` and `setFlags`, `giveItem` and `giveItems`, `isRouterNode` and `nodeType`.
 - **Engine isn't UI-free.** The HUD, menu and dialog overlays are DOM with inline CSS inside `engine/` (now grouped in `DOMOverlayRenderer.ts`), and editor file handling also lives there.
 - **~~Dead code~~ (Addressed):** `PathfindingSystem` stub and its unused references in `RuntimeContext` have been completely purged; pathfinding is cleanly encapsulated in `WalkPath.ts`.
-- **Safety net (Addressed for core logic):** Vitest + JSDOM testing harness is now integrated with 11 test suites and 57 passing tests covering geometric pathfinding/Dijkstra, condition evaluation, inventory combination, story progression, save/restore snapshots, dialog graph branching, action execution, and demo project referential integrity. (Still no linter, 94 uses of `any`, and no schema versioning).
+- **Safety net (Addressed for core logic):** Vitest + JSDOM testing harness is now integrated with 11 test suites and 61 passing tests covering geometric pathfinding/Dijkstra, condition evaluation, inventory combination, story progression, save/restore snapshots, dialog graph branching, action execution, event bus session isolation, and demo project referential integrity. (Still no linter and no schema versioning).
 
 ### Net
 
-Good module boundaries and data model, weak abstractions and extensibility. The recent `GameRuntime`, `NodeViewFactory`, and `EditorCanvas` refactoring, test suite implementation, and dead code cleanup resolved several major engineering risks. Extensibility remains constrained by the untyped event bus and bag-of-optional-fields data model.
+Good module boundaries and data model. The recent `GameRuntime`, `NodeViewFactory`, `EditorCanvas`, and `EventBus` refactorings, test suite implementation, and dead code cleanup resolved the major structural engineering risks. Dynamic entities remain flexible as strings while all event payloads and channels are strictly typed. Extensibility is now primarily constrained by the bag-of-optional-fields data model.
 
 ---
 
@@ -109,7 +109,7 @@ It looks AI-built but is not AI-ready. The signs of AI authorship are `file:///h
 ### Cheapest high-value next steps
 
 1. Add an `AGENTS.md` with the architecture rules (and a `CLAUDE.md` pointer to it).
-2. ~~Add Vitest on the pure logic: conditions, pathfinding, dialog and story systems.~~ (Done: 11 suites, 57 tests passing).
-3. Introduce a typed event map to replace string event names with `any` payloads.
+2. ~~Add Vitest on the pure logic: conditions, pathfinding, dialog and story systems.~~ (Done: 11 suites, 61 tests passing).
+3. ~~Introduce a typed event map to replace string event names with `any` payloads.~~ (Done: `EventTypes.ts` + scoped `EventBus<TMap>` with session lifecycle isolation).
 4. Add a single `check` script (typecheck, lint, test) and wire it into CI.
 

@@ -1,4 +1,3 @@
-import { EventBus } from '../core/EventBus';
 import { Camera } from '../core/Camera';
 import { Scene } from '../scene/Scene';
 import { Character } from '../scene/Character';
@@ -26,7 +25,7 @@ export class CinematicsController {
   }
 
   private setupEventListeners(): void {
-    const bus = EventBus.getInstance();
+    const bus = this.host.context.eventBus;
 
     this.unsubscribers.push(
       bus.on('dialog:directive', (directive: any) => {

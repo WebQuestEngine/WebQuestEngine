@@ -1,5 +1,5 @@
 import { UIConfig, VerbType, InventoryItemData, UIPresetType, ProjectData } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { InventorySystem } from './InventorySystem';
 import { InGameMenuModal } from '../ui/InGameMenuModal';
 import { AssetManager } from '../core/AssetManager';
@@ -35,8 +35,11 @@ export class UISystem {
   public activeVerb: VerbType = 'walk';
   public containerElement: HTMLElement | null = null;
   public isHoveringUI = false;
+  private eventBus: EventBus<EngineEventMap>;
 
-  public constructor() {}
+  public constructor(eventBus?: EventBus<EngineEventMap>) {
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
+  }
 
   public getConfig(): UIConfig {
     return { ...this.config };
@@ -202,7 +205,7 @@ export class UISystem {
       this.config = { ...this.config, ...config };
     }
     if (!this.menuModal) {
-      this.menuModal = new InGameMenuModal();
+      this.menuModal = new InGameMenuModal(this.eventBus);
     }
     this.renderUI();
 
@@ -211,12 +214,12 @@ export class UISystem {
     this.unsubscribers = [];
 
     this.unsubscribers.push(
-      EventBus.getInstance().on('inventory:selected', (item: any) => {
+      this.eventBus.on('inventory:selected', (item: any) => {
         this.updateCustomCursor(item ? item.iconUrl : null);
       })
     );
     this.unsubscribers.push(
-      EventBus.getInstance().on('inventory:updated', (items: any) => {
+      this.eventBus.on('inventory:updated', (items: any) => {
         this.renderInventoryItems(items || InventorySystem.getInstance().getItems());
       })
     );
@@ -238,12 +241,12 @@ export class UISystem {
       this.config.autoHideBars = true;
     }
     this.renderUI();
-    EventBus.getInstance().emit('ui:preset_changed', preset);
+    this.eventBus.emit('ui:preset_changed', preset);
   }
 
   public setActiveVerb(verb: VerbType): void {
     this.activeVerb = verb;
-    EventBus.getInstance().emit('ui:verb_changed', verb);
+    this.eventBus.emit('ui:verb_changed', verb);
     this.updateVerbHighlights();
   }
 
@@ -389,7 +392,7 @@ export class UISystem {
         const verb = (e.currentTarget as HTMLElement).dataset.verb as VerbType;
         if (verb) {
           this.setActiveVerb(verb);
-          EventBus.getInstance().emit('ui:coin_verb', verb);
+          this.eventBus.emit('ui:coin_verb', verb);
           this.hideContextCoin();
         }
       });
@@ -617,6 +620,11 @@ export class UISystem {
   public destroy(): void {
     this.unsubscribers.forEach(unsub => unsub());
     this.unsubscribers = [];
+
+    if (this.menuModal) {
+      this.menuModal.destroy();
+      this.menuModal = null;
+    }
 
     if (this.globalMouseMoveHandler) {
       window.removeEventListener('mousemove', this.globalMouseMoveHandler);

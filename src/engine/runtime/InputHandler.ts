@@ -1,5 +1,4 @@
 import { Application } from 'pixi.js';
-import { EventBus } from '../core/EventBus';
 import { Camera } from '../core/Camera';
 import { Scene } from '../scene/Scene';
 import { Character } from '../scene/Character';
@@ -149,14 +148,14 @@ export class InputHandler {
         } else {
           if (player) {
             player.walkTo(targetCenter, walkPath, () => {
-              EventBus.getInstance().emit('ui:notify', `Using ${selectedItem.name} on ${targetHotspot.data.name} has no effect.`);
+              this.host.context.eventBus.emit('ui:notify', `Using ${selectedItem.name} on ${targetHotspot.data.name} has no effect.`);
             });
           }
         }
       } else if (charNPC) {
         if (player) {
           player.walkTo(charNPC.position, walkPath, () => {
-            EventBus.getInstance().emit('ui:notify', `Giving ${selectedItem.name} to ${charNPC.data.name} has no effect.`);
+            this.host.context.eventBus.emit('ui:notify', `Giving ${selectedItem.name} to ${charNPC.data.name} has no effect.`);
           });
         }
       }
@@ -542,14 +541,14 @@ export class InputHandler {
       } else {
         if (player) {
           player.walkTo(targetCenter, walkPath, () => {
-            EventBus.getInstance().emit('ui:notify', `Using ${itemData?.name || itemId} on ${hotspot.data.name} has no effect.`);
+            this.host.context.eventBus.emit('ui:notify', `Using ${itemData?.name || itemId} on ${hotspot.data.name} has no effect.`);
           });
         }
       }
     } else if (charNPC) {
       if (player) {
         player.walkTo(charNPC.position, walkPath, () => {
-          EventBus.getInstance().emit('ui:notify', `Giving ${itemData?.name || itemId} to ${charNPC.data.name} has no effect.`);
+          this.host.context.eventBus.emit('ui:notify', `Giving ${itemData?.name || itemId} to ${charNPC.data.name} has no effect.`);
         });
       }
     }

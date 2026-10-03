@@ -1,5 +1,5 @@
 import { ProjectData, SaveGameData, UIPresetType } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { SaveSystem } from '../systems/SaveSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { UISystem } from '../systems/UISystem';
@@ -12,8 +12,11 @@ export class InGameMenuModal {
   private project: ProjectData | null = null;
   private currentView: MenuViewType = 'main';
   private isOpen: boolean = false;
+  private eventBus: EventBus<EngineEventMap>;
+  private unsubscribers: (() => void)[] = [];
 
-  constructor() {
+  constructor(eventBus?: EventBus<EngineEventMap>) {
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
     this.element = document.createElement('div');
     this.element.className = 'in-game-menu-overlay hidden';
     this.element.id = 'in-game-menu-modal';
@@ -35,23 +38,12 @@ export class InGameMenuModal {
 
     document.body.appendChild(this.element);
 
-    // Global ESC handler when menu is open
-    // window.addEventListener('keydown', (e) => {
-    //   if (e.key === 'Escape' && this.isOpen) {
-    //     e.preventDefault();
-    //     e.stopPropagation();
-    //     if (this.currentView === 'main') {
-    //       this.close();
-    //     } else {
-    //       this.switchView('main');
-    //     }
-    //   }
-    // });
-
     // Listen for external open/toggle events
-    EventBus.getInstance().on('menu:open', () => this.open());
-    EventBus.getInstance().on('menu:toggle', () => this.toggle());
-    EventBus.getInstance().on('menu:close', () => this.close());
+    this.unsubscribers.push(
+      this.eventBus.on('menu:open', () => this.open()),
+      this.eventBus.on('menu:toggle', () => this.toggle()),
+      this.eventBus.on('menu:close', () => this.close())
+    );
   }
 
   public setProject(project: ProjectData): void {
@@ -67,7 +59,7 @@ export class InGameMenuModal {
       this.element.style.opacity = '1';
     });
 
-    EventBus.getInstance().emit('game:pause');
+    this.eventBus.emit('game:pause');
     this.render();
   }
 
@@ -81,7 +73,7 @@ export class InGameMenuModal {
       }
     }, 200);
 
-    EventBus.getInstance().emit('game:resume');
+    this.eventBus.emit('game:resume');
   }
 
   public toggle(): void {
@@ -615,7 +607,7 @@ export class InGameMenuModal {
     this.element.querySelectorAll('.btn-slot-save').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const slot = (e.currentTarget as HTMLElement).dataset.slot!;
-        EventBus.getInstance().emit('game:request_save', { slotId: parseInt(slot, 10) });
+        this.eventBus.emit('game:request_save', { slotId: parseInt(slot, 10) });
         this.render();
       });
     });
@@ -634,7 +626,7 @@ export class InGameMenuModal {
         const save = SaveSystem.getInstance().getSaveBySlot(parseInt(slot, 10));
         if (save) {
           this.close();
-          EventBus.getInstance().emit('game:request_load', save);
+          this.eventBus.emit('game:request_load', save);
         }
       });
     });
@@ -661,7 +653,7 @@ export class InGameMenuModal {
             const imported = SaveSystem.getInstance().importSaveFromJSON(text);
             if (imported) {
               this.close();
-              EventBus.getInstance().emit('game:request_load', imported);
+              this.eventBus.emit('game:request_load', imported);
             }
           };
           reader.readAsText(file);
@@ -734,19 +726,21 @@ export class InGameMenuModal {
     this.element.querySelector('#btn-restart-chapter')?.addEventListener('click', () => {
       if (confirm('Restart current chapter? Any unsaved progress in this chapter will be reset.')) {
         this.close();
-        EventBus.getInstance().emit('game:restart_chapter');
+        this.eventBus.emit('game:restart_chapter');
       }
     });
 
     this.element.querySelector('#btn-restart-all')?.addEventListener('click', () => {
       if (confirm('Restart entire quest from the beginning? All unsaved game progress will be reset.')) {
         this.close();
-        EventBus.getInstance().emit('game:restart_all');
+        this.eventBus.emit('game:restart_all');
       }
     });
   }
 
   public destroy(): void {
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
     this.element.remove();
   }
 }

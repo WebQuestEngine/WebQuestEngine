@@ -1,5 +1,5 @@
 import { ProjectData, StoryNodeData, ChapterData, SceneData } from '../types';
-import { EventBus } from '../core/EventBus';
+import { EventBus, EngineEventMap } from '../core/EventBus';
 import { InventorySystem } from './InventorySystem';
 
 export class StoryGraphSystem {
@@ -9,8 +9,15 @@ export class StoryGraphSystem {
   private currentStoryNode: StoryNodeData | null = null;
   private currentScene: SceneData | null = null;
   private flags: Map<string, boolean> = new Map();
+  private eventBus: EventBus<EngineEventMap>;
 
-  public constructor() {}
+  public constructor(eventBus?: EventBus<EngineEventMap>) {
+    this.eventBus = eventBus || (EventBus.getInstance() as unknown as EventBus<EngineEventMap>);
+  }
+
+  public setEventBus(bus: EventBus<EngineEventMap>): void {
+    this.eventBus = bus;
+  }
 
   public static getInstance(): StoryGraphSystem {
     if (!StoryGraphSystem.instance) {
@@ -62,7 +69,7 @@ export class StoryGraphSystem {
     const scene = this.project.scenes.find(s => s.id === node.sceneId);
     if (scene) {
       this.currentScene = scene;
-      EventBus.getInstance().emit('scene:change', scene);
+      this.eventBus.emit('scene:change', scene);
     }
   }
 
@@ -80,7 +87,7 @@ export class StoryGraphSystem {
       const playerCharInTarget = targetScene.characters?.find(c => c.id === 'player');
       const defaultSpawn = playerCharInTarget?.position || targetScene.playerSpawn;
 
-      EventBus.getInstance().emit('scene:change', {
+      this.eventBus.emit('scene:change', {
         scene: targetScene,
         spawnPoint: spawnPoint || defaultSpawn
       });
@@ -103,7 +110,7 @@ export class StoryGraphSystem {
     } else {
       this.flags.set(`quest:${flag}`, value);
     }
-    EventBus.getInstance().emit('flag:changed', { flag, value });
+    this.eventBus.emit('flag:changed', { flag, value });
   }
 
   public getFlag(flag: string): boolean {
@@ -231,7 +238,7 @@ export class StoryGraphSystem {
     for (const [k, v] of Object.entries(flags)) {
       this.flags.set(k, v);
     }
-    EventBus.getInstance().emit('flags:reloaded', this.getAllFlags());
+    this.eventBus.emit('flags:reloaded', this.getAllFlags());
   }
 
   public resetToInitialState(): void {
