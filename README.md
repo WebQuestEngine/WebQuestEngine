@@ -54,7 +54,7 @@ npm install
 npm run dev
 ```
 
-Open your browser at `http://localhost:5173` to launch the **WebQuestEngine Studio**.
+Open your browser at `http://localhost:3000` to launch the **WebQuestEngine Studio**.
 
 ### Production Build
 

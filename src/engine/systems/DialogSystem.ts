@@ -473,4 +473,12 @@ export class DialogSystem {
   public isActive(): boolean {
     return this.isExecuting;
   }
+
+  public getCurrentNode(): DialogNode | null {
+    return this.currentNode;
+  }
+
+  public getCurrentTree(): DialogTree | null {
+    return this.currentTree;
+  }
 }

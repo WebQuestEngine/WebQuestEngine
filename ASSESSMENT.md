@@ -45,11 +45,11 @@ By extension (an inference, not something the project claims) it would fit escap
 - **Legacy and new fields coexist:** `setFlag` and `setFlags`, `giveItem` and `giveItems`, `isRouterNode` and `nodeType`.
 - **Engine isn't UI-free.** The HUD, menu and dialog overlays are DOM with inline CSS inside `engine/` (now grouped in `DOMOverlayRenderer.ts`), and editor file handling also lives there.
 - **Dead code.** `PathfindingSystem` is a stub; the real implementation is in `WalkPath`.
-- **No safety net.** There are zero tests, no linter, 94 uses of `any`, and project loading validates only three fields with no schema versioning.
+- **Safety net (Addressed for core logic):** Vitest + JSDOM testing harness is now integrated with 11 test suites and 57 passing tests covering geometric pathfinding/Dijkstra, condition evaluation, inventory combination, story progression, save/restore snapshots, dialog graph branching, action execution, and demo project referential integrity. (Still no linter, 94 uses of `any`, and no schema versioning).
 
 ### Net
 
-Good module boundaries and data model, weak abstractions and extensibility. The recent `GameRuntime` refactoring resolved one of the primary engine architectural bottlenecks, but the project remains prototype-grade and will get expensive to extend without a typed event map, an action/node registry, and test coverage.
+Good module boundaries and data model, weak abstractions and extensibility. The recent `GameRuntime` refactoring and test suite implementation resolved two major engineering risks (monolithic runtime and absence of test safety net). Extensibility remains constrained by the untyped event bus and bag-of-optional-fields data model.
 
 ---
 
@@ -63,7 +63,7 @@ Good module boundaries and data model, weak abstractions and extensibility. The 
 | Editor UI | Vanilla DOM, hand-rolled `{{placeholder}}` templates, `innerHTML` | The questionable one |
 | Persistence | Project JSON via File System Access API with fallback; saves in `localStorage` | Fine for now |
 | Deploy | GitHub Actions to GitHub Pages | Right |
-| Quality tooling | None (no Vitest, ESLint or schema validator) | Missing |
+| Quality tooling | Vitest + JSDOM (11 suites, 57 tests) | Good foundation (ESLint & browser E2E still to come) |
 
 The runtime stack is a good call and keeps the player small. The editor is where the choice hurts: it is over 10k lines of form-heavy UI with manual re-rendering and focus-guard workarounds. The one open "needs fix" in the requirements (the scene reloading on tree selection) is the kind of bug a reactive framework such as Svelte, Solid or Lit removes.
 
@@ -77,12 +77,12 @@ Blockers for a public alpha:
 
 1. **You can't ship your own game.** The player hardcodes the demo JSON, `build:game` is identical to `build`, and there is no export.
 2. **Assets don't persist.** A picked image is cached in memory for the session, and the JSON stores a guessed relative path. In the hosted Studio your own art is gone after reload unless you clone the repo and place files by hand.
-3. **No tests**, so every change risks silent regressions.
+3. **~~No tests~~ (Addressed):** 11 test suites with 57 tests now guard core algorithms, subsystems, save persistence, and project integrity.
 4. **No touch input**; it is mouse-only.
 5. **No project format versioning or migration**, while the format is still changing.
-6. **Docs drift.** The README says port 5173 but the config uses 3000; `CONTRIBUTING.md` references a nonexistent `npm test`; three product names are in use (WebQuestEngine, QuestForge 2D, point-and-click-quest-engine); the requirements matrix lists the menu, saves, settings and cinematics as "queued" though the code exists.
+6. **Docs drift.** `CONTRIBUTING.md` references `npm test` (now implemented and passing); three product names are in use (WebQuestEngine, QuestForge 2D, point-and-click-quest-engine); the requirements matrix lists the menu, saves, settings and cinematics as "queued" though the code exists.
 
-Items 1 and 2 are the real gate. A rough estimate is 3–6 focused weeks at the author's pace to reach an honest alpha, with most of that going to an asset and export pipeline and a basic test suite.
+Items 1 and 2 are the real gate. A rough estimate is 3–6 focused weeks at the author's pace to reach an honest alpha, with most of that going to an asset and export pipeline and expanding test coverage to editor workflows.
 
 ---
 
@@ -94,21 +94,21 @@ It looks AI-built but is not AI-ready. The signs of AI authorship are `file:///h
 |---|---|---|---|
 | Agent guide | None | `AGENTS.md` (381 lines), `CLAUDE.md` pointer | `AGENTS.md` (157 lines), `CLAUDE.md` pointer |
 | Delivery procedures | None | 6 procedure docs, 14 ADRs | Delivery lanes, approval-gated verified delivery |
-| Verification gate | `tsc` + build only | `ci:local`, GitHub CI | `ci:local`, `ci:bookkeeping` |
-| Test files | 0 | 167 | 327 |
+| Verification gate | `tsc` + `npm test` + build | `ci:local`, GitHub CI | `ci:local`, `ci:bookkeeping` |
+| Test files | 11 (57 tests) | 167 | 327 |
 | Mechanical guardrails | None | ESLint, Prettier, dependency-cruiser, duplicate and secret checks | Dozens of boundary and authority check scripts |
 | Planning state | `TODO.md` and a stale requirements matrix | `PLAN.md`, validated roadmap, changelog | Same |
 
-**What helps an agent today:** strict TypeScript, a single data-model file, a clean folder split, requirement IDs and a short architecture section in `CONTRIBUTING.md`.
+**What helps an agent today:** strict TypeScript, a single data-model file, a clean folder split, requirement IDs, a short architecture section in `CONTRIBUTING.md`, and an automated test suite verifying core game logic and referential integrity.
 
-**What hurts:** an agent has no way to verify behaviour beyond "it compiles". The string events with `any` payloads hide broken contracts from the compiler, the remaining 1,000–1,250 line editor files (`NodeViewFactory`, `EditorCanvas`, `DialogEditor`) make change impact hard to trace, and the docs contradict the code.
+**What hurts:** an agent has no compile-time typing for the 74 event names on the global bus, the remaining 1,000–1,250 line editor files (`NodeViewFactory`, `EditorCanvas`, `DialogEditor`) make change impact hard to trace, and the docs contradict the code.
 
 `clearclass` and `mapgenerator` treat the repo as the agent's operating manual with enforced gates; this one is where a repo sits before any of that is added.
 
 ### Cheapest high-value next steps
 
 1. Add an `AGENTS.md` with the architecture rules (and a `CLAUDE.md` pointer to it).
-2. Add Vitest on the pure logic: conditions, pathfinding, dialog and story systems.
+2. ~~Add Vitest on the pure logic: conditions, pathfinding, dialog and story systems.~~ (Done: 11 suites, 57 tests passing).
 3. Introduce a typed event map to replace string event names with `any` payloads.
 4. Add a single `check` script (typecheck, lint, test) and wire it into CI.
 
