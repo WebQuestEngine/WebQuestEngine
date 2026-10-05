@@ -117,4 +117,58 @@ describe('ProjectSerializer', () => {
     expect(beatNode.nodeType).toBe('beat');
     expect(beatNode.setFlags).toContain('guard_dismissed');
   });
+
+  it('normalizes legacy characters defined inside scenes into root project.characters', () => {
+    const rawJson = JSON.stringify({
+      version: '1.0.0',
+      title: 'Legacy Characters Quest',
+      author: 'Author',
+      startChapterId: 'ch_1',
+      chapters: [{ id: 'ch_1', title: 'Chapter 1' }],
+      scenes: [
+        {
+          id: 'sc_1',
+          name: 'Scene 1',
+          characters: [
+            {
+              id: 'char_sam',
+              name: 'Sam',
+              spriteSheetUrl: 'sam.png',
+              frameWidth: 64,
+              frameHeight: 96,
+              speed: 200,
+              position: { x: 100, y: 200 }
+            },
+            {
+              id: 'char_max',
+              name: 'Max',
+              spriteSheetUrl: 'max.png',
+              frameWidth: 48,
+              frameHeight: 64,
+              speed: 250,
+              position: { x: 150, y: 200 }
+            }
+          ]
+        }
+      ]
+    });
+
+    const project = ProjectSerializer.deserialize(rawJson);
+
+    // Root characters array created and populated
+    expect(project.characters).toBeDefined();
+    expect(project.characters).toHaveLength(2);
+    expect(project.characters[0].id).toBe('char_sam');
+    expect(project.characters[0].name).toBe('Sam');
+    expect(project.characters[1].id).toBe('char_max');
+
+    // Scene characters normalized to placements with characterId
+    expect(project.scenes[0].characters).toHaveLength(2);
+    expect(project.scenes[0].characters[0].characterId).toBe('char_sam');
+    expect(project.scenes[0].characters[0].position).toEqual({ x: 100, y: 200 });
+    expect(project.scenes[0].characters[1].characterId).toBe('char_max');
+
+    // Scene playerCharacterId defaulted to first defined character
+    expect(project.scenes[0].playerCharacterId).toBe('char_sam');
+  });
 });

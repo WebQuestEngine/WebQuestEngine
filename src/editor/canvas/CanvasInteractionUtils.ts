@@ -32,8 +32,9 @@ export class CanvasInteractionUtils {
       const h = scene.hotspots.find(x => x.id === id);
       return !!h?.locked;
     } else if (type === 'character' && id) {
-      const c = scene.characters.find(x => x.id === id);
-      return !!c?.locked;
+      const defLocked = project?.characters?.find(x => x.id === id)?.locked;
+      const c = scene.characters.find(x => (x.characterId || x.id) === id);
+      return !!defLocked || !!c?.locked;
     } else if (type === 'walkpath') {
       const wp = scene.walkPaths?.[0];
       return !!wp?.locked;

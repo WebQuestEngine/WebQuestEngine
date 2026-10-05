@@ -35,6 +35,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  if (projectToLoad) {
+    projectToLoad = ProjectSerializer.normalize(projectToLoad);
+  }
+
   // If startup popup is enabled, projectToLoad is null so no default project is loaded before user selection
   const app = new EditorApp(appContainer, projectToLoad);
   await app.init();

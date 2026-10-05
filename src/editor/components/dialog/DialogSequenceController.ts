@@ -207,7 +207,7 @@ export class DialogSequenceController {
     const newNodeId = `${nodeType === 'event_listener' ? 'event' : nodeType}_${nodeCount}`;
 
     if (nodeType === 'beat') {
-      const playerChar = project.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
+      const playerChar = project.characters?.[0] || project.scenes?.flatMap(s => s.characters || []).find((c: any) => (c.characterId || c.id) === 'player');
       const defaultSpeaker = playerChar?.name || 'Hero';
       tree.nodes[newNodeId] = {
         id: newNodeId,

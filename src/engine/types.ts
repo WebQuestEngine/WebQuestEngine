@@ -266,7 +266,7 @@ export interface CharacterData {
   cols?: number;
   gridOffsetX?: number;
   gridOffsetY?: number;
-  position: Vector2D;
+  position?: Vector2D;
   speed: number;
   scale: number;
   talkColor: string;
@@ -279,6 +279,20 @@ export interface CharacterData {
   animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
   locked?: boolean;
   depthY?: number;
+  portraitUrl?: string;
+}
+
+export interface SceneCharacterPlacement {
+  id?: string;
+  characterId: string;
+  position: Vector2D;
+  scale?: number;
+  speed?: number;
+  actions?: HotspotAction[];
+  locked?: boolean;
+  depthY?: number;
+  currentHoldingItemId?: string;
+  name?: string;
 }
 
 export interface WalkPathData {
@@ -320,7 +334,8 @@ export interface SceneData {
   layers: LayerData[];
   walkPaths: WalkPathData[];
   hotspots: HotspotData[];
-  characters: CharacterData[];
+  characters: SceneCharacterPlacement[];
+  playerCharacterId?: string;
   playerSpawn: Vector2D;
   backgroundMusicUrl?: string;
   assetBasePath?: string;
@@ -514,6 +529,7 @@ export interface ProjectData {
   chapters: ChapterData[];
   storyNodes: StoryNodeData[];
   scenes: SceneData[];
+  characters: CharacterData[];
   items: InventoryItemData[];
   dialogs: DialogTree[];
   choreographyGroups?: ChoreographyGroup[];

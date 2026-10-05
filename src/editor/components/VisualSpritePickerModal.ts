@@ -616,20 +616,18 @@ export class VisualSpritePickerModal {
   public static syncCharacterAcrossScenes(project: ProjectData | null, targetChar: CharacterData): void {
     if (!project) return;
     const charId = targetChar.id;
+    if (project.characters) {
+      const def = project.characters.find(c => c.id === charId);
+      if (def && def !== targetChar) {
+        Object.assign(def, JSON.parse(JSON.stringify(targetChar)));
+      }
+    }
     for (const scene of project.scenes) {
       if (scene.characters) {
         for (const c of scene.characters) {
-          if (c.id === charId) {
-            c.spriteSheetUrl = targetChar.spriteSheetUrl;
-            c.frameWidth = targetChar.frameWidth;
-            c.frameHeight = targetChar.frameHeight;
-            c.gridOffsetX = targetChar.gridOffsetX;
-            c.gridOffsetY = targetChar.gridOffsetY;
+          if ((c.characterId || c.id) === charId) {
             c.speed = targetChar.speed;
-            c.talkColor = targetChar.talkColor;
-            if (targetChar.animations) {
-              c.animations = JSON.parse(JSON.stringify(targetChar.animations));
-            }
+            c.scale = targetChar.scale;
           }
         }
       }

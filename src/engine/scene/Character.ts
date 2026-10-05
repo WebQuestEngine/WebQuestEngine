@@ -39,8 +39,9 @@ export class Character extends MovableElement {
   private onWalkCompleteCallback: (() => void) | null = null;
 
   constructor(data: CharacterData) {
-    super(data.id, data.name, data.position);
-    this.data = data;
+    const pos = data.position || { x: 0, y: 0 };
+    super(data.id, data.name, pos);
+    this.data = { ...data, position: pos };
     this.imageUrl = data.spriteSheetUrl;
     this.cursor = data.cursor || 'talk';
     this.actions = data.actions || [];
@@ -64,8 +65,9 @@ export class Character extends MovableElement {
   public async init(): Promise<void> {
     const assetManager = AssetManager.getInstance();
     this.textureSheet = await assetManager.loadTexture(this.data.spriteSheetUrl);
-    this.container.x = this.data.position.x;
-    this.container.y = this.data.position.y;
+    const pos = this.data.position || { x: 0, y: 0 };
+    this.container.x = pos.x;
+    this.container.y = pos.y;
     this.container.scale.set(this.data.scale || 1);
     this.updateSpriteFrame();
   }
@@ -318,8 +320,9 @@ export class Character extends MovableElement {
     if (!this.container || (this.container as any).destroyed || !this.container.position) return;
     this.state = 'idle';
     this.animFrame = 0;
-    this.container.x = this.data.position.x;
-    this.container.y = this.data.position.y;
+    const pos = this.data.position || { x: 0, y: 0 };
+    this.container.x = pos.x;
+    this.container.y = pos.y;
     if (walkPath) {
       const calculatedScale = walkPath.getScaleAt(this.container.y);
       const finalScale = calculatedScale * (this.data.scale || 1);

@@ -1,5 +1,6 @@
 import { ProjectData, SceneData, CharacterData } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
+import { ProjectSerializer } from '../../engine/storage/ProjectSerializer';
 import { ProjectTreeViewTemplate } from './templates/ProjectTreeView.template';
 
 export interface SelectionTarget {
@@ -83,7 +84,7 @@ export class ProjectTreeView {
   }
 
   public setProject(project: ProjectData): void {
-    this.project = project;
+    this.project = ProjectSerializer.normalize(project);
     this.renderContent();
   }
 
@@ -147,9 +148,8 @@ export class ProjectTreeView {
     }
 
     if (type === 'characters_folder') {
-      const sc = sceneId ? this.project.scenes.find(s => s.id === sceneId) : this.project.scenes[0];
-      if (sc?.locked) return true;
-      return sc?.characters.length ? sc.characters.every(c => c.locked) : false;
+      const chars = this.project.characters || [];
+      return chars.length ? chars.every(c => c.locked) : false;
     }
 
     if (type === 'layer' && id && sceneId) {
@@ -167,9 +167,7 @@ export class ProjectTreeView {
     }
 
     if (type === 'character' && id) {
-      const sc = sceneId ? this.project.scenes.find(s => s.id === sceneId) : this.project.scenes[0];
-      if (sc?.locked) return true;
-      const c = sc?.characters.find(x => x.id === id);
+      const c = this.project.characters?.find(x => x.id === id);
       return !!c?.locked;
     }
 
@@ -221,7 +219,7 @@ export class ProjectTreeView {
         const sc = this.project.scenes.find(s => s.id === sceneId);
         if (sc) sc.hotspots.forEach(h => h.locked = true);
       } else if (type === 'characters_folder') {
-        this.project.scenes.forEach(sc => sc.characters.forEach(c => c.locked = true));
+        this.project.characters?.forEach(c => c.locked = true);
       } else if (type === 'layer' && id && sceneId) {
         const sc = this.project.scenes.find(s => s.id === sceneId);
         const l = sc?.layers.find(x => x.id === id);
@@ -231,10 +229,8 @@ export class ProjectTreeView {
         const h = sc?.hotspots.find(x => x.id === id);
         if (h) h.locked = true;
       } else if (type === 'character' && id) {
-        this.project.scenes.forEach(sc => {
-          const c = sc.characters.find(x => x.id === id);
-          if (c) c.locked = true;
-        });
+        const c = this.project.characters?.find(x => x.id === id);
+        if (c) c.locked = true;
       } else if (type === 'walkpath' && sceneId) {
         const sc = this.project.scenes.find(s => s.id === sceneId);
         const wp = sc?.walkPaths[0];
@@ -282,10 +278,11 @@ export class ProjectTreeView {
         }
         if (this.project.chapters[0]) this.project.chapters[0].locked = false;
       } else if (type === 'characters_folder') {
-        this.project.scenes.forEach(sc => {
-          sc.characters.forEach(c => c.locked = false);
-          sc.locked = false;
-        });
+        this.project.characters?.forEach(c => c.locked = false);
+        if (this.project.chapters[0]) this.project.chapters[0].locked = false;
+      } else if (type === 'character' && id) {
+        const c = this.project.characters?.find(x => x.id === id);
+        if (c) c.locked = false;
         if (this.project.chapters[0]) this.project.chapters[0].locked = false;
       } else if (type === 'scene' && id) {
         const sc = this.project.scenes.find(s => s.id === id);
@@ -422,11 +419,11 @@ export class ProjectTreeView {
 
   public addCharacter(sceneId?: string): void {
     if (!this.project) return;
+    if (!this.project.characters) this.project.characters = [];
     const targetScene = sceneId ? this.project.scenes.find(s => s.id === sceneId) || this.project.scenes[0] : this.project.scenes[0];
-    if (!targetScene) return;
-    const newChar = {
+    const newChar: CharacterData = {
       id: `npc_${Date.now()}`,
-      name: `New NPC ${targetScene.characters.length + 1}`,
+      name: `New NPC ${this.project.characters.length + 1}`,
       spriteSheetUrl: 'procedural:npc',
       position: { x: 960, y: 950 },
       scale: 0.8,
@@ -447,11 +444,20 @@ export class ProjectTreeView {
         { verb: 'talk' as const, text: 'Hello traveler!' }
       ]
     };
-    targetScene.characters.push(newChar);
+    this.project.characters.push(newChar);
+
+    if (targetScene) {
+      if (!targetScene.characters) targetScene.characters = [];
+      targetScene.characters.push({
+        characterId: newChar.id,
+        position: { x: 960, y: 950 }
+      });
+    }
+
     this.selectedNodeId = `character_${newChar.id}`;
     this.renderContent();
     EventBus.getInstance().emit('editor:project_updated');
-    EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId: targetScene.id, id: newChar.id });
+    EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId: targetScene?.id, id: newChar.id });
   }
 
   public addItem(): void {
@@ -578,9 +584,10 @@ export class ProjectTreeView {
         if (idx !== -1) sc.hotspots.splice(idx, 1);
       }
     } else if (type === 'character' && id) {
+      const cIdx = this.project.characters.findIndex(c => c.id === id);
+      if (cIdx !== -1) this.project.characters.splice(cIdx, 1);
       this.project.scenes.forEach(sc => {
-        const idx = sc.characters.findIndex(c => c.id === id);
-        if (idx !== -1) sc.characters.splice(idx, 1);
+        sc.characters = (sc.characters || []).filter(c => (c.characterId || c.id) !== id);
       });
     } else if (type === 'item' && id) {
       const idx = this.project.items.findIndex(i => i.id === id);
@@ -695,7 +702,7 @@ export class ProjectTreeView {
           EventBus.getInstance().emit('editor:select_target', { type: 'hotspot', sceneId, id });
         } else if (type === 'character' && id) {
           const activeScene = (window as any).engine?.currentScene;
-          const existsInActive = activeScene && activeScene.data.characters.some((c: CharacterData) => c.id === id);
+          const existsInActive = activeScene && activeScene.data.characters?.some((c: any) => (c.characterId || c.id) === id);
           const targetSceneId = existsInActive ? activeScene.data.id : sceneId;
 
           if (targetSceneId && (!activeScene || activeScene.data.id !== targetSceneId)) {

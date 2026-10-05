@@ -182,7 +182,7 @@ export class ProjectHubModal {
 
     // Tab 2: Load Sample Alchemist Quest
     this.overlay.querySelector('#btn-load-sample-alchemist')?.addEventListener('click', () => {
-      const sampleCopy = JSON.parse(JSON.stringify(alchemistSampleProject)) as ProjectData;
+      const sampleCopy = ProjectSerializer.normalize(JSON.parse(JSON.stringify(alchemistSampleProject)) as ProjectData);
       const filename = "the_alchemist's_mystery.json";
       FileAccessAdapter.setActiveFilename(filename);
       this.hide();
@@ -204,7 +204,7 @@ export class ProjectHubModal {
           const filename = entry.filename || `${entry.title.toLowerCase().replace(/\s+/g, '_')}.json`;
           FileAccessAdapter.setActiveFilename(filename);
           this.hide();
-          EventBus.getInstance().emit('editor:load_project', entry.data);
+          EventBus.getInstance().emit('editor:load_project', ProjectSerializer.normalize(entry.data));
         }
       });
     });

@@ -279,7 +279,7 @@ export class EditorCanvas {
       this.currentScene = null;
     }
 
-    this.currentScene = new Scene(sceneData);
+    this.currentScene = new Scene(sceneData, this.project?.characters);
     await this.currentScene.init(this.camera);
 
     const activeWalkPath = this.currentScene.getWalkPath();
@@ -741,13 +741,21 @@ export class EditorCanvas {
           EventBus.getInstance().emit('editor:project_updated');
         }
       } else if (this.dragTarget.type === 'character' && this.dragTarget.id) {
-        const charData = this.currentScene.data.characters.find(c => c.id === this.dragTarget!.id);
+        let charData = this.currentScene.data.characters.find(c => (c.characterId || c.id) === this.dragTarget!.id);
         const charObj = this.currentScene.characters.get(this.dragTarget!.id);
+        if (!charData && charObj) {
+          // If auto-spawned player not in scene.characters yet, add placement
+          charData = {
+            characterId: charObj.data.id,
+            position: { x: charObj.container.x, y: charObj.container.y }
+          };
+          this.currentScene.data.characters.push(charData);
+        }
         if (charData && charObj) {
           if (this.isScaling) {
             const cx = charData.position.x;
             const cy = charData.position.y;
-            const hh = (charData.frameHeight * this.dragInitialScale) / 2;
+            const hh = (charObj.data.frameHeight * this.dragInitialScale) / 2;
             const currentDist = Math.hypot(worldPt.x - cx, worldPt.y - (cy - hh));
             const scaleFactor = currentDist / (this.dragInitialDist || 1);
             const newScale = Math.max(0.1, Math.min(5, Math.round(this.dragInitialScale * scaleFactor * 100) / 100));
@@ -760,6 +768,11 @@ export class EditorCanvas {
             charData.position.y = Math.round(this.dragInitialPos.y + dy);
             charObj.container.x = charData.position.x;
             charObj.container.y = charData.position.y;
+            charObj.data.position = { x: charData.position.x, y: charData.position.y };
+            if (this.currentScene.playerCharacter === charObj && this.currentScene.data.playerSpawn) {
+              this.currentScene.data.playerSpawn.x = charData.position.x;
+              this.currentScene.data.playerSpawn.y = charData.position.y;
+            }
             EventBus.getInstance().emit('editor:project_updated');
           }
         }

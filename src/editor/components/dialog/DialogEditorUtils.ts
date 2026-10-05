@@ -85,10 +85,24 @@ export class DialogEditorUtils {
 
   public static getAllCharacters(project: ProjectData | null): { id: string; name: string; sceneId: string; sceneName: string }[] {
     const list: { id: string; name: string; sceneId: string; sceneName: string }[] = [];
-    if (project?.scenes) {
+    if (project?.characters && project.characters.length > 0) {
+      for (const ch of project.characters) {
+        const placedScenes = (project.scenes || []).filter(sc => (sc.characters || []).some(c => (c.characterId || c.id) === ch.id));
+        if (placedScenes.length > 0) {
+          for (const sc of placedScenes) {
+            list.push({ id: ch.id, name: ch.name, sceneId: sc.id, sceneName: sc.name });
+          }
+        } else {
+          list.push({ id: ch.id, name: ch.name, sceneId: '', sceneName: 'Global' });
+        }
+      }
+    } else if (project?.scenes) {
       for (const sc of project.scenes) {
         for (const ch of sc.characters || []) {
-          list.push({ id: ch.id, name: ch.name, sceneId: sc.id, sceneName: sc.name });
+          const cid = ch.characterId || ch.id;
+          if (cid) {
+            list.push({ id: cid, name: ch.name || cid, sceneId: sc.id, sceneName: sc.name });
+          }
         }
       }
     }
@@ -146,7 +160,8 @@ export class DialogEditorUtils {
     if (!project || !project.scenes) return null;
     for (const sc of project.scenes) {
       for (const ch of sc.characters || []) {
-        if (ch.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && dTree.id.includes(ch.id.replace(/^npc_/, '')))) return sc;
+        const cid = ch.characterId || ch.id;
+        if (ch.actions?.some(a => a.dialogId === dTree.id) || (dTree.id && cid && dTree.id.includes(cid.replace(/^npc_/, '')))) return sc;
       }
       for (const hs of sc.hotspots || []) {
         if (hs.actions?.some(a => a.dialogId === dTree.id)) return sc;
@@ -158,11 +173,11 @@ export class DialogEditorUtils {
   public static getAllProjectActors(project: ProjectData | null): { id: string; name: string; displayName: string; animations: string[] }[] {
     const actorsMap = new Map<string, { id: string; name: string; displayName: string; animSet: Set<string> }>();
 
-    const playerChar = project?.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player');
-    const playerName = playerChar?.name || 'Hero';
+    const firstChar = project?.characters?.[0];
+    const playerName = firstChar?.name || 'Hero';
     const playerAnims = new Set<string>();
-    if (playerChar?.animations && Object.keys(playerChar.animations).length > 0) {
-      Object.keys(playerChar.animations).forEach(k => playerAnims.add(k));
+    if (firstChar?.animations && Object.keys(firstChar.animations).length > 0) {
+      Object.keys(firstChar.animations).forEach(k => playerAnims.add(k));
     } else {
       ['talk', 'idle', 'walk'].forEach(k => playerAnims.add(k));
     }
@@ -174,27 +189,45 @@ export class DialogEditorUtils {
       animSet: playerAnims
     });
 
+    if (project?.characters) {
+      for (const c of project.characters) {
+        if (!actorsMap.has(c.id)) {
+          const animSet = new Set<string>();
+          if (c.animations && Object.keys(c.animations).length > 0) {
+            Object.keys(c.animations).forEach(k => animSet.add(k));
+          } else {
+            ['talk', 'idle', 'walk'].forEach(k => animSet.add(k));
+          }
+          actorsMap.set(c.id, {
+            id: c.id,
+            name: `🎭 ${c.name} (${c.id})`,
+            displayName: c.name,
+            animSet
+          });
+        }
+      }
+    }
+
     if (project?.scenes) {
       for (const sc of project.scenes) {
         for (const c of sc.characters || []) {
-          if (!actorsMap.has(c.id)) {
+          const cid = c.characterId || c.id;
+          if (!cid) continue;
+          if (!actorsMap.has(cid)) {
+            const charDef = project?.characters?.find(d => d.id === cid);
             const animSet = new Set<string>();
-            if (c.animations && Object.keys(c.animations).length > 0) {
-              Object.keys(c.animations).forEach(k => animSet.add(k));
+            const anims = charDef?.animations || (c as any).animations;
+            if (anims && Object.keys(anims).length > 0) {
+              Object.keys(anims).forEach(k => animSet.add(k));
             } else {
               ['talk', 'idle', 'walk'].forEach(k => animSet.add(k));
             }
-            actorsMap.set(c.id, {
-              id: c.id,
-              name: `🎭 ${c.name} (${c.id})`,
-              displayName: c.name,
+            actorsMap.set(cid, {
+              id: cid,
+              name: `🎭 ${charDef?.name || c.name || cid} (${cid})`,
+              displayName: charDef?.name || c.name || cid,
               animSet
             });
-          } else {
-            const entry = actorsMap.get(c.id)!;
-            if (c.animations) {
-              Object.keys(c.animations).forEach(k => entry.animSet.add(k));
-            }
           }
         }
         for (const hs of sc.hotspots || []) {
@@ -221,13 +254,20 @@ export class DialogEditorUtils {
 
   public static getActorAnimations(project: ProjectData | null, actorId?: string): string[] {
     const animSet = new Set<string>();
+    if (!actorId) return [];
 
-    // Collect animations from the specific actor across all scenes
-    if (project?.scenes && actorId) {
+    const charDef = project?.characters?.find(c => c.id === actorId);
+    if (charDef?.animations) {
+      Object.keys(charDef.animations).forEach(k => animSet.add(k));
+    }
+
+    // Collect animations from scenes
+    if (project?.scenes) {
       for (const sc of project.scenes) {
         for (const c of sc.characters || []) {
-          if (c.id === actorId && c.animations) {
-            Object.keys(c.animations).forEach(k => animSet.add(k));
+          const cid = c.characterId || c.id;
+          if (cid === actorId && (c as any).animations) {
+            Object.keys((c as any).animations).forEach(k => animSet.add(k));
           }
         }
         for (const hs of sc.hotspots || []) {

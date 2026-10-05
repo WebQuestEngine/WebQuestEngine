@@ -332,7 +332,8 @@ export class CharacterInspector {
     project: ProjectData | null;
   }): string {
     const { scene, char, activeSubTab, project } = params;
-    const cIdx = scene.characters.indexOf(char);
+    let cIdx = scene.characters.findIndex(c => (c.characterId || c.id) === char.id);
+    if (cIdx === -1) cIdx = project?.characters?.indexOf(char) ?? 0;
     const actions = char.actions || [];
     const actionsCount = actions.length;
     const linkedDialog = actions.find(a => a.dialogId)?.dialogId || `dlg_${char.id.replace('npc_', '')}`;
@@ -368,35 +369,63 @@ export class CharacterInspector {
     const { currentScene, project, onUpdate, onReRender } = params;
     if (!currentScene) return;
 
+    const resolveChar = (targetEl: HTMLElement) => {
+      const charId = targetEl.dataset.charid;
+      const idx = parseInt(targetEl.dataset.idx ?? targetEl.dataset.cidx ?? '-1');
+      let def = charId ? project?.characters?.find(c => c.id === charId) : null;
+      if (!def && idx >= 0 && project?.characters?.[idx]) {
+        def = project.characters[idx];
+      }
+      let placement = currentScene.characters.find(c => (c.characterId || c.id) === (def?.id || charId));
+      if (!placement && idx >= 0 && currentScene.characters[idx]) {
+        placement = currentScene.characters[idx];
+      }
+      if (!placement && def) {
+        placement = {
+          characterId: def.id,
+          position: { ...(def.position || { x: 400, y: 750 }) }
+        };
+        currentScene.characters.push(placement);
+      }
+      return { def, placement, charId: def?.id || charId || '' };
+    };
+
     container.querySelectorAll('.char-name').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].name = (e.target as HTMLInputElement).value;
-          onUpdate();
-        }
+        const { def, placement, charId } = resolveChar(e.target as HTMLElement);
+        const val = (e.target as HTMLInputElement).value;
+        if (def) def.name = val;
+        if (placement) (placement as any).name = val;
+        const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
+        if (charObj) charObj.data.name = val;
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-spritesheet').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].spriteSheetUrl = (e.target as HTMLInputElement).value;
-          VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
-          onUpdate();
+        const { def, placement } = resolveChar(e.target as HTMLElement);
+        const val = (e.target as HTMLInputElement).value;
+        if (def) {
+          def.spriteSheetUrl = val;
+          VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
         }
+        if (placement) (placement as any).spriteSheetUrl = val;
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-file-input').forEach(input => {
       input.addEventListener('change', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const { def, placement } = resolveChar(e.target as HTMLElement);
         const file = (e.target as HTMLInputElement).files?.[0];
-        if (file && currentScene.characters[idx]) {
+        if (file) {
           handleFileInputChange(file, 'characters', currentScene, project, (cleanUrl) => {
-            currentScene.characters[idx].spriteSheetUrl = cleanUrl;
-            VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
+            if (def) {
+              def.spriteSheetUrl = cleanUrl;
+              VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
+            }
+            if (placement) (placement as any).spriteSheetUrl = cleanUrl;
             onReRender();
             onUpdate();
           });
@@ -406,74 +435,109 @@ export class CharacterInspector {
 
     container.querySelectorAll('.char-pos-x').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].position.x = parseFloat((e.target as HTMLInputElement).value) || 0;
-          onUpdate();
+        const { def, placement, charId } = resolveChar(e.target as HTMLElement);
+        const val = parseFloat((e.target as HTMLInputElement).value) || 0;
+        if (placement) placement.position.x = val;
+        if (def) {
+          if (!def.position) def.position = { x: val, y: 0 };
+          else def.position.x = val;
         }
+        const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
+        if (charObj) {
+          charObj.container.x = val;
+          charObj.data.position.x = val;
+        }
+        if (currentScene.playerCharacterId === charId && currentScene.playerSpawn) {
+          currentScene.playerSpawn.x = val;
+        }
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-pos-y').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].position.y = parseFloat((e.target as HTMLInputElement).value) || 0;
-          onUpdate();
+        const { def, placement, charId } = resolveChar(e.target as HTMLElement);
+        const val = parseFloat((e.target as HTMLInputElement).value) || 0;
+        if (placement) placement.position.y = val;
+        if (def) {
+          if (!def.position) def.position = { x: 0, y: val };
+          else def.position.y = val;
         }
+        const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
+        if (charObj) {
+          charObj.container.y = val;
+          charObj.data.position.y = val;
+        }
+        if (currentScene.playerCharacterId === charId && currentScene.playerSpawn) {
+          currentScene.playerSpawn.y = val;
+        }
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-scale').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].scale = parseFloat((e.target as HTMLInputElement).value) || 1;
-          VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
-          onUpdate();
+        const { def, placement, charId } = resolveChar(e.target as HTMLElement);
+        const val = parseFloat((e.target as HTMLInputElement).value) || 1;
+        if (placement) placement.scale = val;
+        if (def) {
+          def.scale = val;
+          VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
         }
+        const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
+        if (charObj) {
+          charObj.data.scale = val;
+          charObj.container.scale.set(val);
+        }
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-speed').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].speed = parseFloat((e.target as HTMLInputElement).value) || 200;
-          VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
-          onUpdate();
+        const { def, placement, charId } = resolveChar(e.target as HTMLElement);
+        const val = parseFloat((e.target as HTMLInputElement).value) || 200;
+        if (placement) placement.speed = val;
+        if (def) {
+          def.speed = val;
+          VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
         }
+        const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
+        if (charObj) charObj.speed = val;
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-fw').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].rows = parseInt((e.target as HTMLInputElement).value) || 1;
-          VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
-          onUpdate();
+        const { def } = resolveChar(e.target as HTMLElement);
+        const val = parseInt((e.target as HTMLInputElement).value) || 1;
+        if (def) {
+          def.rows = val;
+          VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
         }
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-fh').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].cols = parseInt((e.target as HTMLInputElement).value) || 1;
-          VisualSpritePickerModal.syncCharacterAcrossScenes(project, currentScene.characters[idx]);
-          onUpdate();
+        const { def } = resolveChar(e.target as HTMLElement);
+        const val = parseInt((e.target as HTMLInputElement).value) || 1;
+        if (def) {
+          def.cols = val;
+          VisualSpritePickerModal.syncCharacterAcrossScenes(project, def);
         }
+        onUpdate();
       });
     });
 
     container.querySelectorAll('.char-depth-y').forEach(input => {
       input.addEventListener('input', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+        const { placement } = resolveChar(e.target as HTMLElement);
         const val = (e.target as HTMLInputElement).value.trim();
-        if (currentScene.characters[idx]) {
-          currentScene.characters[idx].depthY = val === '' ? undefined : parseFloat(val);
+        if (placement) {
+          placement.depthY = val === '' ? undefined : parseFloat(val);
           onUpdate();
         }
       });
@@ -481,12 +545,11 @@ export class CharacterInspector {
 
     container.querySelectorAll('.btn-add-char-anim').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const idx = parseInt((e.target as HTMLElement).dataset.idx!);
-        if (currentScene.characters[idx]) {
-          const char = currentScene.characters[idx];
-          if (!char.animations) char.animations = {};
-          const newKey = `anim_${Object.keys(char.animations).length + 1}`;
-          char.animations[newKey] = [0];
+        const { def } = resolveChar(e.currentTarget as HTMLElement);
+        if (def) {
+          if (!def.animations) def.animations = {};
+          const newKey = `anim_${Object.keys(def.animations).length + 1}`;
+          def.animations[newKey] = [0];
           onReRender();
           onUpdate();
         }
@@ -495,14 +558,13 @@ export class CharacterInspector {
 
     container.querySelectorAll('.char-anim-key').forEach(input => {
       input.addEventListener('change', (e) => {
-        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
+        const { def } = resolveChar(e.target as HTMLElement);
         const oldKey = (e.target as HTMLElement).dataset.oldkey!;
         const newKey = (e.target as HTMLInputElement).value.trim();
-        if (currentScene.characters[cIdx] && newKey && newKey !== oldKey) {
-          const char = currentScene.characters[cIdx];
-          const val = char.animations[oldKey];
-          delete char.animations[oldKey];
-          char.animations[newKey] = val;
+        if (def?.animations && newKey && newKey !== oldKey) {
+          const val = def.animations[oldKey];
+          delete def.animations[oldKey];
+          def.animations[newKey] = val;
           onReRender();
           onUpdate();
         }
@@ -511,13 +573,12 @@ export class CharacterInspector {
 
     container.querySelectorAll('.char-anim-frames').forEach(input => {
       input.addEventListener('input', (e) => {
-        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
+        const { def } = resolveChar(e.target as HTMLElement);
         const animKey = (e.target as HTMLElement).dataset.animkey!;
         const valStr = (e.target as HTMLInputElement).value;
-        if (currentScene.characters[cIdx]) {
-          const char = currentScene.characters[cIdx];
+        if (def?.animations) {
           const frames = valStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-          char.animations[animKey] = frames.length > 0 ? frames : [0];
+          def.animations[animKey] = frames.length > 0 ? frames : [0];
           onUpdate();
         }
       });
@@ -525,10 +586,10 @@ export class CharacterInspector {
 
     container.querySelectorAll('.btn-del-char-anim').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const cIdx = parseInt((e.target as HTMLElement).dataset.cidx!);
-        const animKey = (e.target as HTMLElement).dataset.animkey!;
-        if (currentScene.characters[cIdx]) {
-          delete currentScene.characters[cIdx].animations[animKey];
+        const { def } = resolveChar(e.currentTarget as HTMLElement);
+        const animKey = (e.currentTarget as HTMLElement).dataset.animkey!;
+        if (def?.animations) {
+          delete def.animations[animKey];
           onReRender();
           onUpdate();
         }
@@ -537,11 +598,12 @@ export class CharacterInspector {
 
     container.querySelectorAll('.btn-open-frame-picker').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const cIdx = parseInt((e.currentTarget as HTMLElement).dataset.cidx!);
+        const { def, placement } = resolveChar(e.currentTarget as HTMLElement);
         const animKey = (e.currentTarget as HTMLElement).dataset.animkey!;
-        if (currentScene.characters[cIdx]) {
+        const targetCharacter = def || placement;
+        if (targetCharacter) {
           VisualSpritePickerModal.open({
-            character: currentScene.characters[cIdx],
+            character: targetCharacter as any,
             animKey,
             project,
             onSave: () => {

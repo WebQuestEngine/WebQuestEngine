@@ -1,4 +1,5 @@
 import { ProjectData, UIPresetType } from '../../engine/types';
+import { ProjectSerializer } from '../../engine/storage/ProjectSerializer';
 
 export interface RecentProjectEntry {
   id: string;
@@ -9,6 +10,7 @@ export interface RecentProjectEntry {
   sceneCount: number;
   chapterCount: number;
   itemCount: number;
+  characterCount?: number;
   preset: UIPresetType;
   data: ProjectData;
 }
@@ -23,7 +25,18 @@ export class RecentProjectsManager {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+      return parsed
+        .map(entry => {
+          if (entry && entry.data) {
+            entry.data = ProjectSerializer.normalize(entry.data);
+            entry.sceneCount = entry.data.scenes?.length || 0;
+            entry.chapterCount = entry.data.chapters?.length || 0;
+            entry.itemCount = entry.data.items?.length || 0;
+            entry.characterCount = entry.data.characters?.length || 0;
+          }
+          return entry;
+        })
+        .sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
     } catch (err) {
       console.warn('Failed to read recent projects from localStorage', err);
       return [];
@@ -34,6 +47,7 @@ export class RecentProjectsManager {
     if (!project || !project.title) return;
 
     try {
+      project = ProjectSerializer.normalize(project);
       const existingList = this.getRecentProjects();
       const projectId = this.generateProjectId(project);
       const existingEntry = existingList.find(p => p.id === projectId || p.title.toLowerCase() === project.title.toLowerCase());

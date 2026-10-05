@@ -184,7 +184,7 @@ export class Inspector {
     } else if (type === 'hotspot' && id) {
       locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.hotspots.find(h => h.id === id)?.locked;
     } else if (type === 'character' && id) {
-      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.characters.find(c => c.id === id)?.locked;
+      locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!this.project?.characters?.find(c => c.id === id)?.locked || !!scene?.characters.find(c => (c.characterId || c.id) === id)?.locked;
     } else if (type === 'walkpath') {
       locked = !!scene?.locked || !!this.project?.chapters[0]?.locked || !!scene?.walkPaths[0]?.locked;
     }
@@ -263,15 +263,20 @@ export class Inspector {
         contentHTML = '<div class="sidebar-section">Layer not found.</div>';
       }
     } else if (target.type === 'character') {
-      let foundChar: CharacterData | undefined;
-      let foundScene: SceneData | undefined;
+      let foundChar: CharacterData | undefined = this.project.characters?.find(c => c.id === target.id);
+      let foundScene: SceneData | undefined =
+        (target.sceneId ? this.project.scenes.find(s => s.id === target.sceneId) : null) ||
+        this.project.scenes.find(s => s.characters?.some(c => (c.characterId || c.id) === target.id)) ||
+        this.project.scenes[0];
 
-      for (const sc of this.project.scenes) {
-        const c = sc.characters.find(char => char.id === target.id);
-        if (c) {
-          foundChar = c;
-          foundScene = sc;
-          break;
+      if (!foundChar) {
+        for (const sc of this.project.scenes) {
+          const c = sc.characters?.find(char => (char.characterId || char.id) === target.id);
+          if (c) {
+            foundChar = c as any;
+            foundScene = sc;
+            break;
+          }
         }
       }
 

@@ -129,31 +129,40 @@ export class CharacterInspectorTemplate {
     project: ProjectData | null;
   }): string {
     const { scene, char, project } = params;
-    const cIdx = scene.characters.indexOf(char);
+    const placement = scene.characters.find(c => (c.characterId || c.id) === char.id);
+    let cIdx = scene.characters.findIndex(c => (c.characterId || c.id) === char.id);
+    if (cIdx === -1) cIdx = project?.characters?.indexOf(char) ?? 0;
+
+    const posX = placement?.position?.x ?? char.position?.x ?? 0;
+    const posY = placement?.position?.y ?? char.position?.y ?? 0;
+    const scale = placement?.scale ?? char.scale ?? 1;
+    const speed = placement?.speed ?? char.speed ?? 200;
+    const depthY = placement?.depthY ?? char.depthY ?? '';
 
     const animationsHTML = Object.entries(char.animations || {}).map(([key, val]) => {
       const framesStr = Array.isArray(val) ? val.join(',') : ((val as any).frames || []).join(',');
       return `
         <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
-          <input type="text" class="form-input char-anim-key" data-cidx="${cIdx}" data-oldkey="${TemplateUtils.escapeHtml(key)}" value="${TemplateUtils.escapeHtml(key)}" placeholder="Clip Name" style="font-size:0.75rem; flex:1; font-weight:600;" />
-          <input type="text" class="form-input char-anim-frames" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" value="${framesStr}" placeholder="0,1,2,3" style="font-size:0.75rem; flex:1;" />
-          <button class="btn btn-gold btn-open-frame-picker" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" style="font-size:0.65rem; padding:3px 6px;" title="Open Visual Grid Picker">🖼️ Pick</button>
-          <button class="btn btn-del-char-anim" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
+          <input type="text" class="form-input char-anim-key" data-charid="${char.id}" data-cidx="${cIdx}" data-oldkey="${TemplateUtils.escapeHtml(key)}" value="${TemplateUtils.escapeHtml(key)}" placeholder="Clip Name" style="font-size:0.75rem; flex:1; font-weight:600;" />
+          <input type="text" class="form-input char-anim-frames" data-charid="${char.id}" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" value="${framesStr}" placeholder="0,1,2,3" style="font-size:0.75rem; flex:1;" />
+          <button class="btn btn-gold btn-open-frame-picker" data-charid="${char.id}" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" style="font-size:0.65rem; padding:3px 6px;" title="Open Visual Grid Picker">🖼️ Pick</button>
+          <button class="btn btn-del-char-anim" data-charid="${char.id}" data-cidx="${cIdx}" data-animkey="${TemplateUtils.escapeHtml(key)}" style="padding:2px 6px; font-size:0.65rem; color:#ef4444;">✕</button>
         </div>`;
     }).join('');
 
     return TemplateUtils.populate(characterHtml, {
       cIdx,
+      charId: char.id,
       name: TemplateUtils.escapeHtml(char.name),
       thumbnailHTML: getThumbnailHTML(char.spriteSheetUrl),
       spriteSheetUrl: TemplateUtils.escapeHtml(char.spriteSheetUrl),
-      posX: char.position.x,
-      posY: char.position.y,
-      scale: char.scale,
-      speed: char.speed,
+      posX,
+      posY,
+      scale,
+      speed,
       spritesheetCols: char.cols,
       spritesheetRows: char.rows,
-      depthY: char.depthY ?? '',
+      depthY,
       animCount: Object.keys(char.animations || {}).length,
       animationsHTML,
     });

@@ -86,6 +86,72 @@ export class SceneInspector {
       });
     }
 
+    // Playable Character selection
+    const scPlayableChar = container.querySelector('#sc-playable-char') as HTMLSelectElement;
+    if (scPlayableChar) {
+      scPlayableChar.addEventListener('change', () => {
+        currentScene.playerCharacterId = scPlayableChar.value;
+        onUpdate();
+        EventBus.getInstance().emit('editor:select_target', { type: 'scene', id: currentScene.id });
+      });
+    }
+
+    // Add Character to Scene
+    container.querySelector('#btn-add-char-to-scene')?.addEventListener('click', () => {
+      const allChars = project?.characters || [];
+      if (allChars.length === 0) {
+        if (!project) return;
+        if (!project.characters) project.characters = [];
+        const newChar = {
+          id: `char_${Date.now()}`,
+          name: 'Hero',
+          spriteSheetUrl: '',
+          frameWidth: 64,
+          frameHeight: 96,
+          speed: 200,
+          scale: 1,
+          talkColor: '#fbbf24',
+          animations: {}
+        };
+        project.characters.push(newChar);
+        currentScene.characters.push({
+          characterId: newChar.id,
+          position: { x: 500, y: 750 }
+        });
+      } else {
+        const unplaced = allChars.find(c => !currentScene.characters.some(scChar => (scChar.characterId || scChar.id) === c.id));
+        const targetChar = unplaced || allChars[0];
+        currentScene.characters.push({
+          characterId: targetChar.id,
+          position: { x: 500, y: 750 }
+        });
+      }
+      onReRender();
+      onUpdate();
+    });
+
+    // Select character in scene
+    container.querySelectorAll('.btn-select-scene-char').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const charId = (e.currentTarget as HTMLElement).dataset.charid;
+        if (charId) {
+          EventBus.getInstance().emit('editor:select_target', { type: 'character', sceneId: currentScene.id, id: charId });
+        }
+      });
+    });
+
+    // Remove character from scene
+    container.querySelectorAll('.btn-del-scene-char').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx!);
+        if (!isNaN(idx) && currentScene.characters[idx]) {
+          currentScene.characters.splice(idx, 1);
+          onReRender();
+          onUpdate();
+        }
+      });
+    });
+
     // Add Layer & Hotspot
     container.querySelector('#btn-add-layer')?.addEventListener('click', () => {
       currentScene.layers.push({

@@ -164,6 +164,14 @@ export class GameRuntime implements CinematicsHost, DialogHost, ActionHost, Inpu
         this.context.story.setFlag(flag, false);
       })
     );
+
+    // Playable character switch
+    this.unsubscribers.push(
+      bus.on('player:switch', (characterId: string) => {
+        if (this.isDestroyed) return;
+        this.switchPlayerCharacter(characterId);
+      })
+    );
   }
 
   public async loadScene(
@@ -192,7 +200,7 @@ export class GameRuntime implements CinematicsHost, DialogHost, ActionHost, Inpu
       this.context.ui.setActiveVerb('walk');
 
       this.visitedScenes.add(sceneData.id);
-      const newScene = new Scene(sceneData);
+      const newScene = new Scene(sceneData, this.context.project.characters);
       await newScene.init(this.camera);
       this.currentScene = newScene;
 
@@ -336,6 +344,16 @@ export class GameRuntime implements CinematicsHost, DialogHost, ActionHost, Inpu
 
   public setVisitedScenes(scenes: Set<string>): void {
     this.visitedScenes = scenes;
+  }
+
+  public switchPlayerCharacter(characterId: string): boolean {
+    if (!this.currentScene) return false;
+    const switched = this.currentScene.switchPlayerCharacter(characterId, this.camera);
+    if (switched) {
+      this.context.eventBus.emit('player:switched', { characterId, character: switched });
+      return true;
+    }
+    return false;
   }
 
   public destroy(): void {

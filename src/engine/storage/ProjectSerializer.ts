@@ -19,23 +19,95 @@ export class ProjectSerializer {
    * - Normalizes single string mutations (`setFlag`, `clearFlag`, `giveItem`, `giveItemId`) into array fields (`setFlags`, `clearFlags`, `giveItems`).
    */
   public static normalize(project: ProjectData): ProjectData {
-    // 1. Normalize scene hotspots & character actions
+    // 0. Ensure root characters array
+    if (!project.characters) {
+      project.characters = [];
+    }
+    const defMap = new Map<string, any>();
+    for (const c of project.characters) {
+      if (c && c.id) defMap.set(c.id, c);
+    }
+
+    // 1. Normalize scene hotspots & character placements
     for (const scene of project.scenes || []) {
-      for (const hs of scene.hotspots || []) {
-        const actionsList = Array.isArray(hs.actions)
-          ? hs.actions
-          : hs.actions && typeof hs.actions === 'object'
-          ? Object.values(hs.actions)
+      if (!scene.characters) scene.characters = [];
+      if (!scene.layers) scene.layers = [];
+      if (!scene.hotspots) scene.hotspots = [];
+      if (!scene.walkPaths) scene.walkPaths = [];
+
+      for (const ch of scene.characters as any[]) {
+        const charId = ch.characterId || ch.id;
+        if (charId) {
+          ch.characterId = charId;
+          // If not already in project.characters, extract definition
+          if (!defMap.has(charId)) {
+            const newDef = {
+              id: charId,
+              name: ch.name || (charId === 'player' ? 'Hero' : charId),
+              spriteSheetUrl: ch.spriteSheetUrl || '',
+              frameWidth: ch.frameWidth || 64,
+              frameHeight: ch.frameHeight || 96,
+              rows: ch.rows,
+              cols: ch.cols,
+              gridOffsetX: ch.gridOffsetX,
+              gridOffsetY: ch.gridOffsetY,
+              speed: ch.speed !== undefined ? ch.speed : 200,
+              scale: ch.scale !== undefined ? ch.scale : 1,
+              talkColor: ch.talkColor || '#fbbf24',
+              cursor: ch.cursor,
+              customCursorUrl: ch.customCursorUrl,
+              customCursorHotspotX: ch.customCursorHotspotX,
+              customCursorHotspotY: ch.customCursorHotspotY,
+              animations: ch.animations || {}
+            };
+            project.characters.push(newDef);
+            defMap.set(charId, newDef);
+          }
+        }
+
+        const actionsList = Array.isArray(ch.actions)
+          ? ch.actions
+          : ch.actions && typeof ch.actions === 'object'
+          ? Object.values(ch.actions)
           : [];
         for (const act of actionsList) {
           this.normalizeAction(act);
         }
       }
-      for (const ch of scene.characters || []) {
-        const actionsList = Array.isArray(ch.actions)
-          ? ch.actions
-          : ch.actions && typeof ch.actions === 'object'
-          ? Object.values(ch.actions)
+
+      // If characters list is still empty, ensure default playable character is defined
+      if (project.characters.length === 0) {
+        project.characters.push({
+          id: 'player',
+          name: 'Hero',
+          spriteSheetUrl: 'procedural_hero',
+          frameWidth: 64,
+          frameHeight: 96,
+          speed: 4,
+          scale: 1,
+          talkColor: '#fef08a',
+          animations: {
+            idleDown: [0],
+            idleSide: [4],
+            idleUp: [8],
+            walkDown: [0, 1, 2, 3],
+            walkSide: [4, 5, 6, 7],
+            walkUp: [8, 9, 10, 11],
+            talk: [12, 13, 14, 15]
+          }
+        });
+      }
+
+      // Default scene playable character to first defined character
+      if (!scene.playerCharacterId) {
+        scene.playerCharacterId = project.characters[0]?.id || 'player';
+      }
+
+      for (const hs of scene.hotspots || []) {
+        const actionsList = Array.isArray(hs.actions)
+          ? hs.actions
+          : hs.actions && typeof hs.actions === 'object'
+          ? Object.values(hs.actions)
           : [];
         for (const act of actionsList) {
           this.normalizeAction(act);
@@ -153,6 +225,19 @@ export class ProjectSerializer {
           connections: []
         }
       ],
+      characters: [
+        {
+          id: 'char_player',
+          name: 'Hero',
+          spriteSheetUrl: '',
+          frameWidth: 64,
+          frameHeight: 96,
+          speed: 200,
+          scale: 1,
+          talkColor: '#fbbf24',
+          animations: {}
+        }
+      ],
       scenes: [
         {
           id: 'scene_start',
@@ -180,18 +265,11 @@ export class ProjectSerializer {
             }
           ],
           hotspots: [],
+          playerCharacterId: 'char_player',
           characters: [
             {
-              id: 'char_player',
-              name: 'Hero',
-              spriteSheetUrl: '',
-              frameWidth: 64,
-              frameHeight: 96,
-              position: { x: 400, y: 850 },
-              speed: 200,
-              scale: 1,
-              talkColor: '#fbbf24',
-              animations: {}
+              characterId: 'char_player',
+              position: { x: 400, y: 850 }
             }
           ],
           playerSpawn: { x: 400, y: 850 }

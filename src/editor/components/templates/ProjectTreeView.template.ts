@@ -1,4 +1,5 @@
 import { ProjectData, SceneData, CharacterData } from '../../../engine/types';
+import { ProjectSerializer } from '../../../engine/storage/ProjectSerializer';
 import { TemplateUtils } from '../../utils/TemplateUtils';
 import layoutHtml from './ProjectTreeView.html?raw';
 
@@ -126,13 +127,13 @@ export class ProjectTreeViewTemplate {
       <div class="tree-group tree-node">
         <div class="tree-item ${selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="background_folder" data-sceneid="${scene.id}">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Layers (${scene.layers.length})</span>
+          <span style="flex:1;">📂 Layers (${(scene.layers || []).length})</span>
           ${this.renderLockBtn(isNodeLocked('background_folder', undefined, scene.id), 'background_folder', undefined, scene.id)}
         </div>
 
         ${!isCollapsed ? `
           <div class="tree-children">
-            ${TemplateUtils.renderList(scene.layers, (l, lIdx) => {
+            ${TemplateUtils.renderList(scene.layers || [], (l, lIdx) => {
               const lKey = `layer_${l.id}`;
               return `
                 <div class="tree-item tree-node layer-tree-node ${selectedNodeId === lKey ? 'selected' : ''}"
@@ -172,13 +173,13 @@ export class ProjectTreeViewTemplate {
       <div class="tree-group tree-node">
         <div class="tree-item ${selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="objects_folder" data-sceneid="${scene.id}">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Objects (${scene.hotspots.length})</span>
+          <span style="flex:1;">📂 Objects (${(scene.hotspots || []).length})</span>
           ${this.renderLockBtn(isNodeLocked('objects_folder', undefined, scene.id), 'objects_folder', undefined, scene.id)}
         </div>
 
         ${!isCollapsed ? `
           <div class="tree-children">
-            ${TemplateUtils.renderList(scene.hotspots, (hs) => {
+            ${TemplateUtils.renderList(scene.hotspots || [], (hs) => {
               const hsKey = `hotspot_${hs.id}`;
               return `
                 <div class="tree-item tree-node ${selectedNodeId === hsKey ? 'selected' : ''}" data-nodeid="${hsKey}" data-type="hotspot" data-id="${hs.id}" data-sceneid="${scene.id}">
@@ -203,45 +204,28 @@ export class ProjectTreeViewTemplate {
     const { project, chapterId, selectedNodeId, collapsedNodes, isNodeLocked } = params;
     const folderKey = `characters_folder_${chapterId}`;
     const isCollapsed = collapsedNodes.has(folderKey);
-
-    const seenCharIds = new Set<string>();
-    const allChars: { id: string; name: string; sceneId: string }[] = [];
-
-    const currentScene = (window as any).engine?.currentScene;
-    if (currentScene) {
-      currentScene.data.characters.forEach((c: CharacterData) => {
-        if (!seenCharIds.has(c.id)) {
-          seenCharIds.add(c.id);
-          allChars.push({ id: c.id, name: c.name, sceneId: currentScene.data.id });
-        }
-      });
+    let chars = project.characters || [];
+    if (!chars || chars.length === 0) {
+      ProjectSerializer.normalize(project);
+      chars = project.characters || [];
     }
-
-    project.scenes.forEach(sc => {
-      sc.characters.forEach((c: CharacterData) => {
-        if (!seenCharIds.has(c.id)) {
-          seenCharIds.add(c.id);
-          allChars.push({ id: c.id, name: c.name, sceneId: sc.id });
-        }
-      });
-    });
 
     return `
       <div class="tree-group tree-node">
         <div class="tree-item ${selectedNodeId === folderKey ? 'selected' : ''}" data-nodeid="${folderKey}" data-type="characters_folder">
           <span class="tree-toggler" data-key="${folderKey}">${isCollapsed ? '▶' : '▼'}</span>
-          <span style="flex:1;">📂 Characters (${allChars.length})</span>
+          <span style="flex:1;">📂 Characters (${chars.length})</span>
           ${this.renderLockBtn(isNodeLocked('characters_folder', undefined, chapterId), 'characters_folder', undefined, chapterId)}
         </div>
 
         ${!isCollapsed ? `
           <div class="tree-children">
-            ${TemplateUtils.renderList(allChars, (c) => {
+            ${TemplateUtils.renderList(chars, (c) => {
               const cKey = `character_${c.id}`;
               return `
-                <div class="tree-item tree-node ${selectedNodeId === cKey ? 'selected' : ''}" data-nodeid="${cKey}" data-type="character" data-id="${c.id}" data-sceneid="${c.sceneId}">
+                <div class="tree-item tree-node ${selectedNodeId === cKey ? 'selected' : ''}" data-nodeid="${cKey}" data-type="character" data-id="${c.id}">
                   <span style="flex:1;">👤 ${TemplateUtils.escapeHtml(c.name)}</span>
-                  ${this.renderLockBtn(isNodeLocked('character', c.id, c.sceneId), 'character', c.id, c.sceneId)}
+                  ${this.renderLockBtn(isNodeLocked('character', c.id), 'character', c.id)}
                 </div>
               `;
             })}

@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { SceneData, Vector2D } from '../types';
+import { SceneData, Vector2D, CharacterData, SceneCharacterPlacement } from '../types';
 import { Layer } from './Layer';
 import { WalkPath } from './WalkPath';
 import { Hotspot } from './Hotspot';
@@ -13,20 +13,33 @@ export class Scene {
   public walkPaths: WalkPath[] = [];
   public hotspots: Hotspot[] = [];
   public characters: Map<string, Character> = new Map();
+  public characterDefinitions: Map<string, CharacterData> = new Map();
   public playerCharacter: Character | null = null;
   public entityContainer: PIXI.Container;
 
-  constructor(data: SceneData) {
+  constructor(data: SceneData, characterDefinitions: CharacterData[] = []) {
     this.data = data;
     this.container = new PIXI.Container();
     this.entityContainer = new PIXI.Container();
+    this.setCharacterDefinitions(characterDefinitions);
   }
 
-  public async init(camera: Camera): Promise<void> {
-    camera.setBounds(this.data.width, this.data.height);
+  public setCharacterDefinitions(characterDefinitions: CharacterData[]): void {
+    this.characterDefinitions.clear();
+    for (const def of characterDefinitions || []) {
+      if (def && def.id) {
+        this.characterDefinitions.set(def.id, def);
+      }
+    }
+  }
+
+  public async init(camera?: Camera): Promise<void> {
+    if (camera) {
+      camera.setBounds(this.data.width, this.data.height);
+    }
 
     // Initialize background layers sorted by zIndex
-    const sortedLayers = [...this.data.layers].sort((a, b) => a.zIndex - b.zIndex);
+    const sortedLayers = [...(this.data.layers || [])].sort((a, b) => a.zIndex - b.zIndex);
     for (const layerData of sortedLayers) {
       const layer = new Layer(layerData);
       await layer.init();
@@ -38,12 +51,12 @@ export class Scene {
     this.container.addChild(this.entityContainer);
 
     // Initialize walk paths
-    for (const wpData of this.data.walkPaths) {
+    for (const wpData of this.data.walkPaths || []) {
       this.walkPaths.push(new WalkPath(wpData));
     }
 
     // Initialize hotspots and prop graphics
-    for (const hsData of this.data.hotspots) {
+    for (const hsData of this.data.hotspots || []) {
       const hs = new Hotspot(hsData);
       await hs.init();
       this.hotspots.push(hs);
@@ -53,48 +66,95 @@ export class Scene {
     }
 
     // Initialize characters
+    // Playable character defaults to scene.playerCharacterId or the first defined character
+    const activePlayableId =
+      this.data.playerCharacterId ||
+      (this.characterDefinitions.keys().next().value ?? 'player');
+
     let hasPlayer = false;
-    for (const charData of this.data.characters) {
+    for (const placement of this.data.characters || []) {
+      const charId = (placement as any).characterId || (placement as any).id;
+      if (!charId) continue;
+
+      const def = this.characterDefinitions.get(charId);
+      const charData: CharacterData = {
+        id: charId,
+        name: def?.name || (placement as any).name || (charId === 'player' ? 'Hero' : charId),
+        spriteSheetUrl: def?.spriteSheetUrl || (placement as any).spriteSheetUrl || '',
+        frameWidth: def?.frameWidth || (placement as any).frameWidth || 64,
+        frameHeight: def?.frameHeight || (placement as any).frameHeight || 96,
+        rows: def?.rows ?? (placement as any).rows,
+        cols: def?.cols ?? (placement as any).cols,
+        gridOffsetX: def?.gridOffsetX ?? (placement as any).gridOffsetX,
+        gridOffsetY: def?.gridOffsetY ?? (placement as any).gridOffsetY,
+        speed: placement.speed !== undefined ? placement.speed : (def?.speed ?? 200),
+        scale: placement.scale !== undefined ? placement.scale : (def?.scale ?? 1),
+        talkColor: def?.talkColor || (placement as any).talkColor || '#fbbf24',
+        cursor: def?.cursor || (placement as any).cursor,
+        customCursorUrl: def?.customCursorUrl || (placement as any).customCursorUrl,
+        customCursorHotspotX: def?.customCursorHotspotX ?? (placement as any).customCursorHotspotX,
+        customCursorHotspotY: def?.customCursorHotspotY ?? (placement as any).customCursorHotspotY,
+        animations: def?.animations || (placement as any).animations || {},
+        position: { ...(placement.position || { x: 300, y: 750 }) },
+        actions: placement.actions || def?.actions || [],
+        depthY: placement.depthY,
+        locked: placement.locked,
+        currentHoldingItemId: placement.currentHoldingItemId || def?.currentHoldingItemId
+      };
+
       const char = new Character(charData);
       await char.init();
-      this.characters.set(charData.id, char);
+      this.characters.set(charId, char);
       this.entityContainer.addChild(char.container);
 
-      if (charData.id === 'player') {
+      if (charId === activePlayableId) {
         this.playerCharacter = char;
         hasPlayer = true;
-        camera.follow(char.container);
+        if (camera) camera.follow(char.container);
       }
     }
 
-    // Automatically spawn player at playerSpawn if not explicitly listed in scene characters
+    // Automatically spawn playable character at playerSpawn if not explicitly placed in scene
     if (!hasPlayer) {
-      const defaultPlayerData = {
-        id: 'player',
-        name: 'Hero',
-        spriteSheetUrl: 'procedural_hero',
-        frameWidth: 64,
-        frameHeight: 96,
-        position: { ...(this.data.playerSpawn || { x: 300, y: 750 }) },
-        speed: 4,
-        scale: 1,
-        talkColor: '#fef08a',
-        animations: {
-          idleDown: [0], idleSide: [4], idleUp: [8],
-          walkDown: [0, 1, 2, 3], walkSide: [4, 5, 6, 7], walkUp: [8, 9, 10, 11],
-          talk: [12, 13, 14, 15]
-        }
-      };
+      const def = this.characterDefinitions.get(activePlayableId);
+      const playerPos = { ...(this.data.playerSpawn || { x: 300, y: 750 }) };
+      const defaultPlayerData: CharacterData = def
+        ? {
+            ...def,
+            id: activePlayableId,
+            position: playerPos
+          }
+        : {
+            id: activePlayableId,
+            name: activePlayableId === 'player' ? 'Hero' : activePlayableId,
+            spriteSheetUrl: 'procedural_hero',
+            frameWidth: 64,
+            frameHeight: 96,
+            position: playerPos,
+            speed: 4,
+            scale: 1,
+            talkColor: '#fef08a',
+            animations: {
+              idleDown: [0],
+              idleSide: [4],
+              idleUp: [8],
+              walkDown: [0, 1, 2, 3],
+              walkSide: [4, 5, 6, 7],
+              walkUp: [8, 9, 10, 11],
+              talk: [12, 13, 14, 15]
+            }
+          };
       const playerChar = new Character(defaultPlayerData);
       await playerChar.init();
-      this.characters.set('player', playerChar);
+      this.characters.set(activePlayableId, playerChar);
       this.playerCharacter = playerChar;
       this.entityContainer.addChild(playerChar.container);
-      camera.follow(playerChar.container);
+      if (camera) camera.follow(playerChar.container);
     }
   }
 
   public async syncLayers(): Promise<void> {
+    if (!this.data.layers) this.data.layers = [];
     this.data.layers.forEach((lData, idx) => {
       if (lData.zIndex === undefined) lData.zIndex = idx + 1;
     });
@@ -142,17 +202,30 @@ export class Scene {
 
   public findCharacterAt(point: Vector2D, includePlayer = false): Character | undefined {
     for (const char of this.characters.values()) {
-      if (char.data.id === 'player' && !includePlayer) continue;
+      if (char === this.playerCharacter && !includePlayer) continue;
       const cx = char.container.x;
       const cy = char.container.y;
-      const hw = (char.data.frameWidth * char.data.scale) / 2;
-      const hh = char.data.frameHeight * char.data.scale;
+      const scale = char.data.scale || 1;
+      const hw = (char.data.frameWidth * scale) / 2;
+      const hh = char.data.frameHeight * scale;
 
       if (point.x >= cx - hw && point.x <= cx + hw && point.y >= cy - hh && point.y <= cy) {
         return char;
       }
     }
     return undefined;
+  }
+
+  public switchPlayerCharacter(characterId: string, camera?: Camera): Character | null {
+    const targetChar = this.characters.get(characterId);
+    if (!targetChar) return null;
+
+    this.playerCharacter = targetChar;
+    this.data.playerCharacterId = characterId;
+    if (camera) {
+      camera.follow(targetChar.container);
+    }
+    return targetChar;
   }
 
   public update(delta: number, camera: Camera): void {

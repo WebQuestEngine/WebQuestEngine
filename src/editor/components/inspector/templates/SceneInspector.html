@@ -1,7 +1,8 @@
 <!-- SceneInspector.html — Scene properties section markup -->
 <!-- Used by: SceneInspector.template.ts -->
 <!-- Slots: {{lockHeaderHTML}}, {{sceneName}}, {{sceneId}}, {{bgUrl}},
-            {{thumbnailHTML}}, {{bgmUrl}}, {{sceneBasePath}}, {{projectBasePath}} -->
+            {{thumbnailHTML}}, {{bgmUrl}}, {{sceneBasePath}}, {{projectBasePath}},
+            {{playableCharOptionsHTML}}, {{sceneCharCount}}, {{sceneCharactersListHTML}} -->
 {{lockHeaderHTML}}
 <div class="sidebar-section">
   <div class="form-group">
@@ -11,6 +12,15 @@
   <div class="form-group">
     <label>Scene ID</label>
     <input type="text" class="form-input" id="sc-id" value="{{sceneId}}" readonly style="opacity:0.7;" />
+  </div>
+  <div class="form-group">
+    <label>🎮 Playable Character</label>
+    <select class="form-input" id="sc-playable-char">
+      {{playableCharOptionsHTML}}
+    </select>
+    <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
+      Playable character in this scene (defaults to first defined character).
+    </div>
   </div>
   <div class="form-group">
     <label>Background Image Path / Upload</label>
@@ -39,6 +49,15 @@
     <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">
       Base folder for this scene's assets (e.g. <code>assets/scene1</code> ➔ audio in <code>assets/scene1/audio/</code>).
     </div>
+  </div>
+</div>
+<div class="sidebar-section">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="sidebar-section-title" style="margin-bottom:0;">👥 Characters in Scene ({{sceneCharCount}})</div>
+    <button class="btn btn-primary" id="btn-add-char-to-scene" style="font-size:0.7rem; padding:3px 6px;">+ Place Character</button>
+  </div>
+  <div id="scene-characters-list">
+    {{sceneCharactersListHTML}}
   </div>
 </div>
 <div class="sidebar-section">

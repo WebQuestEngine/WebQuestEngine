@@ -33,7 +33,7 @@ export class EditorApp {
 
   constructor(container: HTMLElement, initialProject: ProjectData | null = null) {
     this.container = container;
-    this.project = initialProject;
+    this.project = initialProject ? ProjectSerializer.normalize(initialProject) : null;
 
     this.toolbar = new Toolbar();
     this.inspector = new Inspector();
@@ -168,7 +168,7 @@ export class EditorApp {
     EventBus.getInstance().on('editor:undo', async () => {
       const restored = HistoryManager.getInstance().undo();
       if (restored) {
-        this.project = restored;
+        this.project = ProjectSerializer.normalize(restored);
         this.syncAllViews();
         await this.startEditorCanvas();
         this.showNotification('↩️ Undo executed');
@@ -179,7 +179,7 @@ export class EditorApp {
     EventBus.getInstance().on('editor:redo', async () => {
       const restored = HistoryManager.getInstance().redo();
       if (restored) {
-        this.project = restored;
+        this.project = ProjectSerializer.normalize(restored);
         this.syncAllViews();
         await this.startEditorCanvas();
         this.showNotification('↪️ Redo executed');
@@ -192,7 +192,7 @@ export class EditorApp {
 
     EventBus.getInstance().on('editor:load_project', async (newProject: ProjectData) => {
       if (!newProject) return;
-      this.project = newProject;
+      this.project = ProjectSerializer.normalize(newProject);
       RecentProjectsManager.addOrUpdateRecentProject(this.project, FileAccessAdapter.getActiveFilename());
       HistoryManager.getInstance().init(this.project);
       this.syncAllViews();

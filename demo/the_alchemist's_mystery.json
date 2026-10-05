@@ -94,10 +94,98 @@
       "conditionFlag": "labUnlocked"
     }
   ],
+  "characters": [
+    {
+      "id": "player",
+      "name": "Sir Ronald",
+      "spriteSheetUrl": "assets/characters/sir_ronald.png",
+      "frameWidth": 183,
+      "frameHeight": 226,
+      "speed": 4,
+      "scale": 1,
+      "talkColor": "#fef08a",
+      "animations": {
+        "idleDown": [
+          12
+        ],
+        "idleSide": [
+          16
+        ],
+        "idleUp": [
+          21
+        ],
+        "walkDown": [
+          0,
+          1,
+          2
+        ],
+        "walkSide": [
+          7,
+          4,
+          5
+        ],
+        "walkUp": [
+          8,
+          9,
+          10
+        ],
+        "talk": [
+          24,
+          25,
+          26
+        ]
+      },
+      "gridOffsetX": 0,
+      "gridOffsetY": 0,
+      "rows": 8,
+      "cols": 4
+    },
+    {
+      "id": "npc_eldrin",
+      "name": "Master Eldrin",
+      "spriteSheetUrl": "assets/characters/master_eldrin.png",
+      "frameWidth": 360,
+      "frameHeight": 570,
+      "speed": 0,
+      "scale": 0.75,
+      "talkColor": "#60a5fa",
+      "cursor": "talk",
+      "animations": {
+        "idleDown": [
+          0
+        ],
+        "idleSide": [
+          4
+        ],
+        "idleUp": [
+          8
+        ],
+        "walkDown": [
+          0
+        ],
+        "walkSide": [
+          4
+        ],
+        "walkUp": [
+          0
+        ],
+        "talk": [
+          5,
+          7,
+          4
+        ]
+      },
+      "gridOffsetX": 0,
+      "gridOffsetY": 0,
+      "rows": 2,
+      "cols": 4
+    }
+  ],
   "scenes": [
     {
       "id": "scene_gates",
       "name": "Castle Gates",
+      "playerCharacterId": "player",
       "backgroundMusicUrl": "assets/c1s1/audio/Pufino - Breton (freetouse.com).mp3",
       "width": 1920,
       "height": 1080,
@@ -655,54 +743,12 @@
       ],
       "characters": [
         {
-          "id": "player",
-          "name": "Sir Ronald",
-          "spriteSheetUrl": "assets/characters/sir_ronald.png",
-          "frameWidth": 183,
-          "frameHeight": 226,
+          "characterId": "player",
           "position": {
             "x": -154,
             "y": 811
           },
-          "speed": 4,
-          "scale": 1,
-          "talkColor": "#fef08a",
-          "animations": {
-            "idleDown": [
-              12
-            ],
-            "idleSide": [
-              16
-            ],
-            "idleUp": [
-              21
-            ],
-            "walkDown": [
-              0,
-              1,
-              2
-            ],
-            "walkSide": [
-              7,
-              4,
-              5
-            ],
-            "walkUp": [
-              8,
-              9,
-              10
-            ],
-            "talk": [
-              24,
-              25,
-              26
-            ]
-          },
-          "gridOffsetX": 0,
-          "gridOffsetY": 0,
-          "currentHoldingItemId": "item_key",
-          "rows": 8,
-          "cols": 4
+          "currentHoldingItemId": "item_key"
         }
       ],
       "storyPosition": {
@@ -713,6 +759,7 @@
     {
       "id": "scene_lab",
       "name": "Alchemist Laboratory",
+      "playerCharacterId": "player",
       "backgroundMusicUrl": "assets/c1s2/audio/Aetheric - Whispers of the Harp (freetouse.com).mp3",
       "width": 1920,
       "height": 1080,
@@ -920,67 +967,20 @@
       ],
       "characters": [
         {
-          "id": "player",
-          "name": "Sir Ronald",
-          "spriteSheetUrl": "assets/characters/sir_ronald.png",
-          "frameWidth": 183,
-          "frameHeight": 226,
+          "characterId": "player",
           "position": {
             "x": 1398,
             "y": 643
           },
-          "speed": 4,
           "scale": 1.6,
-          "talkColor": "#fef08a",
-          "animations": {
-            "idleDown": [
-              12
-            ],
-            "idleSide": [
-              16
-            ],
-            "idleUp": [
-              21
-            ],
-            "walkDown": [
-              0,
-              1,
-              2
-            ],
-            "walkSide": [
-              7,
-              4,
-              5
-            ],
-            "walkUp": [
-              8,
-              9,
-              10
-            ],
-            "talk": [
-              24,
-              25,
-              26
-            ]
-          },
-          "gridOffsetX": 0,
-          "gridOffsetY": 0,
           "currentHoldingItemId": "item_crystal"
         },
         {
-          "id": "npc_eldrin",
-          "name": "Master Eldrin",
-          "spriteSheetUrl": "assets/characters/master_eldrin.png",
-          "frameWidth": 360,
-          "frameHeight": 570,
+          "characterId": "npc_eldrin",
           "position": {
             "x": 454,
             "y": 697
           },
-          "speed": 0,
-          "scale": 0.75,
-          "talkColor": "#60a5fa",
-          "cursor": "talk",
           "actions": [
             {
               "verb": "look",
@@ -994,36 +994,7 @@
               "verb": "interact",
               "dialogId": "dlg_eldrin"
             }
-          ],
-          "animations": {
-            "idleDown": [
-              0
-            ],
-            "idleSide": [
-              4
-            ],
-            "idleUp": [
-              8
-            ],
-            "walkDown": [
-              0
-            ],
-            "walkSide": [
-              4
-            ],
-            "walkUp": [
-              0
-            ],
-            "talk": [
-              5,
-              7,
-              4
-            ]
-          },
-          "gridOffsetX": 0,
-          "gridOffsetY": 0,
-          "rows": 2,
-          "cols": 4
+          ]
         }
       ],
       "locked": false,

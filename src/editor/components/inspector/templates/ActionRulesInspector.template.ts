@@ -106,8 +106,14 @@ export class ActionRulesInspectorTemplate {
             <select class="form-select act-anim-target" data-hidx="${hIdx}" data-aidx="${aIdx}" data-ischar="${isCharStr}" style="font-size:0.75rem;">
               <option value="player" ${act.animationTarget === 'player' || !act.animationTarget ? 'selected' : ''}>Player Character</option>
               <option value="self" ${act.animationTarget === 'self' ? 'selected' : ''}>Self (Target Element)</option>
-              ${TemplateUtils.renderList<{id: string; name: string}>(currentScene?.characters || [], (c: {id: string; name: string}) =>
-                `<option value="${c.id}" ${act.animationTarget === c.id ? 'selected' : ''}>${TemplateUtils.escapeHtml(c.name)} (${c.id})</option>`
+              ${TemplateUtils.renderList<{id: string; name: string}>(
+                (currentScene?.characters || []).map(c => {
+                  const cid = c.characterId || c.id || '';
+                  const def = project?.characters?.find(d => d.id === cid);
+                  return { id: cid, name: def?.name || c.name || cid };
+                }).filter(c => !!c.id),
+                (c: {id: string; name: string}) =>
+                  `<option value="${c.id}" ${act.animationTarget === c.id ? 'selected' : ''}>${TemplateUtils.escapeHtml(c.name)} (${c.id})</option>`
               )}
             </select>
           </div>

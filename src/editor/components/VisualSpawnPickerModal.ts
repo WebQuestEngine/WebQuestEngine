@@ -35,7 +35,10 @@ export class VisualSpawnPickerModal {
     this.onConfirm = onConfirm;
     this.onCancel = onCancel;
 
-    const targetChar = targetScene.characters?.find(c => c.id === 'player') || project.scenes[0]?.characters?.find(c => c.id === 'player');
+    const targetPlayerId = targetScene.playerCharacterId || project.characters?.[0]?.id || 'player';
+    const targetChar = project.characters?.find(c => c.id === targetPlayerId) ||
+      targetScene.characters?.find(c => (c.characterId || c.id) === targetPlayerId) ||
+      project.characters?.[0];
     if (targetChar && targetChar.scale) {
       this.currentScale = targetChar.scale;
     }
@@ -200,20 +203,25 @@ export class VisualSpawnPickerModal {
     }
 
     // Render Scene NPCs / Other Characters
+    const targetPlayerId = this.targetScene.playerCharacterId || this.project.characters?.[0]?.id || 'player';
     if (this.targetScene.characters) {
-      for (const cData of this.targetScene.characters) {
-        if (cData.id === 'player') continue;
+      for (const placement of this.targetScene.characters) {
+        const charId = placement.characterId || placement.id;
+        if (charId === targetPlayerId) continue;
+        const charDef = this.project.characters?.find(c => c.id === charId);
+        const spriteSheetUrl = charDef?.spriteSheetUrl || (placement as any).spriteSheetUrl;
+        if (!spriteSheetUrl) continue;
         try {
-          const npcTexture = await assetManager.loadTexture(cData.spriteSheetUrl);
-          const fw = cData.frameWidth || 64;
-          const fh = cData.frameHeight || 96;
+          const npcTexture = await assetManager.loadTexture(spriteSheetUrl);
+          const fw = charDef?.frameWidth || (placement as any).frameWidth || 64;
+          const fh = charDef?.frameHeight || (placement as any).frameHeight || 96;
           const frameRect = new PIXI.Rectangle(0, 0, Math.min(fw, npcTexture.width), Math.min(fh, npcTexture.height));
           const frameTexture = new PIXI.Texture({ source: npcTexture.source, frame: frameRect });
           const npcSprite = new PIXI.Sprite(frameTexture);
           npcSprite.anchor.set(0.5, 0.9);
-          npcSprite.x = cData.position.x;
-          npcSprite.y = cData.position.y;
-          npcSprite.scale.set(cData.scale || 1);
+          npcSprite.x = placement.position.x;
+          npcSprite.y = placement.position.y;
+          npcSprite.scale.set(placement.scale || charDef?.scale || 1);
           sceneContainer.addChild(npcSprite);
         } catch (err) {
           console.warn('Failed to load NPC sprite in picker modal:', err);
@@ -234,9 +242,9 @@ export class VisualSpawnPickerModal {
     }
 
     // Render Character Sprite Preview (Player or target character)
-    const targetCharData = this.targetScene.characters?.find(c => c.id === 'player')
-      || this.project.scenes?.flatMap(s => s.characters || []).find(c => c.id === 'player')
-      || this.targetScene.characters?.[0]
+    const targetCharData = (this.project.characters?.find(c => c.id === targetPlayerId) as any)
+      || this.targetScene.characters?.find(c => (c.characterId || c.id) === targetPlayerId)
+      || this.project.characters?.[0]
       || null;
 
     const charContainer = new PIXI.Container();
