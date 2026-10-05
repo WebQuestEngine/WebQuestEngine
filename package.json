@@ -10,12 +10,14 @@
     "build:game": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "pixi.js": "^8.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
