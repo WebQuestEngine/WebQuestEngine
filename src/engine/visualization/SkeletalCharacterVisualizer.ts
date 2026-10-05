@@ -26,14 +26,17 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
   private slotSprites: Map<string, PIXI.Sprite> = new Map();
 
   private currentAnimation = 'idle';
+  private currentSkin = 'front';
   private animationTimer = 0;
   private isTextureLoaded = false;
   private loadedTexture: PIXI.Texture | null = null;
+  private elementTextures: Map<string, PIXI.Texture> = new Map();
 
   constructor(config: SkeletalVisualConfig) {
     this.config = config;
     this.container = new PIXI.Container();
     this.currentAnimation = config.defaultAnimation || Object.keys(config.animations || {})[0] || 'idle';
+    this.currentSkin = config.skin || 'front';
   }
 
   public async init(): Promise<void> {
@@ -41,6 +44,7 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
       try {
         this.loadedTexture = await AssetManager.getInstance().loadTexture(this.config.textureUrl);
         this.isTextureLoaded = true;
+        this.buildElementSubTextures();
       } catch (err) {
         console.warn('Failed to load skeletal texture, using vector bone rendering fallback', err);
       }
@@ -49,6 +53,31 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
     this.buildBoneHierarchy();
     this.buildSlots();
     this.evaluateAnimation(0);
+  }
+
+  private buildElementSubTextures(): void {
+    if (!this.loadedTexture) return;
+    this.elementTextures.clear();
+
+    const elements = this.config.spineDoc?.skeleton?.questforge?.elements || [];
+    for (const elem of elements) {
+      try {
+        const frame = new PIXI.Rectangle(
+          elem.bounds.x,
+          elem.bounds.y,
+          Math.max(1, elem.bounds.width),
+          Math.max(1, elem.bounds.height)
+        );
+        const sub = new PIXI.Texture({
+          source: this.loadedTexture.source,
+          frame
+        });
+        this.elementTextures.set(elem.name, sub);
+        this.elementTextures.set(elem.id, sub);
+      } catch (e) {
+        console.warn('Failed to build sub-texture for element', elem.name, e);
+      }
+    }
   }
 
   private buildBoneHierarchy(): void {
@@ -94,8 +123,9 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
     this.slotSprites.clear();
 
     const slots = this.config.skeleton?.slots || [];
-    const skinName = this.config.skin || Object.keys(this.config.skeleton?.attachments || {})[0] || 'default';
-    const skinAttachments = this.config.skeleton?.attachments?.[skinName] || {};
+    const skinName = this.currentSkin || this.config.skin || Object.keys(this.config.skeleton?.attachments || {})[0] || 'default';
+    const skinAttachments = this.config.skeleton?.attachments?.[skinName] || this.config.skeleton?.attachments?.['default'] || {};
+    const elements = this.config.spineDoc?.skeleton?.questforge?.elements || [];
 
     for (const s of slots) {
       const boneNode = this.boneNodes.get(s.bone);
@@ -107,9 +137,17 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
       boneNode.container.addChild(slotCont);
 
       const attachment = skinAttachments[s.name];
-      if (this.isTextureLoaded && this.loadedTexture) {
-        const spr = new PIXI.Sprite(this.loadedTexture);
-        spr.anchor.set(0.5, 0.5);
+      const elem = elements.find((e: any) => e.name === attachment?.name);
+      const subTex = attachment?.name ? this.elementTextures.get(attachment.name) : null;
+
+      if (this.isTextureLoaded && (subTex || this.loadedTexture)) {
+        const spr = new PIXI.Sprite(subTex || this.loadedTexture!);
+        if (elem && elem.bounds) {
+          spr.anchor.set(elem.pivot.x / elem.bounds.width, elem.pivot.y / elem.bounds.height);
+        } else {
+          spr.anchor.set(0.5, 0.5);
+        }
+
         if (attachment) {
           spr.x = attachment.x || 0;
           spr.y = attachment.y || 0;
@@ -137,8 +175,33 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
     }
   }
 
+  private resolveTargetSkin(state: CharacterRenderState): string {
+    const dir = state.direction8Way || 'down';
+    const customPoseDirections = this.config.spineDoc?.skeleton?.questforge?.poseDirections;
+    if (customPoseDirections) {
+      for (const [poseName, dirs] of Object.entries(customPoseDirections)) {
+        if (Array.isArray(dirs) && (dirs as any).includes(dir)) return poseName;
+      }
+    }
+    if (dir === 'up' || dir === 'up_left' || dir === 'up_right') return 'back';
+    if (dir === 'left' || dir === 'right') return 'side';
+    return 'front';
+  }
+
   public update(delta: number, state: CharacterRenderState): void {
     if (!this.container || (this.container as any).destroyed) return;
+
+    // Resolve directional pose/skin
+    const targetSkin = this.resolveTargetSkin(state);
+    if (targetSkin !== this.currentSkin && this.config.skeleton?.attachments?.[targetSkin]) {
+      this.currentSkin = targetSkin;
+      this.buildSlots();
+    }
+
+    // Horizontal mirroring
+    const baseScale = state.scale || 1.5;
+    this.container.scale.x = state.isFacingLeft ? -Math.abs(baseScale) : Math.abs(baseScale);
+    this.container.scale.y = baseScale;
 
     // Resolve target animation
     const animMap = this.config.animations || {};
