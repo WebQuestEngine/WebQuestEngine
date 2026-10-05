@@ -70,19 +70,19 @@ export type DirectiveActionType =
   | 'camera'             // Camera pan/zoom/shake
   | 'custom_event';      // Custom game event signal
 
-export interface StageDirective {
+export interface BaseStageDirective {
   id: string;
   type: DirectiveActionType;
-  actorId?: string;             // Target Character or Object
-  animationName?: string;       // Chosen from the target actor's animation set
-  choreographyGroupId?: string; // If type === 'choreography_group'
-  itemId?: string;              // If type === 'give_item' | 'take_item'
+  actorId?: string;
+  delaySeconds?: number;
+  animationName?: string;
+  choreographyGroupId?: string;
+  itemId?: string;
   itemCount?: number;
-  emoteText?: string;           // If type === 'emote'
+  emoteText?: string;
   targetActorId?: string;
   targetPosition?: Vector2D;
   sfxUrl?: string;
-  delaySeconds?: number;
   loopAnimation?: boolean;
   cameraAction?: 'pan' | 'zoom' | 'shake' | 'reset';
   cameraZoom?: number;
@@ -91,31 +91,141 @@ export interface StageDirective {
   ignoreWalkPath?: boolean;
 }
 
-export interface HotspotAction {
-  verb: VerbType;
+export interface AnimationDirective extends BaseStageDirective {
+  type: 'animation';
+  animationName: string;
+}
+
+export interface ChoreographyDirective extends BaseStageDirective {
+  type: 'choreography_group';
+  choreographyGroupId: string;
+}
+
+export interface ItemDirective extends BaseStageDirective {
+  type: 'give_item' | 'take_item';
+  itemId: string;
+}
+
+export interface EmoteDirective extends BaseStageDirective {
+  type: 'emote';
+  emoteText: string;
+}
+
+export interface LookAtDirective extends BaseStageDirective {
+  type: 'look_at';
+}
+
+export interface WalkToDirective extends BaseStageDirective {
+  type: 'walk_to';
+  targetPosition: Vector2D;
+}
+
+export interface SfxDirective extends BaseStageDirective {
+  type: 'sfx';
+  sfxUrl: string;
+}
+
+export interface CameraDirective extends BaseStageDirective {
+  type: 'camera';
+  cameraAction: 'pan' | 'zoom' | 'shake' | 'reset';
+}
+
+export interface CustomEventDirective extends BaseStageDirective {
+  type: 'custom_event';
+  eventName: string;
+}
+
+export type StageDirective =
+  | AnimationDirective
+  | ChoreographyDirective
+  | ItemDirective
+  | EmoteDirective
+  | LookAtDirective
+  | WalkToDirective
+  | SfxDirective
+  | CameraDirective
+  | CustomEventDirective
+  | BaseStageDirective;
+
+export interface BaseHotspotAction {
+  id?: string;
+  verb: VerbType | string;
   actionType?: ActionEventType;
-  eventName?: string;
-  eventPayload?: string;
+  description?: string;
+  cursor?: string;
+  sfxUrl?: string;
+  requiredFlag?: string;
+  notFlag?: string;
+  requireItemId?: string;
+  setFlags?: string[];
+  clearFlags?: string[];
+  giveItems?: string[];
+  takeItems?: string[];
+  // Legacy aliases for backward compatibility
+  setFlag?: string;
+  clearFlag?: string;
+  giveItem?: string;
+  giveItemId?: string;
   text?: string;
   targetSceneId?: string;
   targetSpawnPoint?: Vector2D;
   dialogId?: string;
-  giveItemId?: string;
-  giveItems?: string[];
-  takeItems?: string[];
-  requireItemId?: string;
-  setFlag?: string;
-  clearFlag?: string;
-  setFlags?: string[];
-  clearFlags?: string[];
-  requiredFlag?: string;
-  notFlag?: string;
   customScript?: string;
   playAnimation?: string;
   animationTarget?: 'player' | 'self' | string;
   faceDirection?: Direction8Way;
-  sfxUrl?: string;
+  eventName?: string;
+  eventPayload?: string;
 }
+
+export interface SpeechHotspotAction extends BaseHotspotAction {
+  actionType?: 'speech';
+  text: string;
+}
+
+export interface DialogHotspotAction extends BaseHotspotAction {
+  actionType?: 'dialog';
+  dialogId: string;
+}
+
+export interface SceneChangeHotspotAction extends BaseHotspotAction {
+  actionType?: 'scene_change';
+  targetSceneId: string;
+  targetSpawnPoint?: Vector2D;
+}
+
+export interface ItemHotspotAction extends BaseHotspotAction {
+  actionType?: 'give_item';
+}
+
+export interface FlagHotspotAction extends BaseHotspotAction {
+  actionType?: 'set_flag';
+}
+
+export interface AnimationHotspotAction extends BaseHotspotAction {
+  actionType?: 'animation';
+  playAnimation: string;
+}
+
+export interface CustomEventHotspotAction extends BaseHotspotAction {
+  actionType?: 'custom_event';
+  eventName: string;
+}
+
+export interface MixedHotspotAction extends BaseHotspotAction {
+  actionType?: 'mixed';
+}
+
+export type HotspotAction =
+  | SpeechHotspotAction
+  | DialogHotspotAction
+  | SceneChangeHotspotAction
+  | ItemHotspotAction
+  | FlagHotspotAction
+  | AnimationHotspotAction
+  | CustomEventHotspotAction
+  | MixedHotspotAction
+  | BaseHotspotAction;
 
 export interface HotspotData {
   id: string;
@@ -241,38 +351,39 @@ export type EventScopeType = 'game' | 'scene' | 'hotspot' | 'character' | 'item'
 
 export type ActionCategoryType = 'video' | 'screen_effect' | 'camera' | 'audio' | 'delay' | 'scene_change' | 'mutation' | 'character';
 
-export interface DialogNode {
+export interface BaseDialogNode {
   id: string;
-  speaker: string;
-  text: string;
   nodeType?: DialogNodeType;
-  portraitUrl?: string;
-  voiceAudioUrl?: string;
-  speakerAnimation?: string;     // Active talk animation for speaker
-  speakerGesture?: string;       // One-off gesture at start of line
-  directives?: StageDirective[]; // Stage directives during this beat
-  setFlags?: string[];           // List of flags to set
-  clearFlags?: string[];         // List of flags to clear
-  giveItems?: string[];          // List of items to award
-  takeItems?: string[];          // List of items to consume
-  choices?: DialogChoice[];
-  nextNodeId?: string;
+  position?: Vector2D;
+  speaker?: string;
+  text?: string;
   requiredFlag?: string;
   notFlag?: string;
+  setFlags?: string[];
+  clearFlags?: string[];
+  giveItems?: string[];
+  takeItems?: string[];
+  choices?: DialogChoice[];
+  nextNodeId?: string;
+  // Legacy aliases for backward compatibility
   setFlag?: string;
   clearFlag?: string;
   giveItem?: string;
-  position?: Vector2D;
-  isChoiceInteractive?: boolean;
   isRouterNode?: boolean;
-  waitDurationSeconds?: number;  // Optional timed wait duration
 
-  // Event Listener Node Properties
+  // Domain properties accessible on base, narrowed on specific node types
+  directives?: StageDirective[];
+  portraitUrl?: string;
+  voiceAudioUrl?: string;
+  speakerAnimation?: string;
+  speakerGesture?: string;
+  isChoiceInteractive?: boolean;
+  waitDurationSeconds?: number;
+
   eventScope?: EventScopeType;
   eventTargetId?: string;
   eventName?: string;
 
-  // Action / Cinematic Node Properties
   actionCategory?: ActionCategoryType;
   actorId?: string;
   characterAction?: 'walk_to' | 'teleport' | 'look_at' | 'animation';
@@ -292,6 +403,53 @@ export interface DialogNode {
   audioVolume?: number;
   targetSceneId?: string;
   targetSpawnPoint?: Vector2D;
+}
+
+export interface SpeechBeatNode extends BaseDialogNode {
+  nodeType?: 'beat';
+  speaker: string;
+  text: string;
+}
+
+export interface RouterBranchNode extends BaseDialogNode {
+  nodeType: 'router';
+  choices: DialogChoice[];
+}
+
+export interface EventListenerNode extends BaseDialogNode {
+  nodeType: 'event_listener';
+  eventScope: EventScopeType;
+  eventName: string;
+}
+
+export interface ActionCinematicNode extends BaseDialogNode {
+  nodeType: 'action';
+}
+
+export type DialogNode =
+  | SpeechBeatNode
+  | RouterBranchNode
+  | EventListenerNode
+  | ActionCinematicNode;
+
+/** Type guard for router nodes (supporting legacy isRouterNode flag) */
+export function isRouterNode(node: DialogNode): node is RouterBranchNode {
+  return node.nodeType === 'router' || Boolean((node as any).isRouterNode);
+}
+
+/** Type guard for event listener nodes */
+export function isEventListenerNode(node: DialogNode): node is EventListenerNode {
+  return node.nodeType === 'event_listener';
+}
+
+/** Type guard for action / cinematic nodes */
+export function isActionNode(node: DialogNode): node is ActionCinematicNode {
+  return node.nodeType === 'action';
+}
+
+/** Type guard for speech / beat nodes */
+export function isSpeechBeatNode(node: DialogNode): node is SpeechBeatNode {
+  return !node.nodeType || node.nodeType === 'beat';
 }
 
 export interface DialogTree {

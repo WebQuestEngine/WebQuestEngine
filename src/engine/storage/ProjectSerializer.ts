@@ -10,7 +10,107 @@ export class ProjectSerializer {
     if (!data.version || !data.scenes || !data.chapters) {
       throw new Error('Invalid project structure. Missing essential fields.');
     }
-    return data;
+    return this.normalize(data);
+  }
+
+  /**
+   * Normalizes legacy project fields into the standardized discriminated schema:
+   * - Converts `isRouterNode: true` to `nodeType: 'router'`, defaults missing nodeType to `'beat'`.
+   * - Normalizes single string mutations (`setFlag`, `clearFlag`, `giveItem`, `giveItemId`) into array fields (`setFlags`, `clearFlags`, `giveItems`).
+   */
+  public static normalize(project: ProjectData): ProjectData {
+    // 1. Normalize scene hotspots & character actions
+    for (const scene of project.scenes || []) {
+      for (const hs of scene.hotspots || []) {
+        const actionsList = Array.isArray(hs.actions)
+          ? hs.actions
+          : hs.actions && typeof hs.actions === 'object'
+          ? Object.values(hs.actions)
+          : [];
+        for (const act of actionsList) {
+          this.normalizeAction(act);
+        }
+      }
+      for (const ch of scene.characters || []) {
+        const actionsList = Array.isArray(ch.actions)
+          ? ch.actions
+          : ch.actions && typeof ch.actions === 'object'
+          ? Object.values(ch.actions)
+          : [];
+        for (const act of actionsList) {
+          this.normalizeAction(act);
+        }
+      }
+    }
+
+    // 2. Normalize dialog trees, nodes, and choices
+    for (const tree of project.dialogs || []) {
+      for (const node of Object.values(tree.nodes || {})) {
+        this.normalizeDialogNode(node);
+      }
+    }
+
+    return project;
+  }
+
+  private static normalizeAction(act: any): void {
+    if (!act) return;
+    if (act.setFlag) {
+      if (!act.setFlags) act.setFlags = [];
+      if (!act.setFlags.includes(act.setFlag)) act.setFlags.push(act.setFlag);
+    }
+    if (act.clearFlag) {
+      if (!act.clearFlags) act.clearFlags = [];
+      if (!act.clearFlags.includes(act.clearFlag)) act.clearFlags.push(act.clearFlag);
+    }
+    const singleGive = act.giveItemId || act.giveItem;
+    if (singleGive) {
+      if (!act.giveItems) act.giveItems = [];
+      if (!act.giveItems.includes(singleGive)) act.giveItems.push(singleGive);
+    }
+  }
+
+  private static normalizeDialogNode(node: any): void {
+    if (!node) return;
+
+    // Normalize nodeType from legacy isRouterNode
+    if (node.isRouterNode === true && !node.nodeType) {
+      node.nodeType = 'router';
+    } else if (!node.nodeType) {
+      node.nodeType = 'beat';
+    }
+
+    // Normalize outcomes
+    if (node.setFlag) {
+      if (!node.setFlags) node.setFlags = [];
+      if (!node.setFlags.includes(node.setFlag)) node.setFlags.push(node.setFlag);
+    }
+    if (node.clearFlag) {
+      if (!node.clearFlags) node.clearFlags = [];
+      if (!node.clearFlags.includes(node.clearFlag)) node.clearFlags.push(node.clearFlag);
+    }
+    if (node.giveItem) {
+      if (!node.giveItems) node.giveItems = [];
+      if (!node.giveItems.includes(node.giveItem)) node.giveItems.push(node.giveItem);
+    }
+
+    // Normalize choices
+    if (Array.isArray(node.choices)) {
+      for (const choice of node.choices) {
+        if (choice.setFlag) {
+          if (!choice.setFlags) choice.setFlags = [];
+          if (!choice.setFlags.includes(choice.setFlag)) choice.setFlags.push(choice.setFlag);
+        }
+        if (choice.clearFlag) {
+          if (!choice.clearFlags) choice.clearFlags = [];
+          if (!choice.clearFlags.includes(choice.clearFlag)) choice.clearFlags.push(choice.clearFlag);
+        }
+        if (choice.giveItem) {
+          if (!choice.giveItems) choice.giveItems = [];
+          if (!choice.giveItems.includes(choice.giveItem)) choice.giveItems.push(choice.giveItem);
+        }
+      }
+    }
   }
 
   public static createStarterProject(
