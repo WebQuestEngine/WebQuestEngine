@@ -1,4 +1,4 @@
-import { ProjectData, UIPresetType } from '../types';
+import { ProjectData, UIPresetType } from '../../engine/types';
 
 export interface RecentProjectEntry {
   id: string;

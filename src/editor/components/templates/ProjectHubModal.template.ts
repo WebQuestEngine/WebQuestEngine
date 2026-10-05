@@ -1,5 +1,5 @@
 import { UIPresetType } from '../../../engine/types';
-import { RecentProjectEntry } from '../../../engine/storage/RecentProjectsManager';
+import { RecentProjectEntry } from '../../storage/RecentProjectsManager';
 import { TemplateUtils } from '../../utils/TemplateUtils';
 import modalHtml from './ProjectHubModal.html?raw';
 

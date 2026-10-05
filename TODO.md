@@ -46,6 +46,10 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 - [x] **Full Architectural Decoupling**: Completely separated authoring canvas (`EditorCanvas.ts`) from game execution (`GameRuntime.ts`). Editor displays static frames with no animations or game audio.
 - [x] **Scoped Runtime Sessions (`RuntimeContext.ts`)**: Sandboxed runtime sessions discard all state, audio nodes, and event listeners on destruction without global singleton leakage.
 - [x] **Standalone Game Player & Pipeline**: Created dedicated standalone player (`src/player/main.ts`, `player.html`, `npm run dev:player`, `npm run build:game`) to bundle and run games independently from editor code.
+- [x] **Engine/UI Separation & Standalone Stylesheet**: Extracted runtime HUD, subtitle, dialog, and in-game menu styles into standalone `src/engine/ui/engine-ui.css`, completely freeing `player.html` and the runtime from depending on editor CSS (`src/editor/style.css`). Introduced `IOverlayRenderer` interface to decouple runtime from concrete DOM manipulation.
+- [x] **Editor File Handling Isolation**: Moved `FileAccessAdapter.ts` and `RecentProjectsManager.ts` out of `src/engine/storage/` to `src/editor/storage/`.
+- [x] **Polymorphic Data Model & Legacy Normalization**: Refactored `DialogNode`, `HotspotAction`, and `StageDirective` into discriminated unions (`SpeechBeatNode`, `RouterBranchNode`, `EventListenerNode`, `ActionCinematicNode`, `AnimationDirective`, etc.) with type guards; added automatic normalization for legacy flags in `ProjectSerializer.normalize()`.
+- [x] **Modularize Monolithic Controllers**: Decomposed `DialogEditor.ts` (1,003 lines down to 273 lines) by extracting `StoryboardViewController.ts` and `DialogSequenceController.ts`.
 
 ---
 
@@ -100,4 +104,36 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ## 💬 14. Dialog System
 - [ ] **Wait for Dialog Line to Finish**: Wait for the current dialog line/speech subtitle to finish before showing player response options.
 - [ ] **Skip Dialog & Cutscenes**: Allow skipping dialog lines and cutscenes by pressing the dot key (`.`) or another custom input.
+
+---
+
+## 💾 15. Studio Asset Persistence & Export Pipeline
+- [ ] **Hosted Studio Asset Persistence**: Persist uploaded images and sound files in browser storage (IndexedDB / Origin Private File System) so user-uploaded assets survive reloads without manual `public/` folder copying.
+- [ ] **Self-Contained Game Export / Packager**: Build a self-contained ZIP export tool allowing users to bundle their project JSON and all custom assets into a deployable static site.
+
+---
+
+## 📱 16. Mobile & Touch Input Support
+- [ ] **Touch Gesture Recognition**: Support `touchstart`, `touchmove`, and `touchend` events in `InputHandler.ts` for walking, examining hotspots, and dragging inventory items on mobile/tablets.
+- [ ] **Mobile HUD & Touch Controls**: Add tap-to-interact and long-press context coin trigger for touch screens.
+
+---
+
+## 📐 17. Project Format Versioning & Migrations
+- [ ] **Formal Schema Versioning**: Introduce a formal JSON schema and semver `version` field validation.
+- [ ] **Migration Pipeline**: Create a version-by-version migrator (`v1.0.0` -> `v1.1.0`) to safely update older project JSONs as new features are added.
+
+---
+
+## 🛡️ 18. Tooling, Guardrails & Documentation
+- [ ] **ESLint & Prettier Setup**: Configure linters and mechanical boundary checks ensuring clean imports and enforcing architectural invariants (e.g. engine never importing from editor).
+- [ ] **Unified Check Script**: Add a unified `npm run check` script (`tsc --noEmit`, ESLint, Vitest) and wire it into GitHub Actions CI.
+- [ ] **Agent & Architectural Documentation**: Create `AGENTS.md` (and a `CLAUDE.md` pointer) detailing repository architecture rules, scoped event bus lifecycles, and design patterns.
+- [ ] **Documentation Drift Cleanup**: Consolidate product naming across docs (`WebQuestEngine` / `QuestForge 2D`) and sync `REQUIREMENTS.md` matrix with implemented features.
+
+---
+
+## 🎮 19. Refactor InputHandler Controller
+- [ ] **Decompose InputHandler**: Modularize `InputHandler.ts` (~600 lines) into focused sub-handlers (`VerbSelector`, `HotspotInteractionResolver`, `ItemDragController`).
+
 

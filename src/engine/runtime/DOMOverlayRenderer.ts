@@ -6,7 +6,29 @@ export interface DialogOverlayCallbacks {
   onEnd: () => void;
 }
 
-export class DOMOverlayRenderer {
+export interface IOverlayRenderer {
+  setContainerElement(containerElement: HTMLElement): void;
+  renderDialogOverlay(
+    data: any,
+    screenPos: Vector2D | null,
+    viewportSize: { width: number; height: number },
+    callbacks: DialogOverlayCallbacks
+  ): void;
+  clearDialogOverlay(): void;
+  showEmoteBubble(screenPos: Vector2D, text: string): void;
+  clearEmoteBubbles(): void;
+  showVideoOverlay(videoUrl: string, skippable: boolean, onComplete: () => void): () => void;
+  showScreenEffect(
+    effect: 'fade_in' | 'fade_out' | 'flash' | 'tint' | string,
+    duration: number,
+    color: string,
+    onComplete: () => void
+  ): void;
+  clearScreenEffect(): void;
+  destroy(): void;
+}
+
+export class DOMOverlayRenderer implements IOverlayRenderer {
   private containerElement: HTMLElement;
   private dialogOverlayEl: HTMLElement | null = null;
   private activeVideoCleanup: (() => void) | null = null;
@@ -311,6 +333,16 @@ export class DOMOverlayRenderer {
     }
   }
 
+  public clearScreenEffect(): void {
+    if (this.activeScreenFxEl) {
+      this.activeScreenFxEl.remove();
+      this.activeScreenFxEl = null;
+    }
+    if (this.containerElement) {
+      this.containerElement.querySelectorAll('.screen-fx-overlay').forEach(el => el.remove());
+    }
+  }
+
   public clearAll(): void {
     this.clearDialogOverlay();
     this.clearEmoteBubbles();
@@ -320,14 +352,10 @@ export class DOMOverlayRenderer {
       this.activeVideoCleanup = null;
     }
 
-    if (this.activeScreenFxEl) {
-      this.activeScreenFxEl.remove();
-      this.activeScreenFxEl = null;
-    }
+    this.clearScreenEffect();
 
     if (this.containerElement) {
       this.containerElement.querySelectorAll('.cinematic-video-overlay').forEach(el => el.remove());
-      this.containerElement.querySelectorAll('.screen-fx-overlay').forEach(el => el.remove());
     }
   }
 

@@ -3,8 +3,8 @@ import alchemistProject from '../demo/the_alchemist\'s_mystery.json';
 import { ProjectData } from './engine/types';
 import { ProjectSerializer } from './engine/storage/ProjectSerializer';
 import { ProjectHubModal } from './editor/components/ProjectHubModal';
-import { RecentProjectsManager } from './engine/storage/RecentProjectsManager';
-import { FileAccessAdapter } from './engine/storage/FileAccessAdapter';
+import { RecentProjectsManager } from './editor/storage/RecentProjectsManager';
+import { FileAccessAdapter } from './editor/storage/FileAccessAdapter';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const appContainer = document.getElementById('app');

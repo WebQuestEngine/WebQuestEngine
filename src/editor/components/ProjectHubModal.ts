@@ -1,8 +1,8 @@
 import { ProjectData, UIPresetType } from '../../engine/types';
 import { EventBus } from '../../engine/core/EventBus';
 import { ProjectSerializer } from '../../engine/storage/ProjectSerializer';
-import { RecentProjectsManager, RecentProjectEntry } from '../../engine/storage/RecentProjectsManager';
-import { FileAccessAdapter } from '../../engine/storage/FileAccessAdapter';
+import { RecentProjectsManager, RecentProjectEntry } from '../storage/RecentProjectsManager';
+import { FileAccessAdapter } from '../storage/FileAccessAdapter';
 import alchemistSampleProject from '../../../demo/the_alchemist\'s_mystery.json';
 import { ProjectHubModalTemplate } from './templates/ProjectHubModal.template';
 
