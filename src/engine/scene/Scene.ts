@@ -80,6 +80,7 @@ export class Scene {
       const charData: CharacterData = {
         id: charId,
         name: def?.name || (placement as any).name || (charId === 'player' ? 'Hero' : charId),
+        visual: def?.visual || (placement as any).visual,
         spriteSheetUrl: def?.spriteSheetUrl || (placement as any).spriteSheetUrl || '',
         frameWidth: def?.frameWidth || (placement as any).frameWidth || 64,
         frameHeight: def?.frameHeight || (placement as any).frameHeight || 96,
@@ -206,8 +207,9 @@ export class Scene {
       const cx = char.container.x;
       const cy = char.container.y;
       const scale = char.data.scale || 1;
-      const hw = (char.data.frameWidth * scale) / 2;
-      const hh = char.data.frameHeight * scale;
+      const bounds = char.visualizer ? char.visualizer.getBounds() : { width: char.data.frameWidth || 64, height: char.data.frameHeight || 96 };
+      const hw = (bounds.width * scale) / 2;
+      const hh = bounds.height * scale;
 
       if (point.x >= cx - hw && point.x <= cx + hw && point.y >= cy - hh && point.y <= cy) {
         return char;

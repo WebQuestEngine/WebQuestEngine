@@ -1,9 +1,9 @@
 import * as PIXI from 'pixi.js';
 import { MovableElement } from './MovableElement';
-import { Vector2D, CharacterData, Direction8Way, AnimationClipConfig, AnimFrameRef, VerbType, HotspotAction } from '../types';
-import { AssetManager } from '../core/AssetManager';
+import { Vector2D, CharacterData, Direction8Way, VerbType, HotspotAction, resolveCharacterVisualConfig } from '../types';
 import { StoryGraphSystem } from '../systems/StoryGraphSystem';
 import { WalkPath } from './WalkPath';
+import { ICharacterVisualizer, CharacterRenderState, CharacterVisualFactory } from '../visualization';
 
 export type CharacterState = 'idle' | 'walking' | 'talking' | 'picking_up' | 'gesturing' | 'custom_anim';
 
@@ -27,56 +27,84 @@ export class Character extends MovableElement {
   public state: CharacterState = 'idle';
   public direction8Way: Direction8Way = 'down';
   public isFacingLeft = false;
+  public visualizer!: ICharacterVisualizer;
 
   public path: Vector2D[] = [];
   private currentPathIndex = 0;
-  private animFrame = 0;
-  private animTimer = 0;
-  private animSpeed = 0.15;
   private currentCustomAnimKey: string | null = null;
   private customAnimTimer: any = null;
-  private textureSheet: PIXI.Texture | null = null;
   private onWalkCompleteCallback: (() => void) | null = null;
 
   constructor(data: CharacterData) {
     const pos = data.position || { x: 0, y: 0 };
     super(data.id, data.name, pos);
-    this.data = { ...data, position: pos };
-    this.imageUrl = data.spriteSheetUrl;
+
+    // Ensure visual config is populated
+    const visual = resolveCharacterVisualConfig(data);
+    this.data = { ...data, position: pos, visual };
+    this.imageUrl = (visual as any).spriteSheetUrl || data.spriteSheetUrl;
     this.cursor = data.cursor || 'talk';
     this.actions = data.actions || [];
     this.speed = data.speed;
-    this.sprite.anchor.set(0.5, 0.9); // Foot placement anchor
   }
 
   public override containsPointInEditor(p: Vector2D): boolean {
     if (this.points && this.points.length >= 3) {
       return super.containsPointInEditor(p);
     }
-    const hw = (this.data.frameWidth * (this.data.scale || 1)) / 2;
-    const hh = this.data.frameHeight * (this.data.scale || 1);
-    const minX = this.position.x - hw;
-    const maxX = this.position.x + hw;
-    const minY = this.position.y - hh;
-    const maxY = this.position.y;
-    return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+    if (this.visualizer) {
+      const localPoint = {
+        x: (p.x - this.position.x) / (this.data.scale || 1),
+        y: (p.y - this.position.y) / (this.data.scale || 1)
+      };
+      if (this.isFacingLeft) localPoint.x = -localPoint.x;
+      return this.visualizer.containsPoint(localPoint);
+    }
+    const fw = (this.data.frameWidth || 64) * (this.data.scale || 1);
+    const fh = (this.data.frameHeight || 96) * (this.data.scale || 1);
+    const hw = fw / 2;
+    return p.x >= this.position.x - hw && p.x <= this.position.x + hw && p.y >= this.position.y - fh && p.y <= this.position.y;
   }
 
   public async init(): Promise<void> {
-    const assetManager = AssetManager.getInstance();
-    this.textureSheet = await assetManager.loadTexture(this.data.spriteSheetUrl);
     const pos = this.data.position || { x: 0, y: 0 };
     this.container.x = pos.x;
     this.container.y = pos.y;
     this.container.scale.set(this.data.scale || 1);
-    this.updateSpriteFrame();
+
+    if (!this.visualizer) {
+      this.visualizer = CharacterVisualFactory.create(this.data);
+    }
+
+    await this.visualizer.init();
+    if ((this.visualizer as any)?.sprite) {
+      this.sprite = (this.visualizer as any).sprite;
+    }
+    if (!this.container.children.includes(this.visualizer.container)) {
+      this.container.addChild(this.visualizer.container);
+    }
+  }
+
+  public async setVisualizer(visualizer: ICharacterVisualizer): Promise<void> {
+    if (this.visualizer) {
+      if (this.container.children.includes(this.visualizer.container)) {
+        this.container.removeChild(this.visualizer.container);
+      }
+      this.visualizer.destroy();
+    }
+    this.visualizer = visualizer;
+    await this.visualizer.init();
+    if ((this.visualizer as any)?.sprite) {
+      this.sprite = (this.visualizer as any).sprite;
+    }
+    this.container.addChild(this.visualizer.container);
   }
 
   public faceTarget(target: Vector2D): void {
     const current = { x: this.container.x, y: this.container.y };
     this.direction8Way = calculate8WayDirection(current, target);
     this.isFacingLeft = this.direction8Way === 'left' || this.direction8Way === 'up_left' || this.direction8Way === 'down_left';
-    this.updateSpriteFrame();
+    this.updateVisualizer(0);
   }
 
   public walkTo(target: Vector2D, walkPath?: WalkPath, onComplete?: () => void): void {
@@ -104,7 +132,6 @@ export class Character extends MovableElement {
 
   public talk(onComplete?: () => void): void {
     this.state = 'talking';
-    this.animFrame = 0;
     this.currentCustomAnimKey = null;
     setTimeout(() => {
       if (this.state === 'talking') {
@@ -117,7 +144,6 @@ export class Character extends MovableElement {
   public playCustomAnimation(animName: string, durationMs = 1500, onComplete?: () => void): void {
     this.state = 'custom_anim';
     this.currentCustomAnimKey = animName;
-    this.animFrame = 0;
     if (this.customAnimTimer) clearTimeout(this.customAnimTimer);
     this.customAnimTimer = setTimeout(() => {
       this.state = 'idle';
@@ -144,7 +170,7 @@ export class Character extends MovableElement {
   public update(delta: number, walkPath?: WalkPath): void {
     if (!this.container || (this.container as any).destroyed || !this.container.position) return;
 
-    // Movement logic
+    // Movement logic along path
     if (this.state === 'walking' && this.path.length > 0) {
       const target = this.path[this.currentPathIndex];
       const dx = target.x - this.container.x;
@@ -176,7 +202,6 @@ export class Character extends MovableElement {
         this.container.x += vx;
         this.container.y += vy;
 
-        // Determine 8-way facing direction
         this.direction8Way = calculate8WayDirection({ x: 0, y: 0 }, { x: dx, y: dy });
         this.isFacingLeft = this.direction8Way === 'left' || this.direction8Way === 'up_left' || this.direction8Way === 'down_left';
       }
@@ -185,95 +210,42 @@ export class Character extends MovableElement {
     if (!this.container || (this.container as any).destroyed || !this.container.position) return;
 
     // Perspective scaling based on WalkPath Y position
+    let walkPathScale = 1;
     if (walkPath) {
-      const calculatedScale = walkPath.getScaleAt(this.container.y);
-      const finalScale = calculatedScale * this.data.scale;
+      walkPathScale = walkPath.getScaleAt(this.container.y);
+      const finalScale = walkPathScale * this.data.scale;
       this.container.scale.set(this.isFacingLeft ? -finalScale : finalScale, finalScale);
     } else {
       this.container.scale.set(this.isFacingLeft ? -this.data.scale : this.data.scale, this.data.scale);
     }
 
-    // Animation frame update
-    this.animTimer += delta;
-    if (this.animTimer >= this.animSpeed) {
-      this.animTimer = 0;
-      this.animFrame++;
-      this.updateSpriteFrame();
-    }
-
     (this.container as any).depthY = this.getDepthY();
+
+    this.updateVisualizer(delta, walkPathScale);
+  }
+
+  private getRenderState(walkPathScale = 1): CharacterRenderState {
+    return {
+      state: this.state,
+      direction8Way: this.direction8Way,
+      isFacingLeft: this.isFacingLeft,
+      currentCustomAnimKey: this.currentCustomAnimKey,
+      holdingItemId: this.data.currentHoldingItemId,
+      scale: this.data.scale,
+      depthY: this.getDepthY(),
+      walkPathScale
+    };
+  }
+
+  private updateVisualizer(delta: number, walkPathScale = 1): void {
+    if (!this.visualizer) return;
+    this.visualizer.update(delta, this.getRenderState(walkPathScale));
   }
 
   public getDepthY(): number {
     if (this.data.depthY !== undefined) return this.data.depthY;
     if (!this.container || (this.container as any).destroyed || !this.container.position) return 0;
     return this.container.y;
-  }
-
-  private resolveAnimFrames(animEntry: AnimFrameRef[] | AnimationClipConfig | undefined): AnimFrameRef[] {
-    if (!animEntry) return [0];
-    if (Array.isArray(animEntry)) return animEntry.length > 0 ? animEntry : [0];
-    return animEntry.frames && animEntry.frames.length > 0 ? animEntry.frames : [0];
-  }
-
-  private updateSpriteFrame(): void {
-    if (!this.textureSheet) return;
-
-    const anims = this.data.animations || {};
-    let frames: AnimFrameRef[] = [0];
-
-    const dir = this.direction8Way;
-    const dir4 = (dir === 'left' || dir === 'right' || dir.includes('side')) ? 'side' : (dir.includes('up') ? 'up' : 'down');
-
-    if (this.currentCustomAnimKey && anims[this.currentCustomAnimKey]) {
-      frames = this.resolveAnimFrames(anims[this.currentCustomAnimKey]);
-    } else if (this.state === 'walking') {
-      frames = this.resolveAnimFrames(
-        anims[`walk_${dir}`] || anims[`walk_${dir4}`] || (dir4 === 'side' ? anims.walkSide : (dir4 === 'up' ? anims.walkUp : anims.walkDown))
-      );
-    } else if (this.state === 'talking') {
-      frames = this.resolveAnimFrames(
-        anims[`talk_${dir}`] || anims[`talk_${dir4}`] || anims.talk
-      );
-    } else if (this.state === 'picking_up') {
-      frames = this.resolveAnimFrames(
-        anims[`pick_up_${dir}`] || anims['pick_up']
-      );
-    } else if (this.data.currentHoldingItemId && anims[`hold_${this.data.currentHoldingItemId}`]) {
-      frames = this.resolveAnimFrames(anims[`hold_${this.data.currentHoldingItemId}`]);
-    } else if (anims['hold_item']) {
-      frames = this.resolveAnimFrames(anims['hold_item']);
-    } else {
-      frames = this.resolveAnimFrames(
-        anims[`idle_${dir}`] || anims[`idle_${dir4}`] || (dir4 === 'side' ? anims.idleSide : (dir4 === 'up' ? anims.idleUp : anims.idleDown))
-      );
-    }
-
-    if (!frames || frames.length === 0) frames = [0];
-    const currentFrame = frames[this.animFrame % frames.length];
-
-    let frameRect: PIXI.Rectangle;
-    if (typeof currentFrame === 'object' && currentFrame !== null && 'x' in currentFrame) {
-      // Custom drawn bounding rectangle frame!
-      const f = currentFrame as any;
-      frameRect = new PIXI.Rectangle(f.x, f.y, f.w, f.h);
-    } else {
-      // Grid index frame
-      const frameIndex = typeof currentFrame === 'number' ? currentFrame : 0;
-      const texWidth = this.textureSheet.width || 256;
-      const cols = Math.max(1, Math.floor(texWidth / (this.data.frameWidth || 64)));
-      const fw = this.data.frameWidth || 64;
-      const fh = this.data.frameHeight || 64;
-      const col = frameIndex % cols;
-      const row = Math.floor(frameIndex / cols);
-
-      frameRect = new PIXI.Rectangle(col * fw, row * fh, fw, fh);
-    }
-
-    this.sprite.texture = new PIXI.Texture({
-      source: this.textureSheet.source,
-      frame: frameRect
-    });
   }
 
   public getBestAction(activeVerb?: VerbType, selectedItemId?: string | null): HotspotAction | undefined {
@@ -307,7 +279,6 @@ export class Character extends MovableElement {
       if (matched) return matched;
     }
 
-    // Default fallback: First valid action in user-defined order
     return this.data.actions.find(a => {
       if (a.requireItemId && !selectedItemId) return false;
       if (a.requiredFlag && !storySystem?.getFlag(a.requiredFlag)) return false;
@@ -319,21 +290,26 @@ export class Character extends MovableElement {
   public freezeFrame(walkPath?: WalkPath): void {
     if (!this.container || (this.container as any).destroyed || !this.container.position) return;
     this.state = 'idle';
-    this.animFrame = 0;
     const pos = this.data.position || { x: 0, y: 0 };
     this.container.x = pos.x;
     this.container.y = pos.y;
+    let walkPathScale = 1;
     if (walkPath) {
-      const calculatedScale = walkPath.getScaleAt(this.container.y);
-      const finalScale = calculatedScale * (this.data.scale || 1);
+      walkPathScale = walkPath.getScaleAt(this.container.y);
+      const finalScale = walkPathScale * (this.data.scale || 1);
       this.container.scale.set(this.isFacingLeft ? -finalScale : finalScale, finalScale);
     } else {
       this.container.scale.set(this.isFacingLeft ? -(this.data.scale || 1) : (this.data.scale || 1), this.data.scale || 1);
     }
-    this.updateSpriteFrame();
+    if (this.visualizer) {
+      this.visualizer.freezeFrame(this.getRenderState(walkPathScale));
+    }
   }
 
   public destroy(): void {
+    if (this.visualizer) {
+      this.visualizer.destroy();
+    }
     this.container.destroy({ children: true, texture: false });
   }
 }

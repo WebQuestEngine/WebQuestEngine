@@ -174,8 +174,9 @@ export class CanvasGizmoRenderer {
       if (charObj) {
         const cx = charObj.container.x;
         const cy = charObj.container.y;
-        const hw = (charObj.data.frameWidth * charObj.data.scale) / 2;
-        const hh = charObj.data.frameHeight * charObj.data.scale;
+        const bounds = charObj.visualizer ? charObj.visualizer.getBounds() : { width: charObj.data.frameWidth || 64, height: charObj.data.frameHeight || 96 };
+        const hw = (bounds.width * charObj.data.scale) / 2;
+        const hh = bounds.height * charObj.data.scale;
         debugOverlay.rect(cx - hw, cy - hh, hw * 2, hh);
         debugOverlay.stroke({ color: 0x8b5cf6, width: 3, alpha: 0.9 });
         debugOverlay.fill({ color: 0x8b5cf6, alpha: 0.12 });

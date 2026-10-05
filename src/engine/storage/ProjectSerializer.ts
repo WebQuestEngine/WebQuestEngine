@@ -1,4 +1,4 @@
-import { ProjectData, UIPresetType } from '../types';
+import { ProjectData, UIPresetType, resolveCharacterVisualConfig } from '../types';
 
 export class ProjectSerializer {
   public static serialize(project: ProjectData): string {
@@ -44,6 +44,7 @@ export class ProjectSerializer {
             const newDef = {
               id: charId,
               name: ch.name || (charId === 'player' ? 'Hero' : charId),
+              visual: ch.visual || resolveCharacterVisualConfig(ch),
               spriteSheetUrl: ch.spriteSheetUrl || '',
               frameWidth: ch.frameWidth || 64,
               frameHeight: ch.frameHeight || 96,

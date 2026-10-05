@@ -1,26 +1,75 @@
 <!-- CharacterInspector.html — Character properties tab -->
 <!-- Used by: EntityInspectors.template.ts -->
-<!-- Slots: {{cIdx}}, {{charId}}, {{name}}, {{thumbnailHTML}}, {{spriteSheetUrl}},
-            {{posX}}, {{posY}}, {{scale}}, {{speed}}, {{spritesheetrows}}, {{spritesheetcols}},
-            {{depthY}}, {{animationsHTML}} -->
 <div class="sidebar-section">
   <div class="form-group">
     <label>Character Name</label>
     <input type="text" class="form-input char-name" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{name}}" style="font-weight:700;" />
   </div>
-  <div class="form-group">
-    <label>Sprite Sheet Path / Upload</label>
-    <div style="display:flex; gap:8px; align-items:center;">
-      {{thumbnailHTML}}
-      <input type="text" class="form-input char-spritesheet" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spriteSheetUrl}}"
-        style="flex:1;" />
-      <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
-        📁
-        <input type="file" class="char-file-input" data-idx="{{cIdx}}" data-charid="{{charId}}" accept="image/*" style="display:none;" />
-      </label>
+
+  <!-- Visualization System Switcher -->
+  <div class="form-group" style="margin-top:10px;">
+    <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Visual System</label>
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:4px; margin-top:4px;">
+      <button type="button" class="btn btn-visual-type {{isSpriteSheetActive}}" data-idx="{{cIdx}}" data-charid="{{charId}}" data-type="spritesheet" style="font-size:0.75rem; padding:5px 4px;">🖼️ Sprite</button>
+      <button type="button" class="btn btn-visual-type {{isProceduralActive}}" data-idx="{{cIdx}}" data-charid="{{charId}}" data-type="procedural" style="font-size:0.75rem; padding:5px 4px;">🧬 Procedural</button>
+      <button type="button" class="btn btn-visual-type {{isSkeletalActive}}" data-idx="{{cIdx}}" data-charid="{{charId}}" data-type="skeletal" style="font-size:0.75rem; padding:5px 4px;">🦴 Skeletal</button>
     </div>
   </div>
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+
+  <!-- Procedural Studio Panel -->
+  <div class="visual-panel-procedural" style="display:{{proceduralDisplayStyle}};">
+    <div style="background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--panel-border); margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.75rem; color:#38bdf8; font-weight:700;">🧬 Procedural Character</span>
+        <span style="font-size:0.7rem; color:var(--text-muted);">Archetype: <strong style="color:#ffffff;">{{proceduralArchetype}}</strong></span>
+      </div>
+      <button type="button" class="btn btn-primary btn-open-procedural-editor" data-idx="{{cIdx}}" data-charid="{{charId}}" style="width:100%; font-size:0.8rem; padding:7px; background:#2563eb; color:#ffffff; font-weight:700;">
+        🎨 Open Procedural Character Studio
+      </button>
+    </div>
+  </div>
+
+  <!-- Skeletal Studio Panel -->
+  <div class="visual-panel-skeletal" style="display:{{skeletalDisplayStyle}};">
+    <div style="background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--panel-border); margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.75rem; color:#38bdf8; font-weight:700;">🦴 2D Skeletal Animation</span>
+        <span style="font-size:0.7rem; color:var(--text-muted);">Bones: <strong style="color:#ffffff;">{{skeletalBoneCount}}</strong></span>
+      </div>
+      <button type="button" class="btn btn-primary btn-open-skeletal-editor" data-idx="{{cIdx}}" data-charid="{{charId}}" style="width:100%; font-size:0.8rem; padding:7px; background:#0284c7; color:#ffffff; font-weight:700;">
+        🦴 Import / Configure Skeletal Rig
+      </button>
+    </div>
+  </div>
+
+  <!-- SpriteSheet Panel -->
+  <div class="visual-panel-spritesheet" style="display:{{spritesheetDisplayStyle}};">
+    <div class="form-group" style="margin-top:10px;">
+      <label>Sprite Sheet Path / Upload</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        {{thumbnailHTML}}
+        <input type="text" class="form-input char-spritesheet" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spriteSheetUrl}}"
+          style="flex:1;" />
+        <label class="btn btn-primary" style="padding:6px 10px; cursor:pointer;">
+          📁
+          <input type="file" class="char-file-input" data-idx="{{cIdx}}" data-charid="{{charId}}" accept="image/*" style="display:none;" />
+        </label>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px;">
+      <div>
+        <label style="font-size:0.65rem; color:var(--text-muted);">Rows</label>
+        <input type="number" class="form-input char-fw" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spritesheetRows}}" />
+      </div>
+      <div>
+        <label style="font-size:0.65rem; color:var(--text-muted);">Columns</label>
+        <input type="number" class="form-input char-fh" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spritesheetCols}}" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Common Spatial & Movement Properties -->
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px;">
     <div>
       <label style="font-size:0.65rem; color:var(--text-muted);">Position X</label>
       <input type="number" class="form-input char-pos-x" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{posX}}" />
@@ -37,23 +86,15 @@
       <label style="font-size:0.65rem; color:var(--text-muted);">Speed</label>
       <input type="number" class="form-input char-speed" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{speed}}" />
     </div>
-    <div>
-      <label style="font-size:0.65rem; color:var(--text-muted);">Rows</label>
-      <input type="number" class="form-input char-fw" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spritesheetRows}}" />
-    </div>
-    <div>
-      <label style="font-size:0.65rem; color:var(--text-muted);">Columns</label>
-      <input type="number" class="form-input char-fh" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{spritesheetCols}}" />
-    </div>
     <div style="grid-column: span 2;">
-      <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet
-        Y)</label>
+      <label style="font-size:0.65rem; color:#06b6d4; font-weight:700;">Depth Y / Z-Sort (Leave empty for Auto Feet Y)</label>
       <input type="number" class="form-input char-depth-y" data-idx="{{cIdx}}" data-charid="{{charId}}" value="{{depthY}}"
         placeholder="Auto (Feet Y)" />
     </div>
   </div>
 </div>
-<div class="sidebar-section">
+
+<div class="sidebar-section visual-panel-spritesheet" style="display:{{spritesheetDisplayStyle}};">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <div class="sidebar-section-title" style="margin-bottom:0;">🎬 Sprite Sheet Animation Clips ({{animCount}})</div>
     <button class="btn btn-primary btn-add-char-anim" data-idx="{{cIdx}}" data-charid="{{charId}}" style="font-size:0.7rem; padding:3px 6px;">+

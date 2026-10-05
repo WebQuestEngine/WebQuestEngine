@@ -34,6 +34,13 @@ export interface InventoryItemData {
 
 export type Direction8Way = 'down' | 'down_right' | 'right' | 'up_right' | 'up' | 'up_left' | 'left' | 'down_left';
 
+export interface CharacterAnimFrame {
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+}
+
 export type AnimFrameRef = number | CharacterAnimFrame;
 
 export interface AnimationClipConfig {
@@ -249,19 +256,169 @@ export interface HotspotData {
   examined?: boolean;
 }
 
-export interface CharacterAnimFrame {
+export type CharacterVisualType = 'spritesheet' | 'procedural' | 'skeletal' | string;
+
+export interface SpriteSheetVisualConfig {
+  type: 'spritesheet';
+  spriteSheetUrl: string;
+  frameWidth: number;
+  frameHeight: number;
+  rows?: number;
+  cols?: number;
+  gridOffsetX?: number;
+  gridOffsetY?: number;
+  animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
+}
+
+export interface ProceduralVisualConfig {
+  type: 'procedural';
+  archetype: 'humanoid' | 'robot' | 'chibi' | 'creature';
+  palette: {
+    skin: string;
+    hair: string;
+    torso: string;
+    legs: string;
+    feet: string;
+    accent: string;
+    eyes?: string;
+  };
+  proportions: {
+    headScale: number;
+    bodyWidth: number;
+    bodyHeight: number;
+    limbLength: number;
+    limbThickness: number;
+  };
+  features?: {
+    hat?: boolean;
+    glasses?: boolean;
+    beard?: boolean;
+    backpack?: boolean;
+  };
+}
+
+export interface SkeletalBoneData {
+  name: string;
+  parent?: string;
+  length?: number;
   x: number;
   y: number;
-  // w: number;
-  // h: number;
+  rotation?: number; // degrees
+  scaleX?: number;
+  scaleY?: number;
+}
+
+export interface SkeletalSlotData {
+  name: string;
+  bone: string;
+  attachment?: string;
+  color?: string;
+}
+
+export interface SkeletalAttachmentData {
+  name: string;
+  type?: 'region' | 'mesh' | 'shape';
+  x?: number;
+  y?: number;
+  scaleX?: number;
+  scaleY?: number;
+  rotation?: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  textureUrl?: string;
+}
+
+export interface SkeletalKeyframe {
+  time: number; // in seconds
+  x?: number;
+  y?: number;
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+}
+
+export interface SkeletalAnimationTrack {
+  duration: number; // in seconds
+  bones: Record<string, {
+    rotate?: SkeletalKeyframe[];
+    translate?: SkeletalKeyframe[];
+    scale?: SkeletalKeyframe[];
+  }>;
+}
+
+export interface SkeletalRigData {
+  bones: SkeletalBoneData[];
+  slots: SkeletalSlotData[];
+  attachments: Record<string, Record<string, SkeletalAttachmentData>>;
+}
+
+export interface SkeletalVisualConfig {
+  type: 'skeletal';
+  format: 'spine' | 'dragonbones' | 'native';
+  textureUrl?: string;
+  skeleton: SkeletalRigData;
+  animations: Record<string, SkeletalAnimationTrack>;
+  defaultAnimation?: string;
+  skin?: string;
+}
+
+export type CharacterVisualConfig =
+  | SpriteSheetVisualConfig
+  | ProceduralVisualConfig
+  | SkeletalVisualConfig;
+
+export function resolveCharacterVisualConfig(data: Partial<CharacterData>): CharacterVisualConfig {
+  if (data.visual && typeof data.visual === 'object' && 'type' in data.visual) {
+    return data.visual as CharacterVisualConfig;
+  }
+
+  const rawUrl = data.spriteSheetUrl || '';
+  if (rawUrl.startsWith('procedural:')) {
+    const archetype = (rawUrl.replace('procedural:', '') || 'humanoid') as any;
+    return {
+      type: 'procedural',
+      archetype: ['humanoid', 'robot', 'chibi', 'creature'].includes(archetype) ? archetype : 'humanoid',
+      palette: {
+        skin: '#fde047',
+        hair: '#92400e',
+        torso: '#3b82f6',
+        legs: '#1e293b',
+        feet: '#0f172a',
+        accent: '#e11d48',
+        eyes: '#0f172a'
+      },
+      proportions: {
+        headScale: 1,
+        bodyWidth: 32,
+        bodyHeight: 48,
+        limbLength: 30,
+        limbThickness: 10
+      },
+      features: {}
+    };
+  }
+
+  return {
+    type: 'spritesheet',
+    spriteSheetUrl: data.spriteSheetUrl || '',
+    frameWidth: data.frameWidth || 64,
+    frameHeight: data.frameHeight || 96,
+    rows: data.rows,
+    cols: data.cols,
+    gridOffsetX: data.gridOffsetX,
+    gridOffsetY: data.gridOffsetY,
+    animations: data.animations || {}
+  };
 }
 
 export interface CharacterData {
   id: string;
   name: string;
-  spriteSheetUrl: string;
-  frameWidth: number;
-  frameHeight: number;
+  visual?: CharacterVisualConfig;
+  spriteSheetUrl?: string;
+  frameWidth?: number;
+  frameHeight?: number;
   rows?: number;
   cols?: number;
   gridOffsetX?: number;
@@ -276,7 +433,7 @@ export interface CharacterData {
   customCursorHotspotY?: number;
   actions?: HotspotAction[];
   currentHoldingItemId?: string;
-  animations: Record<string, AnimFrameRef[] | AnimationClipConfig>;
+  animations?: Record<string, AnimFrameRef[] | AnimationClipConfig>;
   locked?: boolean;
   depthY?: number;
   portraitUrl?: string;

@@ -598,6 +598,7 @@ export class VisualSpritePickerModal {
 
     overlay.querySelector('#btn-picker-save')?.addEventListener('click', () => {
       saveCharacterGridConfig();
+      if (!char.animations) char.animations = {};
       char.animations[animKey] = rawFrames.length > 0 ? rawFrames : [0];
       VisualSpritePickerModal.syncCharacterAcrossScenes(project, char);
       if (previewTimer) clearInterval(previewTimer);

@@ -5,6 +5,8 @@ import { resolvePickedAssetPath, handleFileInputChange, getThumbnailHTML, normal
 import { ActionRulesInspector } from './ActionRulesInspector';
 import { VisualCursorHotspotModal } from '../VisualCursorHotspotModal';
 import { VisualSpritePickerModal } from '../VisualSpritePickerModal';
+import { ProceduralCharacterEditorModal } from '../ProceduralCharacterEditorModal';
+import { SkeletalCharacterModal } from '../SkeletalCharacterModal';
 import {
   DialogTabInspectorTemplate,
   HotspotInspectorTemplate,
@@ -399,6 +401,101 @@ export class CharacterInspector {
         const charObj = (window as any).engine?.currentScene?.characters?.get(charId);
         if (charObj) charObj.data.name = val;
         onUpdate();
+      });
+    });
+
+    container.querySelectorAll('.btn-visual-type').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const { def, placement } = resolveChar(e.target as HTMLElement);
+        const targetType = (e.target as HTMLElement).getAttribute('data-type');
+        if (!def || !targetType) return;
+
+        if (targetType === 'procedural') {
+          if (!def.visual || def.visual.type !== 'procedural') {
+            def.visual = {
+              type: 'procedural',
+              archetype: 'humanoid',
+              palette: { skin: '#fed7aa', hair: '#78350f', torso: '#2563eb', legs: '#1e293b', feet: '#0f172a', accent: '#e11d48', eyes: '#0f172a' },
+              proportions: { headScale: 1, bodyWidth: 32, bodyHeight: 48, limbLength: 30, limbThickness: 10 },
+              features: {}
+            };
+            def.spriteSheetUrl = 'procedural:humanoid';
+          }
+        } else if (targetType === 'skeletal') {
+          if (!def.visual || def.visual.type !== 'skeletal') {
+            def.visual = {
+              type: 'skeletal',
+              format: 'native',
+              skeleton: {
+                bones: [
+                  { name: 'root', x: 0, y: 0 },
+                  { name: 'hip', parent: 'root', x: 0, y: -45, length: 15 },
+                  { name: 'spine', parent: 'hip', x: 0, y: -20, length: 25 },
+                  { name: 'head', parent: 'spine', x: 0, y: -30, length: 20 },
+                  { name: 'left_arm', parent: 'spine', x: -16, y: -25, length: 22, rotation: 25 },
+                  { name: 'right_arm', parent: 'spine', x: 16, y: -25, length: 22, rotation: -25 },
+                  { name: 'left_leg', parent: 'hip', x: -10, y: 0, length: 35, rotation: 10 },
+                  { name: 'right_leg', parent: 'hip', x: 10, y: 0, length: 35, rotation: -10 }
+                ],
+                slots: [
+                  { name: 'head_slot', bone: 'head', color: '#f59e0b' },
+                  { name: 'body_slot', bone: 'spine', color: '#3b82f6' }
+                ],
+                attachments: { default: {} }
+              },
+              animations: {
+                idle: { duration: 1.6, bones: { spine: { rotate: [{ time: 0, rotation: 0 }, { time: 0.8, rotation: 3 }, { time: 1.6, rotation: 0 }] } } }
+              },
+              defaultAnimation: 'idle'
+            };
+          }
+        } else {
+          if (!def.visual || def.visual.type !== 'spritesheet') {
+            def.visual = {
+              type: 'spritesheet',
+              spriteSheetUrl: def.spriteSheetUrl && !def.spriteSheetUrl.startsWith('procedural:') ? def.spriteSheetUrl : '',
+              frameWidth: def.frameWidth || 64,
+              frameHeight: def.frameHeight || 96,
+              animations: def.animations || {}
+            };
+          }
+        }
+
+        if (placement) (placement as any).visual = def.visual;
+        onReRender();
+        onUpdate();
+      });
+    });
+
+    container.querySelectorAll('.btn-open-procedural-editor').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const { def } = resolveChar(e.target as HTMLElement);
+        if (def) {
+          ProceduralCharacterEditorModal.open({
+            character: def,
+            project,
+            onSave: () => {
+              onReRender();
+              onUpdate();
+            }
+          });
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-open-skeletal-editor').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const { def } = resolveChar(e.target as HTMLElement);
+        if (def) {
+          SkeletalCharacterModal.open({
+            character: def,
+            project,
+            onSave: () => {
+              onReRender();
+              onUpdate();
+            }
+          });
+        }
       });
     });
 

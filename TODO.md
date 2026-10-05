@@ -97,7 +97,8 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ---
 
 ## 🎭 13. Character Visualization System
-- [ ] **Decouple Character Visuals and Animations from Data**: Separate character visual representation and animation from character data into a dedicated character visualization system, allowing games to use different systems for rendering characters (e.g. spritesheets, skeletal animation, procedural meshes).
+- [x] **Decouple Character Visuals and Animations from Data**: Separate character visual representation and animation from character data into a dedicated character visualization system, allowing games to use different systems for rendering characters (e.g. spritesheets, skeletal animation, procedural meshes).
+- [ ] **Create Editors for Each Visualization System**: Provide dedicated in-editor configuration tools, inspectors, and studio modals for each visualization system (Sprite Sheet picker, Procedural Character Studio, and Skeletal Rig Importer & Studio).
 
 ---
 

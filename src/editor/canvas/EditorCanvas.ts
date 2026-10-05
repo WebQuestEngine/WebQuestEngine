@@ -432,8 +432,9 @@ export class EditorCanvas {
       if (charObj) {
         const cx = charObj.container.x;
         const cy = charObj.container.y;
-        const hw = (charObj.data.frameWidth * charObj.data.scale) / 2;
-        const hh = charObj.data.frameHeight * charObj.data.scale;
+        const bounds = charObj.visualizer ? charObj.visualizer.getBounds() : { width: charObj.data.frameWidth || 64, height: charObj.data.frameHeight || 96 };
+        const hw = (bounds.width * charObj.data.scale) / 2;
+        const hh = bounds.height * charObj.data.scale;
         const handles = [
           { x: cx - hw, y: cy - hh },
           { x: cx + hw, y: cy - hh },
@@ -755,7 +756,8 @@ export class EditorCanvas {
           if (this.isScaling) {
             const cx = charData.position.x;
             const cy = charData.position.y;
-            const hh = (charObj.data.frameHeight * this.dragInitialScale) / 2;
+            const bounds = charObj.visualizer ? charObj.visualizer.getBounds() : { width: charObj.data.frameWidth || 64, height: charObj.data.frameHeight || 96 };
+            const hh = (bounds.height * this.dragInitialScale) / 2;
             const currentDist = Math.hypot(worldPt.x - cx, worldPt.y - (cy - hh));
             const scaleFactor = currentDist / (this.dragInitialDist || 1);
             const newScale = Math.max(0.1, Math.min(5, Math.round(this.dragInitialScale * scaleFactor * 100) / 100));

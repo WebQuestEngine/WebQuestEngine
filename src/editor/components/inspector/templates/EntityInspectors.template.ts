@@ -150,10 +150,28 @@ export class CharacterInspectorTemplate {
         </div>`;
     }).join('');
 
+    const visualType = char.visual?.type || (char.spriteSheetUrl?.startsWith('procedural:') ? 'procedural' : 'spritesheet');
+    const isSpriteSheetActive = visualType === 'spritesheet' ? 'btn-primary' : 'btn-secondary';
+    const isProceduralActive = visualType === 'procedural' ? 'btn-primary' : 'btn-secondary';
+    const isSkeletalActive = visualType === 'skeletal' ? 'btn-primary' : 'btn-secondary';
+    const spritesheetDisplayStyle = visualType === 'spritesheet' ? 'block' : 'none';
+    const proceduralDisplayStyle = visualType === 'procedural' ? 'block' : 'none';
+    const skeletalDisplayStyle = visualType === 'skeletal' ? 'block' : 'none';
+    const proceduralArchetype = (char.visual as any)?.archetype || 'humanoid';
+    const skeletalBoneCount = (char.visual as any)?.skeleton?.bones?.length || 0;
+
     return TemplateUtils.populate(characterHtml, {
       cIdx,
       charId: char.id,
       name: TemplateUtils.escapeHtml(char.name),
+      isSpriteSheetActive,
+      isProceduralActive,
+      isSkeletalActive,
+      spritesheetDisplayStyle,
+      proceduralDisplayStyle,
+      skeletalDisplayStyle,
+      proceduralArchetype: TemplateUtils.escapeHtml(proceduralArchetype),
+      skeletalBoneCount,
       thumbnailHTML: getThumbnailHTML(char.spriteSheetUrl),
       spriteSheetUrl: TemplateUtils.escapeHtml(char.spriteSheetUrl),
       posX,
