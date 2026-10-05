@@ -99,7 +99,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        player: path.resolve(__dirname, 'player.html')
+        player: path.resolve(__dirname, 'player.html'),
+        rigStudio: path.resolve(__dirname, 'rig-studio.html')
       }
     }
   }

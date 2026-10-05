@@ -357,6 +357,7 @@ export interface SkeletalVisualConfig {
   type: 'skeletal';
   format: 'spine' | 'dragonbones' | 'native';
   textureUrl?: string;
+  spineDoc?: any;
   skeleton: SkeletalRigData;
   animations: Record<string, SkeletalAnimationTrack>;
   defaultAnimation?: string;
