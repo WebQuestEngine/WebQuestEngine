@@ -165,12 +165,27 @@ export class KeyframeTimeline {
     this.duration = this.computeAnimDuration(this.doc.animations[this.activeAnimKey]);
   }
 
+  private boundOnResize = () => {
+    this.renderRuler();
+    this.renderTracks();
+    this.updatePlayheadPosition();
+  };
+
+  private getTrackWidth(): number {
+    const containerWidth = this.container.clientWidth || 500;
+    const minWidthByDuration = Math.round(this.duration * 200);
+    const minTrackWidth = Math.max(600, minWidthByDuration);
+    return Math.max(minTrackWidth, containerWidth - 180);
+  }
+
   public render(): void {
     const animNames = Object.keys(this.doc.animations);
+    const trackWidth = this.getTrackWidth();
+    const totalWidth = 180 + trackWidth;
 
     this.container.innerHTML = `
-      <div class="timeline-toolbar">
-        <div class="tool-group">
+      <div class="timeline-toolbar" style="overflow-x:auto; overflow-y:hidden;">
+        <div class="tool-group" style="flex-shrink:0;">
           <button class="tool-btn btn-play-toggle">
             <span>${this.isPlaying ? '⏸' : '▶'}</span> ${this.isPlaying ? 'Pause' : 'Play'}
           </button>
@@ -178,37 +193,46 @@ export class KeyframeTimeline {
           <button class="tool-btn btn-step-back" title="Previous Frame">⏮</button>
           <button class="tool-btn btn-step-fwd" title="Next Frame">⏭</button>
           <div class="tool-separator"></div>
-          <span style="font-family:var(--studio-font-mono); font-size:0.75rem; color:#38bdf8;">
+          <span style="font-family:var(--studio-font-mono); font-size:0.75rem; color:#38bdf8; white-space:nowrap;">
             <span id="time-current-label">0.00s</span> / <span id="time-duration-label">${this.duration.toFixed(2)}s</span>
           </span>
         </div>
 
-        <div class="tool-group">
+        <div class="tool-group" style="flex-shrink:0;">
           <span style="font-size:0.7rem; color:var(--studio-text-muted);">Clip:</span>
           <select class="studio-select select-timeline-clip" style="padding:2px 6px;">
             ${animNames.map(k => `<option value="${k}" ${k === this.activeAnimKey ? 'selected' : ''}>${k}</option>`).join('')}
           </select>
           <button class="tool-btn btn-add-clip" title="New Animation Clip">＋ Clip</button>
           <div class="tool-separator"></div>
-          <label style="font-size:0.7rem; color:var(--studio-text-muted); display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <label style="font-size:0.7rem; color:var(--studio-text-muted); display:flex; align-items:center; gap:4px; cursor:pointer; white-space:nowrap;">
             <input type="checkbox" class="chk-loop" ${this.isLooping ? 'checked' : ''} /> Loop
           </label>
         </div>
       </div>
 
-      <!-- Tracks Viewport -->
-      <div class="timeline-viewport" style="flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; background:#040814;">
-        <!-- Time Ruler -->
-        <div class="timeline-ruler" style="height:24px; background:#0b1120; border-bottom:1px solid var(--studio-border); position:relative; cursor:pointer;">
-          <canvas id="ruler-canvas" style="width:100%; height:100%;"></canvas>
-          <div id="playhead-line" style="position:absolute; top:0; bottom:-500px; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:180px;">
-            <div style="width:10px; height:10px; background:#ef4444; transform:translateX(-4px) rotate(45deg); border-radius:2px;"></div>
+      <!-- Tracks Viewport (Scrollable in both X and Y) -->
+      <div class="timeline-viewport" style="flex:1; overflow:auto; position:relative; background:#040814;">
+        <div class="timeline-scroll-content" style="min-width:${totalWidth}px; width:max-content; min-height:100%; display:flex; flex-direction:column; position:relative;">
+          <!-- Time Ruler -->
+          <div class="timeline-ruler-wrapper" style="position:sticky; top:0; z-index:30; background:#0b1120; border-bottom:1px solid var(--studio-border); height:24px; display:flex;">
+            <!-- Sticky Corner Header -->
+            <div class="timeline-corner-header" style="position:sticky; left:0; width:180px; min-width:180px; height:100%; background:#0b1120; z-index:40; border-right:1px solid var(--studio-border); display:flex; align-items:center; padding:0 8px; font-size:0.7rem; color:var(--studio-text-muted); font-weight:700; letter-spacing:0.04em;">
+              BONES / TRACKS
+            </div>
+            <!-- Ruler Scrub Area -->
+            <div class="timeline-ruler" style="width:${trackWidth}px; min-width:${trackWidth}px; height:100%; position:relative; cursor:pointer;">
+              <canvas id="ruler-canvas" style="display:block; width:100%; height:100%;"></canvas>
+              <div id="playhead-line" style="position:absolute; top:0; bottom:-1000px; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:0px;">
+                <div style="width:10px; height:10px; background:#ef4444; transform:translateX(-4px) rotate(45deg); border-radius:2px;"></div>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <!-- Tracks List -->
-        <div class="timeline-tracks-list" style="flex:1; overflow-y:auto; position:relative;">
-          <!-- Dynamically populated -->
+          <!-- Tracks List -->
+          <div class="timeline-tracks-list" style="flex:1; position:relative;">
+            <!-- Dynamically populated -->
+          </div>
         </div>
       </div>
     `;
@@ -223,35 +247,28 @@ export class KeyframeTimeline {
     const canvas = this.container.querySelector('#ruler-canvas') as HTMLCanvasElement;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    const trackWidth = this.getTrackWidth();
+    canvas.width = trackWidth;
+    canvas.height = 24;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const trackWidth = rect.width - 180;
     const pixelsPerSec = trackWidth / this.duration;
 
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.clearRect(0, 0, trackWidth, 24);
     ctx.strokeStyle = '#334155';
     ctx.fillStyle = '#64748b';
     ctx.font = '9px monospace';
 
-    // Track header separator line
-    ctx.beginPath();
-    ctx.moveTo(180, 0);
-    ctx.lineTo(180, rect.height);
-    ctx.stroke();
-
     // Seconds and Frame ticks
     const step = pixelsPerSec > 200 ? 0.1 : (pixelsPerSec > 100 ? 0.2 : 0.5);
     for (let t = 0; t <= this.duration + 0.01; t += step) {
-      const x = 180 + t * pixelsPerSec;
+      const x = t * pixelsPerSec;
       const isMajor = Math.abs(t - Math.round(t)) < 0.02;
 
       ctx.beginPath();
       ctx.moveTo(x, isMajor ? 6 : 14);
-      ctx.lineTo(x, rect.height);
+      ctx.lineTo(x, 24);
       ctx.stroke();
 
       if (isMajor || step >= 0.2) {
@@ -266,7 +283,7 @@ export class KeyframeTimeline {
 
     const track = this.getActiveTrack();
     const bones = this.doc.bones || [];
-    const trackWidth = this.container.clientWidth - 180;
+    const trackWidth = this.getTrackWidth();
     const pixelsPerSec = trackWidth / this.duration;
 
     listEl.innerHTML = bones.map(bone => {
@@ -276,14 +293,14 @@ export class KeyframeTimeline {
 
       return `
         <div class="timeline-row ${isSelected ? 'selected' : ''}" style="height:26px; border-bottom:1px solid rgba(148,163,184,0.1); display:flex; align-items:center; background:${isSelected ? 'rgba(2,132,199,0.1)' : 'transparent'};">
-          <!-- Row Header -->
-          <div style="width:180px; padding:0 8px; font-size:0.75rem; font-weight:600; color:${isSelected ? '#38bdf8' : '#cbd5e1'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;">
+          <!-- Row Header (Sticky on left) -->
+          <div class="timeline-row-header" style="position:sticky; left:0; width:180px; min-width:180px; height:100%; background:#070b14; z-index:20; border-right:1px solid rgba(148,163,184,0.1); padding:0 8px; font-size:0.75rem; font-weight:600; color:${isSelected ? '#38bdf8' : '#cbd5e1'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;">
             <span>🦴</span>
             <span>${bone.name}</span>
           </div>
 
           <!-- Keyframe Track Line -->
-          <div class="bone-track-lane" data-bone="${bone.name}" style="flex:1; height:100%; position:relative; background:${isSelected ? 'rgba(56,189,248,0.03)' : 'transparent'};">
+          <div class="bone-track-lane" data-bone="${bone.name}" style="width:${trackWidth}px; min-width:${trackWidth}px; height:100%; position:relative; background:${isSelected ? 'rgba(56,189,248,0.03)' : 'transparent'};">
             ${rotateKeys.map((k, idx) => {
               const leftPx = Math.round(k.time * pixelsPerSec);
               const isKSelected = this.selectedKeyframe?.bone === bone.name && this.selectedKeyframe?.index === idx;
@@ -318,9 +335,9 @@ export class KeyframeTimeline {
     const timeLabel = this.container.querySelector('#time-current-label');
     if (!playhead) return;
 
-    const trackWidth = this.container.clientWidth - 180;
+    const trackWidth = this.getTrackWidth();
     const pixelsPerSec = trackWidth / this.duration;
-    const x = 180 + this.currentTime * pixelsPerSec;
+    const x = this.currentTime * pixelsPerSec;
 
     playhead.style.left = `${Math.round(x)}px`;
     if (timeLabel) timeLabel.textContent = `${this.currentTime.toFixed(2)}s`;
@@ -357,8 +374,10 @@ export class KeyframeTimeline {
     // Ruler Scrubbing
     const ruler = this.container.querySelector('.timeline-ruler') as HTMLElement;
     ruler?.addEventListener('mousedown', (e) => {
-      this.isDraggingPlayhead = true;
-      this.scrubFromEvent(e);
+      if (e.button === 0) {
+        this.isDraggingPlayhead = true;
+        this.scrubFromEvent(e);
+      }
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -371,6 +390,8 @@ export class KeyframeTimeline {
       this.isDraggingPlayhead = false;
     });
 
+    window.addEventListener('resize', this.boundOnResize);
+
     // Delete keyframe
     window.addEventListener('keydown', (e) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedKeyframe) {
@@ -380,11 +401,12 @@ export class KeyframeTimeline {
   }
 
   private scrubFromEvent(e: MouseEvent): void {
-    const rect = this.container.querySelector('.timeline-viewport')?.getBoundingClientRect();
-    if (!rect) return;
+    const ruler = this.container.querySelector('.timeline-ruler') as HTMLElement;
+    if (!ruler) return;
+    const rect = ruler.getBoundingClientRect();
     const clientX = e.clientX - rect.left;
-    const trackWidth = rect.width - 180;
-    const t = Math.max(0, Math.min(this.duration, ((clientX - 180) / trackWidth) * this.duration));
+    const trackWidth = this.getTrackWidth();
+    const t = Math.max(0, Math.min(this.duration, (clientX / trackWidth) * this.duration));
     this.setTime(t);
   }
 
@@ -411,5 +433,6 @@ export class KeyframeTimeline {
 
   public destroy(): void {
     if (this.animTimerId) cancelAnimationFrame(this.animTimerId);
+    window.removeEventListener('resize', this.boundOnResize);
   }
 }

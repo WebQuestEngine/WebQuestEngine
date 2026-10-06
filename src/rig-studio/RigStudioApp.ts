@@ -6,6 +6,7 @@ import { PoseRigManager } from './rigging/PoseRigManager';
 import { BoneCanvasEditor } from './rigging/BoneCanvasEditor';
 import { KeyframeTimeline } from './timeline/KeyframeTimeline';
 import { InteractiveSandbox } from './preview/InteractiveSandbox';
+import { MiddleDragScroller } from './utils/MiddleDragScroller';
 
 export class RigStudioApp {
   private container: HTMLElement;
@@ -25,6 +26,7 @@ export class RigStudioApp {
   private timeline: KeyframeTimeline | null = null;
   private sandbox: InteractiveSandbox | null = null;
   private previewPlayer: PersistentPreviewPlayer | null = null;
+  private dragScroller: MiddleDragScroller | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -35,6 +37,9 @@ export class RigStudioApp {
 
     this.renderLayout();
     this.initBridge();
+
+    // Enable middle mouse button drag scrolling for all scrollable views and lists
+    this.dragScroller = new MiddleDragScroller(this.container);
   }
 
   private createDefaultSpineDocument(): SpineDocument {

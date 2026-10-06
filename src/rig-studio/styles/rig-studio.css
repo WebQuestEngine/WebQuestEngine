@@ -171,7 +171,7 @@ body.rig-studio-body {
 }
 
 .workspace-toolbar {
-  height: 42px;
+  min-height: 42px;
   background: var(--studio-surface);
   border-bottom: 1px solid var(--studio-border);
   display: flex;
@@ -179,12 +179,16 @@ body.rig-studio-body {
   justify-content: space-between;
   padding: 0 12px;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .tool-group {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .tool-btn {
@@ -433,9 +437,42 @@ body.rig-studio-body {
 
 .timeline-tracks-container {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   position: relative;
+}
+
+.timeline-viewport {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+/* Middle mouse button drag scrolling cursor */
+body.middle-scrolling,
+body.middle-scrolling * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* Responsive adjustments for small screens */
+@media (max-width: 768px) {
+  .studio-header {
+    overflow-x: auto;
+  }
+  .studio-main {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .studio-workspace {
+    min-height: 360px;
+    height: 380px;
+  }
+  .studio-sidebar {
+    border-left: none;
+    border-top: 1px solid var(--studio-border);
+    max-height: 400px;
+    flex-shrink: 0;
+  }
 }
 
 /* Scrollbars */
