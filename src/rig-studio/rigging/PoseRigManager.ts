@@ -246,6 +246,49 @@ export class PoseRigManager {
     this.saveActivePoseSlots();
   }
 
+  public moveSlot(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 0 || fromIndex >= this.doc.slots.length) return;
+    toIndex = Math.max(0, Math.min(this.doc.slots.length - 1, toIndex));
+    if (fromIndex === toIndex) return;
+
+    const [item] = this.doc.slots.splice(fromIndex, 1);
+    this.doc.slots.splice(toIndex, 0, item);
+    this.saveActivePoseSlots();
+  }
+
+  public moveSlotByDelta(slotNameOrIndex: string | number, delta: number): void {
+    const idx = typeof slotNameOrIndex === 'number'
+      ? slotNameOrIndex
+      : this.doc.slots.findIndex(s => s.name === slotNameOrIndex || s.bone === slotNameOrIndex);
+    if (idx === -1) return;
+    this.moveSlot(idx, idx + delta);
+  }
+
+  public moveSlotForward(slotNameOrIndex: string | number): void {
+    this.moveSlotByDelta(slotNameOrIndex, 1);
+  }
+
+  public moveSlotBackward(slotNameOrIndex: string | number): void {
+    this.moveSlotByDelta(slotNameOrIndex, -1);
+  }
+
+  public moveSlotToTop(slotNameOrIndex: string | number): void {
+    const idx = typeof slotNameOrIndex === 'number'
+      ? slotNameOrIndex
+      : this.doc.slots.findIndex(s => s.name === slotNameOrIndex || s.bone === slotNameOrIndex);
+    if (idx === -1) return;
+    this.moveSlot(idx, this.doc.slots.length - 1);
+  }
+
+  public moveSlotToBottom(slotNameOrIndex: string | number): void {
+    const idx = typeof slotNameOrIndex === 'number'
+      ? slotNameOrIndex
+      : this.doc.slots.findIndex(s => s.name === slotNameOrIndex || s.bone === slotNameOrIndex);
+    if (idx === -1) return;
+    this.moveSlot(idx, 0);
+  }
+
+
   public getPoseList(): string[] {
     const skins = this.doc.skins || [];
     return skins.map(s => s.name);

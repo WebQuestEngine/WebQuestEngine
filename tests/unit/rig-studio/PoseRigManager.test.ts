@@ -285,4 +285,35 @@ describe('PoseRigManager', () => {
     expect(backLegUpperR).toBeLessThan(backHipIdx);
     expect(backHeadIdx).toBeGreaterThan(backTorsoIdx);
   });
+
+  it('reorders slots using moveSlot, moveSlotToTop, and moveSlotToBottom', () => {
+    const doc = createMockDoc();
+    doc.slots = [
+      { name: 'slot_a', bone: 'a' },
+      { name: 'slot_b', bone: 'b' },
+      { name: 'slot_c', bone: 'c' },
+      { name: 'slot_d', bone: 'd' }
+    ];
+    const manager = new PoseRigManager(doc);
+
+    // Initial state: slot_a (0), slot_b (1), slot_c (2), slot_d (3)
+    expect(manager.getSlots().map(s => s.name)).toEqual(['slot_a', 'slot_b', 'slot_c', 'slot_d']);
+
+    // Move slot_a forward by 1 (or moveSlot(0, 1))
+    manager.moveSlotForward('slot_a');
+    expect(manager.getSlots().map(s => s.name)).toEqual(['slot_b', 'slot_a', 'slot_c', 'slot_d']);
+
+    // Move slot_a to top
+    manager.moveSlotToTop('slot_a');
+    expect(manager.getSlots().map(s => s.name)).toEqual(['slot_b', 'slot_c', 'slot_d', 'slot_a']);
+
+    // Move slot_a backward by 1
+    manager.moveSlotBackward('slot_a');
+    expect(manager.getSlots().map(s => s.name)).toEqual(['slot_b', 'slot_c', 'slot_a', 'slot_d']);
+
+    // Move slot_d to bottom
+    manager.moveSlotToBottom('slot_d');
+    expect(manager.getSlots().map(s => s.name)).toEqual(['slot_d', 'slot_b', 'slot_c', 'slot_a']);
+  });
 });
+

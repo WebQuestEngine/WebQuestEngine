@@ -1029,4 +1029,15 @@ export class VectorElementSlicer {
     this.render();
     if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
   }
+
+  public moveElementToTop(index: number): void {
+    if (index < 0 || index >= this.elements.length) return;
+    this.moveElement(index, this.elements.length - 1);
+  }
+
+  public moveElementToBottom(index: number): void {
+    if (index < 0 || index >= this.elements.length) return;
+    this.moveElement(index, 0);
+  }
 }
+

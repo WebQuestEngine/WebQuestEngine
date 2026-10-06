@@ -1,4 +1,4 @@
-import { SpineDocument, StudioTab, VectorOutlineElement, SpineBoneData } from './types';
+import { SpineDocument, StudioTab, VectorOutlineElement, SpineBoneData, SpineSlotData } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import { VectorElementSlicer, SlicerToolMode } from './slicer/VectorElementSlicer';
 import { PersistentPreviewPlayer } from './preview/PersistentPreviewPlayer';
@@ -385,6 +385,8 @@ export class RigStudioApp {
           <button class="tool-btn btn-del-bone" style="color:#ef4444;">✕ Delete Bone</button>
           <div class="tool-separator"></div>
           <button class="tool-btn btn-humanoid-preset" title="Apply Humanoid Skeleton (upper/lower arms, hands, upper/lower legs, feet)">👤 Humanoid Preset</button>
+          <div class="tool-separator"></div>
+          <button class="tool-btn btn-toggle-freeze-graphics" title="Toggle Freeze Graphics (Bone Alignment Mode) [Shortcut: B]. When active, moving or rotating bones does NOT move attached artwork or child bones.">🔒 Freeze Graphics</button>
         </div>
 
         <div class="tool-group">
@@ -398,6 +400,15 @@ export class RigStudioApp {
         <span>Pose: <b id="hud-bone-pose">${this.poseManager.getActivePose().toUpperCase()}</b></span>
         <span>Bones: <b>${this.poseManager.getBones().length}</b></span>
         <span>Selected Bone: <b id="hud-selected-bone">None</b></span>
+        <div class="hud-layer-reorder-group" id="hud-layer-controls" style="display:none; align-items:center; gap:6px; margin-left:12px; padding-left:12px; border-left:1px solid rgba(255,255,255,0.15);">
+          <span>Layer: <b id="hud-bone-z-badge" style="color:#38bdf8; font-family:var(--studio-font-mono);">Z:1</b></span>
+          <div style="display:flex; gap:3px;">
+            <button class="btn-studio btn-hud-layer-top" title="Bring to Front (Top) [Shift+]]" style="padding:1px 6px; font-size:0.65rem;">⏫ Front</button>
+            <button class="btn-studio btn-hud-layer-up" title="Bring Forward (Z+1) []]" style="padding:1px 6px; font-size:0.65rem;">▲ Up</button>
+            <button class="btn-studio btn-hud-layer-down" title="Send Backward (Z-1) [[]" style="padding:1px 6px; font-size:0.65rem;">▼ Down</button>
+            <button class="btn-studio btn-hud-layer-bottom" title="Send to Back (Bottom) [Shift+[]" style="padding:1px 6px; font-size:0.65rem;">⏬ Back</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -407,14 +418,82 @@ export class RigStudioApp {
         const hud = workspace.querySelector('#hud-selected-bone');
         if (hud) hud.textContent = bone ? bone.name : 'None';
         this.highlightBoneInSidebar(bone?.name || null, true);
+        this.updateHudLayerControls(bone?.name || null);
       },
       onBoneModified: (bone) => {
         this.poseManager.saveActivePoseBones();
         this.previewPlayer?.setSpineDocument(this.spineDoc);
         this.timeline?.setDocument(this.spineDoc);
         this.highlightBoneInSidebar(bone?.name || null, false);
+      },
+      onFreezeGraphicsChanged: (enabled) => {
+        const btn = workspace.querySelector('.btn-toggle-freeze-graphics');
+        if (btn) {
+          btn.classList.toggle('active', enabled);
+          btn.textContent = enabled ? '🔒 Freeze Graphics (ON)' : '🔒 Freeze Graphics';
+        }
+        const sidebarToggle = this.container.querySelector('.btn-sidebar-toggle-freeze');
+        if (sidebarToggle) {
+          sidebarToggle.classList.toggle('active', enabled);
+          sidebarToggle.textContent = enabled ? '🔒 Graphics Frozen (ON)' : '🔓 Freeze Graphics: OFF';
+        }
+      },
+      onLayerReordered: () => {
+        const sidebar = this.container.querySelector('.studio-sidebar') as HTMLElement;
+        if (sidebar) this.renderRiggingSidebarHTML(sidebar);
+        const sel = this.boneEditor?.getSelectedBone();
+        this.updateHudLayerControls(sel?.name || null);
       }
     });
+
+    const freezeBtn = workspace.querySelector('.btn-toggle-freeze-graphics');
+    freezeBtn?.addEventListener('click', () => {
+      this.boneEditor?.toggleFreezeGraphicsMode();
+    });
+
+    const hudControls = workspace.querySelector('#hud-layer-controls');
+    if (hudControls) {
+      hudControls.querySelector('.btn-hud-layer-top')?.addEventListener('click', () => {
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          this.poseManager.moveSlotToTop(selBone.name);
+          const sb = this.container.querySelector('.studio-sidebar') as HTMLElement;
+          if (sb) this.renderRiggingSidebarHTML(sb);
+          this.boneEditor?.render();
+          this.updateHudLayerControls(selBone.name);
+        }
+      });
+      hudControls.querySelector('.btn-hud-layer-up')?.addEventListener('click', () => {
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          this.poseManager.moveSlotForward(selBone.name);
+          const sb = this.container.querySelector('.studio-sidebar') as HTMLElement;
+          if (sb) this.renderRiggingSidebarHTML(sb);
+          this.boneEditor?.render();
+          this.updateHudLayerControls(selBone.name);
+        }
+      });
+      hudControls.querySelector('.btn-hud-layer-down')?.addEventListener('click', () => {
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          this.poseManager.moveSlotBackward(selBone.name);
+          const sb = this.container.querySelector('.studio-sidebar') as HTMLElement;
+          if (sb) this.renderRiggingSidebarHTML(sb);
+          this.boneEditor?.render();
+          this.updateHudLayerControls(selBone.name);
+        }
+      });
+      hudControls.querySelector('.btn-hud-layer-bottom')?.addEventListener('click', () => {
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          this.poseManager.moveSlotToBottom(selBone.name);
+          const sb = this.container.querySelector('.studio-sidebar') as HTMLElement;
+          if (sb) this.renderRiggingSidebarHTML(sb);
+          this.boneEditor?.render();
+          this.updateHudLayerControls(selBone.name);
+        }
+      });
+    }
 
     if (this.loadedImage) {
       this.boneEditor.setSourceImage(this.loadedImage);
@@ -655,14 +734,19 @@ export class RigStudioApp {
     listEl.innerHTML = elements.map((el, idx) => {
       const thumb = this.slicer?.generateThumbnail(el) || '';
       return `
-        <div class="element-item" data-elem-id="${el.id}" data-idx="${idx}" style="display:flex; align-items:center; gap:6px; padding:4px 6px;">
+        <div class="element-item" data-elem-id="${el.id}" data-idx="${idx}" draggable="true" style="display:flex; align-items:center; gap:6px; padding:4px 6px;">
+          <!-- Drag Handle -->
+          <span class="drag-handle" title="Drag to reorder layer in Z-stack" style="cursor:grab; color:#64748b; font-size:0.75rem;">⠿</span>
+
           <!-- Z-Order indicator badge -->
           <span class="element-z-badge" style="font-size:0.65rem; padding:2px 5px; border-radius:3px; background:#0284c7; color:#fff; font-weight:700; font-family:var(--studio-font-mono); flex-shrink:0;" title="Draw Order (Z-Index: higher is drawn on top)">Z:${idx + 1}</span>
 
-          <!-- Z-Order Controls -->
-          <div style="display:flex; flex-direction:column; gap:1px; flex-shrink:0;">
-            <button class="btn-studio btn-elem-up" data-idx="${idx}" style="padding:0 3px; font-size:0.6rem; line-height:1; height:12px;" title="Bring Forward (Higher Z)" ${idx === elements.length - 1 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
-            <button class="btn-studio btn-elem-down" data-idx="${idx}" style="padding:0 3px; font-size:0.6rem; line-height:1; height:12px;" title="Send Backward (Lower Z)" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
+          <!-- Z-Order Controls (Top, Up, Down, Bottom) -->
+          <div style="display:flex; gap:2px; align-items:center; flex-shrink:0;">
+            <button class="btn-studio btn-elem-top" data-idx="${idx}" style="padding:1px 3px; font-size:0.58rem; line-height:1; height:18px;" title="Bring to Front (Top Z)" ${idx === elements.length - 1 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>⏫</button>
+            <button class="btn-studio btn-elem-up" data-idx="${idx}" style="padding:1px 3px; font-size:0.58rem; line-height:1; height:18px;" title="Bring Forward (Z+1)" ${idx === elements.length - 1 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
+            <button class="btn-studio btn-elem-down" data-idx="${idx}" style="padding:1px 3px; font-size:0.58rem; line-height:1; height:18px;" title="Send Backward (Z-1)" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
+            <button class="btn-studio btn-elem-bottom" data-idx="${idx}" style="padding:1px 3px; font-size:0.58rem; line-height:1; height:18px;" title="Send to Back (Bottom Z)" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>⏬</button>
           </div>
 
           <!-- Thumbnail -->
@@ -693,6 +777,18 @@ export class RigStudioApp {
       `;
     }).join('');
 
+    // Reorder Z-Order: Bring to Top (⏫)
+    listEl.querySelectorAll('.btn-elem-top').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx')!, 10);
+        this.slicer?.moveElementToTop(idx);
+        this.syncElementsToSpine(this.slicer?.getElements() || []);
+        this.renderSlicerSidebarElements();
+        this.boneEditor?.setElements(this.slicer?.getElements() || []);
+      });
+    });
+
     // Reorder Z-Order: Bring Forward (▲)
     listEl.querySelectorAll('.btn-elem-up').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -718,6 +814,74 @@ export class RigStudioApp {
           this.renderSlicerSidebarElements();
           this.boneEditor?.setElements(this.slicer?.getElements() || []);
         }
+      });
+    });
+
+    // Reorder Z-Order: Send to Bottom (⏬)
+    listEl.querySelectorAll('.btn-elem-bottom').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx')!, 10);
+        this.slicer?.moveElementToBottom(idx);
+        this.syncElementsToSpine(this.slicer?.getElements() || []);
+        this.renderSlicerSidebarElements();
+        this.boneEditor?.setElements(this.slicer?.getElements() || []);
+      });
+    });
+
+    // Drag & Drop Reordering for sliced elements
+    listEl.querySelectorAll<HTMLElement>('.element-item').forEach(row => {
+      row.addEventListener('dragstart', (e: DragEvent) => {
+        const elemId = row.getAttribute('data-elem-id');
+        if (!elemId || !e.dataTransfer) return;
+        e.dataTransfer.setData('text/plain', elemId);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+
+      row.addEventListener('dragover', (e: DragEvent) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          row.classList.add('drop-target-above');
+          row.classList.remove('drop-target-below');
+        } else {
+          row.classList.add('drop-target-below');
+          row.classList.remove('drop-target-above');
+        }
+      });
+
+      row.addEventListener('dragleave', (e: DragEvent) => {
+        if (!row.contains(e.relatedTarget as Node)) {
+          row.classList.remove('drop-target-above', 'drop-target-below');
+        }
+      });
+
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging', 'drop-target-above', 'drop-target-below');
+      });
+
+      row.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault();
+        row.classList.remove('drop-target-above', 'drop-target-below');
+        const srcId = e.dataTransfer?.getData('text/plain');
+        const dstId = row.getAttribute('data-elem-id');
+        if (!srcId || !dstId || srcId === dstId) return;
+
+        const curElements = this.slicer?.getElements() || [];
+        const srcIdx = curElements.findIndex(el => el.id === srcId);
+        const dstIdx = curElements.findIndex(el => el.id === dstId);
+        if (srcIdx === -1 || dstIdx === -1) return;
+
+        const rect = row.getBoundingClientRect();
+        const isAbove = e.clientY < rect.top + rect.height / 2;
+        let targetIdx = isAbove ? dstIdx : dstIdx + 1;
+        if (srcIdx < targetIdx) targetIdx--;
+        this.slicer?.moveElement(srcIdx, targetIdx);
+        this.syncElementsToSpine(this.slicer?.getElements() || []);
+        this.renderSlicerSidebarElements();
+        this.boneEditor?.setElements(this.slicer?.getElements() || []);
       });
     });
 
@@ -936,9 +1100,20 @@ export class RigStudioApp {
         </div>
 
         <div class="panel-body rigging-panel-scroll-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:8px;">
+          <!-- Bone Alignment Mode Toggle Banner -->
+          <div style="background:#090d16; border:1px solid rgba(255,255,255,0.08); border-radius:4px; padding:5px 8px; display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; flex-direction:column;">
+              <span style="font-size:0.67rem; font-weight:700; color:#e2e8f0;">Bone Alignment</span>
+              <span style="font-size:0.6rem; color:var(--studio-text-muted);">[ / ] = Reorder  •  B = Freeze Graphics</span>
+            </div>
+            <button class="btn-studio btn-sidebar-toggle-freeze ${this.boneEditor?.isFreezeGraphicsMode() ? 'active' : ''}" style="font-size:0.65rem; padding:2px 8px; font-weight:600;" title="When active, moving bones will NOT displace artwork [Shortcut: B]">
+              ${this.boneEditor?.isFreezeGraphicsMode() ? '🔒 Graphics Frozen (ON)' : '🔓 Freeze Graphics: OFF'}
+            </button>
+          </div>
+
           <div style="font-size:0.68rem; color:var(--studio-text-muted); padding:2px 4px; display:flex; justify-content:space-between; align-items:center;">
             <span style="color:#38bdf8; font-weight:600;">▲ Front (Drawn on top)</span>
-            <span style="font-size:0.63rem;">Drag layers to reorder Z-Stack</span>
+            <span style="font-size:0.63rem;">Drag layers or use ⏫▲▼⏬</span>
           </div>
 
           <div class="slot-list-container" style="display:flex; flex-direction:column; gap:6px;">
@@ -966,10 +1141,12 @@ export class RigStudioApp {
                       <span class="slot-z-badge" style="font-size:0.65rem; padding:1px 6px; border-radius:3px; background:${isTop ? '#0284c7' : (isBottom ? '#334155' : '#1e3a5f')}; color:#fff; font-weight:700; font-family:var(--studio-font-mono); flex-shrink:0;">${badgeLabel}</span>
                       <span class="slot-bone-name" style="font-weight:700; font-size:0.75rem; color:${isSelected ? '#38bdf8' : '#e2e8f0'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🦴 ${slot.bone}</span>
                     </div>
-                    <div style="display:flex; gap:3px; align-items:center; flex-shrink:0;">
-                      <button class="btn-studio btn-slot-up" data-sidx="${actualIdx}" style="padding:1px 5px; font-size:0.65rem;" title="Bring Forward (Higher Z / Front)" ${isTop ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
-                      <button class="btn-studio btn-slot-down" data-sidx="${actualIdx}" style="padding:1px 5px; font-size:0.65rem;" title="Send Backward (Lower Z / Back)" ${isBottom ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
-                      <button class="btn-studio btn-toggle-slot" data-slot="${slot.name}" style="padding:1px 5px; font-size:0.65rem;" title="Toggle Transform Sliders">${isExpanded ? '▴' : '▾'}</button>
+                    <div style="display:flex; gap:2px; align-items:center; flex-shrink:0;">
+                      <button class="btn-studio btn-slot-top" data-sidx="${actualIdx}" style="padding:1px 4px; font-size:0.6rem; line-height:1; height:18px;" title="Bring to Front (Top) [Shift+]]" ${isTop ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>⏫</button>
+                      <button class="btn-studio btn-slot-up" data-sidx="${actualIdx}" style="padding:1px 4px; font-size:0.6rem; line-height:1; height:18px;" title="Bring Forward (Z+1) []]" ${isTop ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
+                      <button class="btn-studio btn-slot-down" data-sidx="${actualIdx}" style="padding:1px 4px; font-size:0.6rem; line-height:1; height:18px;" title="Send Backward (Z-1) [[]" ${isBottom ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
+                      <button class="btn-studio btn-slot-bottom" data-sidx="${actualIdx}" style="padding:1px 4px; font-size:0.6rem; line-height:1; height:18px;" title="Send to Back (Bottom) [Shift+[]" ${isBottom ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>⏬</button>
+                      <button class="btn-studio btn-toggle-slot" data-slot="${slot.name}" style="padding:1px 4px; font-size:0.65rem; line-height:1; height:18px;" title="Toggle Transform Sliders">${isExpanded ? '▴' : '▾'}</button>
                     </div>
                   </div>
 
@@ -1018,6 +1195,20 @@ export class RigStudioApp {
                           <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.5" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.5</button>
                           <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="1.0" style="padding:1px 3px; font-size:0.6rem; flex:1;">1.0</button>
                         </div>
+                      </div>
+                      <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                          <span style="font-size:0.65rem; color:var(--studio-text-muted);">Offset X:</span>
+                          <span class="label-slot-x" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${currentAttach?.x || 0}px</span>
+                        </div>
+                        <input type="range" class="input-slot-x" data-slot="${slot.name}" min="-150" max="150" step="1" value="${currentAttach?.x || 0}" style="width:100%;" />
+                      </div>
+                      <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                          <span style="font-size:0.65rem; color:var(--studio-text-muted);">Offset Y:</span>
+                          <span class="label-slot-y" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${currentAttach?.y || 0}px</span>
+                        </div>
+                        <input type="range" class="input-slot-y" data-slot="${slot.name}" min="-150" max="150" step="1" value="${currentAttach?.y || 0}" style="width:100%;" />
                       </div>
                     </div>
                   ` : ''}
@@ -1175,7 +1366,12 @@ export class RigStudioApp {
       });
     });
 
-    // 5. Per-slot scale controls
+    // Sidebar Freeze Graphics toggle
+    riggingPanel.querySelector('.btn-sidebar-toggle-freeze')?.addEventListener('click', () => {
+      this.boneEditor?.toggleFreezeGraphicsMode();
+    });
+
+    // 5. Per-slot scale & offset controls
     riggingPanel.querySelectorAll('.input-slot-scale').forEach(input => {
       input.addEventListener('input', () => {
         const slotName = (input as HTMLElement).getAttribute('data-slot')!;
@@ -1196,6 +1392,32 @@ export class RigStudioApp {
         const val = parseFloat(btn.getAttribute('data-val')!);
         this.poseManager.setSlotAttachmentTransform(slotName, { scaleX: val, scaleY: val });
         this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    riggingPanel.querySelectorAll('.input-slot-x').forEach(input => {
+      input.addEventListener('input', () => {
+        const slotName = (input as HTMLElement).getAttribute('data-slot')!;
+        const val = parseFloat((input as HTMLInputElement).value);
+        const row = input.closest('.slot-binding-row');
+        const lbl = row?.querySelector('.label-slot-x');
+        if (lbl) lbl.textContent = `${val}px`;
+        this.poseManager.setSlotAttachmentTransform(slotName, { x: val });
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    riggingPanel.querySelectorAll('.input-slot-y').forEach(input => {
+      input.addEventListener('input', () => {
+        const slotName = (input as HTMLElement).getAttribute('data-slot')!;
+        const val = parseFloat((input as HTMLInputElement).value);
+        const row = input.closest('.slot-binding-row');
+        const lbl = row?.querySelector('.label-slot-y');
+        if (lbl) lbl.textContent = `${val}px`;
+        this.poseManager.setSlotAttachmentTransform(slotName, { y: val });
         this.boneEditor?.render();
         this.previewPlayer?.setSpineDocument(this.spineDoc);
       });
@@ -1242,45 +1464,83 @@ export class RigStudioApp {
       });
     });
 
-    // 8. Bind slot up / down in draw order
-    // Up (▲): Bring Forward (move towards Front: actualIdx + 1)
+    // 8. Bind slot Top / Up / Down / Bottom in draw order
+    // Top (⏫): Bring to Front (top of Z-stack)
+    riggingPanel.querySelectorAll('.btn-slot-top').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
+        this.poseManager.moveSlotToTop(sidx);
+        this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+        const updatedSlots = this.poseManager.getSlots();
+        const curSlot = updatedSlots[updatedSlots.length - 1];
+        if (curSlot) {
+          this.boneEditor?.selectBone(curSlot.bone);
+          this.highlightBoneInSidebar(curSlot.bone, true);
+          this.updateHudLayerControls(curSlot.bone);
+        }
+      });
+    });
+
+    // Up (▲): Bring Forward (actualIdx + 1)
     riggingPanel.querySelectorAll('.btn-slot-up').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
         if (sidx < slots.length - 1) {
-          this.poseManager.moveSlotDrawOrder(sidx, sidx + 1);
+          this.poseManager.moveSlotForward(sidx);
           this.renderRiggingSidebarHTML(sidebar);
           this.boneEditor?.render();
-          const curSlot = slots[sidx + 1];
+          const curSlot = this.poseManager.getSlots()[sidx + 1];
           if (curSlot) {
             this.boneEditor?.selectBone(curSlot.bone);
             this.highlightBoneInSidebar(curSlot.bone, true);
+            this.updateHudLayerControls(curSlot.bone);
           }
         }
       });
     });
 
-    // Down (▼): Send Backward (move towards Back: actualIdx - 1)
+    // Down (▼): Send Backward (actualIdx - 1)
     riggingPanel.querySelectorAll('.btn-slot-down').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
         if (sidx > 0) {
-          this.poseManager.moveSlotDrawOrder(sidx, sidx - 1);
+          this.poseManager.moveSlotBackward(sidx);
           this.renderRiggingSidebarHTML(sidebar);
           this.boneEditor?.render();
-          const curSlot = slots[sidx - 1];
+          const curSlot = this.poseManager.getSlots()[sidx - 1];
           if (curSlot) {
             this.boneEditor?.selectBone(curSlot.bone);
             this.highlightBoneInSidebar(curSlot.bone, true);
+            this.updateHudLayerControls(curSlot.bone);
           }
         }
       });
     });
 
+    // Bottom (⏬): Send to Back (bottom of Z-stack)
+    riggingPanel.querySelectorAll('.btn-slot-bottom').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
+        this.poseManager.moveSlotToBottom(sidx);
+        this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+        const updatedSlots = this.poseManager.getSlots();
+        const curSlot = updatedSlots[0];
+        if (curSlot) {
+          this.boneEditor?.selectBone(curSlot.bone);
+          this.highlightBoneInSidebar(curSlot.bone, true);
+          this.updateHudLayerControls(curSlot.bone);
+        }
+      });
+    });
+
     // 9. Drag & Drop Reordering on .slot-binding-row
-    riggingPanel.querySelectorAll('.slot-binding-row').forEach(row => {
+    riggingPanel.querySelectorAll<HTMLElement>('.slot-binding-row').forEach(row => {
       row.addEventListener('dragstart', (e: DragEvent) => {
         const slotName = row.getAttribute('data-slot');
         if (!slotName || !e.dataTransfer) return;
@@ -1292,6 +1552,17 @@ export class RigStudioApp {
       row.addEventListener('dragover', (e: DragEvent) => {
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+        const scrollEl = riggingPanel.querySelector('.rigging-panel-scroll-body') as HTMLElement | null;
+        if (scrollEl) {
+          const sRect = scrollEl.getBoundingClientRect();
+          if (e.clientY < sRect.top + 35) {
+            scrollEl.scrollTop -= 7;
+          } else if (e.clientY > sRect.bottom - 35) {
+            scrollEl.scrollTop += 7;
+          }
+        }
+
         const rect = row.getBoundingClientRect();
         const midY = rect.top + rect.height / 2;
         if (e.clientY < midY) {
@@ -1303,8 +1574,10 @@ export class RigStudioApp {
         }
       });
 
-      row.addEventListener('dragleave', () => {
-        row.classList.remove('drop-target-above', 'drop-target-below');
+      row.addEventListener('dragleave', (e: DragEvent) => {
+        if (!row.contains(e.relatedTarget as Node)) {
+          row.classList.remove('drop-target-above', 'drop-target-below');
+        }
       });
 
       row.addEventListener('dragend', () => {
@@ -1340,6 +1613,7 @@ export class RigStudioApp {
         if (movedSlot) {
           this.boneEditor?.selectBone(movedSlot.bone);
           this.highlightBoneInSidebar(movedSlot.bone, true);
+          this.updateHudLayerControls(movedSlot.bone);
         }
       });
 
@@ -1351,6 +1625,7 @@ export class RigStudioApp {
         if (boneName) {
           this.boneEditor?.selectBone(boneName);
           this.highlightBoneInSidebar(boneName, false);
+          this.updateHudLayerControls(boneName);
         }
       });
     });
@@ -1850,6 +2125,58 @@ export class RigStudioApp {
 
     if (shouldScroll && targetEl) {
       (targetEl as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    this.updateHudLayerControls(name);
+  }
+
+  private updateHudLayerControls(boneName: string | null): void {
+    const controls = this.container.querySelector('#hud-layer-controls') as HTMLElement | null;
+    const badge = this.container.querySelector('#hud-bone-z-badge') as HTMLElement | null;
+    if (!controls || !badge) return;
+
+    if (!boneName) {
+      controls.style.display = 'none';
+      return;
+    }
+
+    const slots = this.poseManager.getSlots();
+    const slotIdx = slots.findIndex(s => s.bone === boneName || s.name === boneName);
+    if (slotIdx === -1) {
+      controls.style.display = 'none';
+      return;
+    }
+
+    controls.style.display = 'flex';
+    badge.textContent = `Z:${slotIdx + 1}/${slots.length} (${slots[slotIdx].bone})`;
+
+    const isTop = slotIdx === slots.length - 1;
+    const isBottom = slotIdx === 0;
+
+    const btnTop = controls.querySelector('.btn-hud-layer-top') as HTMLButtonElement | null;
+    const btnUp = controls.querySelector('.btn-hud-layer-up') as HTMLButtonElement | null;
+    const btnDown = controls.querySelector('.btn-hud-layer-down') as HTMLButtonElement | null;
+    const btnBottom = controls.querySelector('.btn-hud-layer-bottom') as HTMLButtonElement | null;
+
+    if (btnTop) {
+      btnTop.disabled = isTop;
+      btnTop.style.opacity = isTop ? '0.3' : '1';
+      btnTop.style.cursor = isTop ? 'default' : 'pointer';
+    }
+    if (btnUp) {
+      btnUp.disabled = isTop;
+      btnUp.style.opacity = isTop ? '0.3' : '1';
+      btnUp.style.cursor = isTop ? 'default' : 'pointer';
+    }
+    if (btnDown) {
+      btnDown.disabled = isBottom;
+      btnDown.style.opacity = isBottom ? '0.3' : '1';
+      btnDown.style.cursor = isBottom ? 'default' : 'pointer';
+    }
+    if (btnBottom) {
+      btnBottom.disabled = isBottom;
+      btnBottom.style.opacity = isBottom ? '0.3' : '1';
+      btnBottom.style.cursor = isBottom ? 'default' : 'pointer';
     }
   }
 

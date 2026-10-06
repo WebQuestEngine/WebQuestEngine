@@ -290,6 +290,29 @@ body.rig-studio-body {
   border-bottom: 3px solid #38bdf8 !important;
 }
 
+.element-item.dragging {
+  opacity: 0.4;
+  border: 1px dashed #38bdf8;
+}
+
+.element-item.drop-target-above {
+  border-top: 3px solid #38bdf8 !important;
+}
+
+.element-item.drop-target-below {
+  border-bottom: 3px solid #38bdf8 !important;
+}
+
+.tool-btn.btn-toggle-freeze-graphics.active,
+.btn-studio.btn-sidebar-toggle-freeze.active {
+  background: rgba(16, 185, 129, 0.25) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+}
+
+
 .drag-handle {
   cursor: grab;
   color: #64748b;
