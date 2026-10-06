@@ -227,4 +227,62 @@ describe('PoseRigManager', () => {
     manager.setGlobalAttachmentScale(0.5);
     expect(manager.getSlotAttachment('torso')?.scaleX).toBe(0.5);
   });
+
+  it('sets default draw order where legs are behind torso and hips, and head/arms are in front', () => {
+    const doc = createMockDoc();
+    // Add humanoid slots
+    doc.slots = [
+      { name: 'head', bone: 'head' },
+      { name: 'torso', bone: 'torso' },
+      { name: 'hip', bone: 'hip' },
+      { name: 'arm_upper_r', bone: 'arm_upper_r' },
+      { name: 'arm_lower_r', bone: 'arm_lower_r' },
+      { name: 'hand_r', bone: 'hand_r' },
+      { name: 'arm_upper_l', bone: 'arm_upper_l' },
+      { name: 'arm_lower_l', bone: 'arm_lower_l' },
+      { name: 'hand_l', bone: 'hand_l' },
+      { name: 'leg_upper_r', bone: 'leg_upper_r' },
+      { name: 'leg_lower_r', bone: 'leg_lower_r' },
+      { name: 'foot_r', bone: 'foot_r' },
+      { name: 'leg_upper_l', bone: 'leg_upper_l' },
+      { name: 'leg_lower_l', bone: 'leg_lower_l' },
+      { name: 'foot_l', bone: 'foot_l' }
+    ];
+
+    const manager = new PoseRigManager(doc);
+
+    // Front pose check
+    expect(manager.getActivePose()).toBe('front');
+    const frontSlots = manager.getSlots().map(s => s.name);
+    const torsoIdx = frontSlots.indexOf('torso');
+    const hipIdx = frontSlots.indexOf('hip');
+    const legUpperR = frontSlots.indexOf('leg_upper_r');
+    const legUpperL = frontSlots.indexOf('leg_upper_l');
+    const armUpperR = frontSlots.indexOf('arm_upper_r');
+    const headIdx = frontSlots.indexOf('head');
+
+    // Legs behind torso & hips (lower slot indices)
+    expect(legUpperR).toBeLessThan(torsoIdx);
+    expect(legUpperL).toBeLessThan(torsoIdx);
+    expect(legUpperR).toBeLessThan(hipIdx);
+    expect(legUpperL).toBeLessThan(hipIdx);
+
+    // Head & Arms in front of torso & hips (higher slot indices)
+    expect(armUpperR).toBeGreaterThan(torsoIdx);
+    expect(headIdx).toBeGreaterThan(torsoIdx);
+
+    // Back pose check
+    manager.setActivePose('back');
+    const backSlots = manager.getSlots().map(s => s.name);
+    const backTorsoIdx = backSlots.indexOf('torso');
+    const backHipIdx = backSlots.indexOf('hip');
+    const backLegUpperR = backSlots.indexOf('leg_upper_r');
+    const backLegUpperL = backSlots.indexOf('leg_upper_l');
+    const backHeadIdx = backSlots.indexOf('head');
+
+    expect(backLegUpperR).toBeLessThan(backTorsoIdx);
+    expect(backLegUpperL).toBeLessThan(backTorsoIdx);
+    expect(backLegUpperR).toBeLessThan(backHipIdx);
+    expect(backHeadIdx).toBeGreaterThan(backTorsoIdx);
+  });
 });

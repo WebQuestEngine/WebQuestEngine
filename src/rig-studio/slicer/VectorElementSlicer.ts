@@ -142,16 +142,7 @@ export class VectorElementSlicer {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        this.image = img;
-        this.offscreenCanvas.width = img.naturalWidth;
-        this.offscreenCanvas.height = img.naturalHeight;
-        if (this.offscreenCtx) {
-          this.offscreenCtx.clearRect(0, 0, img.naturalWidth, img.naturalHeight);
-          this.offscreenCtx.drawImage(img, 0, 0);
-        }
-
-        this.resetView();
-        this.render();
+        this.setImage(img);
         if (this.events.onTextureLoaded) {
           this.events.onTextureLoaded(img);
         }
@@ -160,6 +151,21 @@ export class VectorElementSlicer {
       img.onerror = (err) => reject(err);
       img.src = src;
     });
+  }
+
+  public setImage(img: HTMLImageElement): void {
+    this.image = img;
+    const w = img.naturalWidth || img.width || 1;
+    const h = img.naturalHeight || img.height || 1;
+    this.offscreenCanvas.width = w;
+    this.offscreenCanvas.height = h;
+    if (this.offscreenCtx) {
+      this.offscreenCtx.clearRect(0, 0, w, h);
+      this.offscreenCtx.drawImage(img, 0, 0);
+    }
+
+    this.resetView();
+    this.render();
   }
 
   public resetView(): void {
@@ -593,26 +599,54 @@ export class VectorElementSlicer {
    * Slices the selected polygon into two separate elements using a cut line.
    */
   public splitSelectedElement(p1: Point2D, p2: Point2D): boolean {
-    const selected = this.getSelectedElement();
-    if (!selected) return false;
+    let target = this.getSelectedElement();
+    let split = target ? PolygonGeometry.splitPolygon(target.polygon, p1, p2) : null;
 
-    const split = PolygonGeometry.splitPolygon(selected.polygon, p1, p2);
-    if (!split) return false;
+    // If currently selected element does not intersect cut line, check all elements
+    if (!split) {
+      for (let i = this.elements.length - 1; i >= 0; i--) {
+        const el = this.elements[i];
+        const res = PolygonGeometry.splitPolygon(el.polygon, p1, p2);
+        if (res) {
+          target = el;
+          split = res;
+          break;
+        }
+      }
+    }
+
+    if (!target || !split) return false;
 
     const { poly1, poly2 } = split;
-    const oldName = selected.name;
+    const oldName = target.name;
 
-    // Piece 1 replaces current element
-    selected.polygon = poly1;
-    this.recalculateBounds(selected);
-    selected.pivot = {
-      x: Math.round(selected.bounds.width / 2),
-      y: Math.round(selected.bounds.height / 2)
+    // Piece 1 replaces target element
+    target.polygon = poly1;
+    this.recalculateBounds(target);
+    target.pivot = {
+      x: Math.round(target.bounds.width / 2),
+      y: Math.round(target.bounds.height / 2)
     };
 
+    // Determine clean, non-duplicate part names
+    const baseName = oldName.replace(/(_part\d+)+$/i, '').replace(/(_\d+)+$/i, '');
+    const existingNames = new Set(this.elements.map(e => e.name));
+
+    let idx1 = 1;
+    while (existingNames.has(`${baseName}_${idx1}`) && `${baseName}_${idx1}` !== target.name) {
+      idx1++;
+    }
+    const name1 = `${baseName}_${idx1}`;
+    let idx2 = idx1 + 1;
+    while (existingNames.has(`${baseName}_${idx2}`)) {
+      idx2++;
+    }
+    const name2 = `${baseName}_${idx2}`;
+
+    target.name = name1;
+
     // Piece 2 added as a new element
-    const newId = `elem_${Date.now()}`;
-    const newName = `${oldName}_part2`;
+    const newId = `elem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const bounds2 = this.computePolygonBounds(poly2);
     const pivot2 = {
       x: Math.round(bounds2.width / 2),
@@ -621,19 +655,27 @@ export class VectorElementSlicer {
 
     const newElem: VectorOutlineElement = {
       id: newId,
-      name: newName,
+      name: name2,
       polygon: poly2,
       bounds: bounds2,
       pivot: pivot2,
-      deformationMode: selected.deformationMode
+      deformationMode: target.deformationMode
     };
 
-    this.elements.push(newElem);
-    this.selectedElementId = selected.id;
+    // Insert new element immediately adjacent to target element in draw order
+    const targetIdx = this.elements.indexOf(target);
+    if (targetIdx !== -1) {
+      this.elements.splice(targetIdx + 1, 0, newElem);
+    } else {
+      this.elements.push(newElem);
+    }
+
+    this.selectedElementId = newElem.id;
     this.selectedVertexIndex = null;
     this.render();
 
     if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    if (this.events.onSelectElement) this.events.onSelectElement(newElem);
     return true;
   }
 
@@ -726,38 +768,44 @@ export class VectorElementSlicer {
   }
 
   public generateThumbnail(elem: VectorOutlineElement): string {
-    if (!this.image) return '';
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = elem.bounds.width;
-    thumbCanvas.height = elem.bounds.height;
-    const tctx = thumbCanvas.getContext('2d');
-    if (!tctx) return '';
+    if (!this.image || !elem.bounds || elem.bounds.width <= 0 || elem.bounds.height <= 0) return '';
+    try {
+      const w = Math.max(1, Math.round(elem.bounds.width));
+      const h = Math.max(1, Math.round(elem.bounds.height));
+      const thumbCanvas = document.createElement('canvas');
+      thumbCanvas.width = w;
+      thumbCanvas.height = h;
+      const tctx = thumbCanvas.getContext('2d');
+      if (!tctx) return '';
 
-    tctx.save();
-    tctx.beginPath();
-    for (let i = 0; i < elem.polygon.length; i++) {
-      const px = elem.polygon[i].x - elem.bounds.x;
-      const py = elem.polygon[i].y - elem.bounds.y;
-      if (i === 0) tctx.moveTo(px, py);
-      else tctx.lineTo(px, py);
+      tctx.save();
+      tctx.beginPath();
+      for (let i = 0; i < elem.polygon.length; i++) {
+        const px = elem.polygon[i].x - elem.bounds.x;
+        const py = elem.polygon[i].y - elem.bounds.y;
+        if (i === 0) tctx.moveTo(px, py);
+        else tctx.lineTo(px, py);
+      }
+      tctx.closePath();
+      tctx.clip();
+
+      tctx.drawImage(
+        this.image,
+        elem.bounds.x,
+        elem.bounds.y,
+        elem.bounds.width,
+        elem.bounds.height,
+        0,
+        0,
+        w,
+        h
+      );
+      tctx.restore();
+
+      return thumbCanvas.toDataURL('image/png');
+    } catch {
+      return '';
     }
-    tctx.closePath();
-    tctx.clip();
-
-    tctx.drawImage(
-      this.image,
-      elem.bounds.x,
-      elem.bounds.y,
-      elem.bounds.width,
-      elem.bounds.height,
-      0,
-      0,
-      elem.bounds.width,
-      elem.bounds.height
-    );
-    tctx.restore();
-
-    return thumbCanvas.toDataURL('image/png');
   }
 
   public render(): void {

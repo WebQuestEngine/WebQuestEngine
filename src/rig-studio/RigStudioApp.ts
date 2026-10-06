@@ -27,6 +27,8 @@ export class RigStudioApp {
   private sandbox: InteractiveSandbox | null = null;
   private previewPlayer: PersistentPreviewPlayer | null = null;
   private dragScroller: MiddleDragScroller | null = null;
+  private riggingSidebarMode: 'drawOrder' | 'boneTree' | 'elementGallery' = 'drawOrder';
+  private expandedSlots: Set<string> = new Set();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -88,21 +90,21 @@ export class RigStudioApp {
         { name: 'foot_r', parent: 'leg_lower_r', x: 34, y: 0, length: 16, rotation: 75 }
       ],
       slots: [
-        { name: 'head', bone: 'head', attachment: 'head' },
-        { name: 'torso', bone: 'torso', attachment: 'torso' },
+        { name: 'foot_r', bone: 'foot_r', attachment: 'foot_r' },
+        { name: 'leg_lower_r', bone: 'leg_lower_r', attachment: 'leg_lower_r' },
+        { name: 'leg_upper_r', bone: 'leg_upper_r', attachment: 'leg_upper_r' },
+        { name: 'foot_l', bone: 'foot_l', attachment: 'foot_l' },
+        { name: 'leg_lower_l', bone: 'leg_lower_l', attachment: 'leg_lower_l' },
+        { name: 'leg_upper_l', bone: 'leg_upper_l', attachment: 'leg_upper_l' },
         { name: 'hip', bone: 'hip', attachment: 'hip' },
-        { name: 'arm_upper_l', bone: 'arm_upper_l', attachment: 'arm_upper_l' },
-        { name: 'arm_lower_l', bone: 'arm_lower_l', attachment: 'arm_lower_l' },
-        { name: 'hand_l', bone: 'hand_l', attachment: 'hand_l' },
+        { name: 'torso', bone: 'torso', attachment: 'torso' },
+        { name: 'head', bone: 'head', attachment: 'head' },
         { name: 'arm_upper_r', bone: 'arm_upper_r', attachment: 'arm_upper_r' },
         { name: 'arm_lower_r', bone: 'arm_lower_r', attachment: 'arm_lower_r' },
         { name: 'hand_r', bone: 'hand_r', attachment: 'hand_r' },
-        { name: 'leg_upper_l', bone: 'leg_upper_l', attachment: 'leg_upper_l' },
-        { name: 'leg_lower_l', bone: 'leg_lower_l', attachment: 'leg_lower_l' },
-        { name: 'foot_l', bone: 'foot_l', attachment: 'foot_l' },
-        { name: 'leg_upper_r', bone: 'leg_upper_r', attachment: 'leg_upper_r' },
-        { name: 'leg_lower_r', bone: 'leg_lower_r', attachment: 'leg_lower_r' },
-        { name: 'foot_r', bone: 'foot_r', attachment: 'foot_r' }
+        { name: 'arm_upper_l', bone: 'arm_upper_l', attachment: 'arm_upper_l' },
+        { name: 'arm_lower_l', bone: 'arm_lower_l', attachment: 'arm_lower_l' },
+        { name: 'hand_l', bone: 'hand_l', attachment: 'hand_l' }
       ],
       skins: [
         { name: 'front', attachments: {} },
@@ -220,6 +222,11 @@ export class RigStudioApp {
           <!-- Dynamically populated per tab -->
         </section>
 
+        <!-- Draggable Horizontal Separation Bar -->
+        <div class="studio-resizer-h" id="sidebar-resizer" title="Drag to resize panel">
+          <div class="resizer-handle"></div>
+        </div>
+
         <!-- Right Persistent Sidebar -->
         <aside class="studio-sidebar" id="right-sidebar">
           <!-- Dynamically populated per tab -->
@@ -248,13 +255,19 @@ export class RigStudioApp {
 
     bottomTimeline.style.display = tab === 'timeline' ? 'block' : 'none';
 
+    // Clean up panels that do not belong to the newly selected tab
     if (tab === 'slicer') {
+      sidebar.querySelector('#rigging-panel')?.remove();
       this.mountSlicerTab(workspace, sidebar);
     } else if (tab === 'rigging') {
+      sidebar.querySelector('#slicer-elements-panel')?.remove();
       this.mountRiggingTab(workspace, sidebar);
     } else if (tab === 'timeline') {
+      sidebar.querySelector('#slicer-elements-panel')?.remove();
       this.mountTimelineTab(workspace, sidebar, bottomTimeline);
     } else if (tab === 'sandbox') {
+      sidebar.querySelector('#slicer-elements-panel')?.remove();
+      sidebar.querySelector('#rigging-panel')?.remove();
       this.mountSandboxTab(workspace, sidebar);
     }
   }
@@ -340,20 +353,25 @@ export class RigStudioApp {
         this.loadedImage = img;
         this.boneEditor?.setSourceImage(img);
         this.updateSlicerHUD();
+        this.renderSlicerSidebarElements();
       }
     });
 
-    if (this.textureUrl) {
+    if (this.loadedImage) {
+      this.slicer.setImage(this.loadedImage);
+    } else if (this.textureUrl) {
       this.slicer.loadTexture(this.textureUrl);
     }
     this.slicer.setElements(this.spineDoc.skeleton.questforge?.elements || []);
 
     this.mountPersistentPreview(sidebar);
+    sidebar.querySelector('#rigging-panel')?.remove();
     this.renderSlicerSidebarHTML(sidebar);
     this.bindSlicerToolEvents();
   }
 
   private mountRiggingTab(workspace: HTMLElement, sidebar: HTMLElement): void {
+    sidebar.querySelector('#slicer-elements-panel')?.remove();
     workspace.innerHTML = `
       <div class="workspace-toolbar">
         <div class="tool-group">
@@ -388,12 +406,13 @@ export class RigStudioApp {
       onBoneSelected: (bone) => {
         const hud = workspace.querySelector('#hud-selected-bone');
         if (hud) hud.textContent = bone ? bone.name : 'None';
-        this.highlightBoneInSidebar(bone?.name || null);
+        this.highlightBoneInSidebar(bone?.name || null, true);
       },
       onBoneModified: (bone) => {
         this.poseManager.saveActivePoseBones();
         this.previewPlayer?.setSpineDocument(this.spineDoc);
         this.timeline?.setDocument(this.spineDoc);
+        this.highlightBoneInSidebar(bone?.name || null, false);
       }
     });
 
@@ -468,18 +487,22 @@ export class RigStudioApp {
 
     const previewPanel = document.createElement('div');
     previewPanel.className = 'sidebar-panel';
+    previewPanel.id = 'persistent-preview-container';
     previewPanel.innerHTML = `
-      <div class="panel-header">
-        <span>Live Looping Preview</span>
-        <span style="font-size:0.65rem; color:#38bdf8;">PIXI.js v8</span>
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span>Live Looping Preview</span>
+          <span style="font-size:0.65rem; color:#38bdf8;">PIXI.js v8</span>
+        </div>
+        <button class="btn-studio btn-toggle-preview" style="padding:1px 6px; font-size:0.65rem;" title="Collapse/Expand Preview">▼</button>
       </div>
-      <div class="panel-body">
+      <div class="panel-body preview-collapsible-body">
         <div class="preview-box" id="persistent-preview-box"></div>
         <div class="preview-controls">
           <div class="form-row">
             <span class="form-label">Pose / Skin</span>
             <select class="studio-select select-preview-pose" style="flex:1;">
-              ${this.poseManager.getPoseList().map(p => `<option value="${p}">${p.toUpperCase()}</option>`).join('')}
+              ${this.poseManager.getPoseList().map(p => `<option value="${p}" ${p === this.poseManager.getActivePose() ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('')}
             </select>
           </div>
           <div class="form-row">
@@ -495,12 +518,57 @@ export class RigStudioApp {
           </div>
         </div>
       </div>
+      <div class="studio-resizer-v" id="preview-panel-resizer" title="Drag to resize preview panel">
+        <div class="resizer-handle"></div>
+      </div>
     `;
     sidebar.prepend(previewPanel);
 
     const box = previewPanel.querySelector('#persistent-preview-box') as HTMLElement;
     this.previewPlayer = new PersistentPreviewPlayer(box);
     this.previewPlayer.setSpineDocument(this.spineDoc);
+    this.previewPlayer.setPose(this.poseManager.getActivePose());
+
+    const toggleBtn = previewPanel.querySelector('.btn-toggle-preview') as HTMLElement;
+    const collBody = previewPanel.querySelector('.preview-collapsible-body') as HTMLElement;
+    toggleBtn?.addEventListener('click', () => {
+      const isHidden = collBody.style.display === 'none';
+      collBody.style.display = isHidden ? 'block' : 'none';
+      toggleBtn.textContent = isHidden ? '▼' : '▲';
+    });
+
+    const resizerV = previewPanel.querySelector('#preview-panel-resizer') as HTMLElement;
+    if (resizerV && box) {
+      let isResizingV = false;
+      let startY = 0;
+      let startH = 0;
+
+      resizerV.addEventListener('mousedown', (e: MouseEvent) => {
+        isResizingV = true;
+        startY = e.clientY;
+        startH = box.getBoundingClientRect().height;
+        resizerV.classList.add('resizing');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e: MouseEvent) => {
+        if (!isResizingV) return;
+        const dy = e.clientY - startY;
+        const newH = Math.min(450, Math.max(90, startH + dy));
+        box.style.height = `${newH}px`;
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isResizingV) {
+          isResizingV = false;
+          resizerV.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+      });
+    }
 
     const speedSlider = previewPanel.querySelector('.input-preview-speed') as HTMLInputElement;
     const speedVal = previewPanel.querySelector('.speed-val') as HTMLElement;
@@ -517,11 +585,33 @@ export class RigStudioApp {
 
     const posePreviewSelect = previewPanel.querySelector('.select-preview-pose') as HTMLSelectElement;
     posePreviewSelect?.addEventListener('change', () => {
-      this.previewPlayer?.setPose(posePreviewSelect.value);
+      const selectedPose = posePreviewSelect.value;
+      this.previewPlayer?.setPose(selectedPose);
+      this.poseManager.setActivePose(selectedPose);
+
+      // If the newly active pose currently has 0 bound attachments, auto-bind matching elements!
+      const hasAnyAttachment = this.poseManager.getSlots().some(s => this.poseManager.getSlotAttachment(s.name) !== null);
+      if (!hasAnyAttachment) {
+        this.poseManager.autoBindPoseElements(selectedPose);
+      }
+
+      // Sync active-pose select in rigging toolbar if present
+      const toolbarPoseSelect = this.container.querySelector('.select-active-pose') as HTMLSelectElement | null;
+      if (toolbarPoseSelect) toolbarPoseSelect.value = selectedPose;
+      const hud = this.container.querySelector('#hud-bone-pose');
+      if (hud) hud.textContent = selectedPose.toUpperCase();
+
+      const sidebarContainer = this.container.querySelector('#right-sidebar') as HTMLElement | null;
+      if (sidebarContainer && this.currentTab === 'rigging') {
+        this.renderRiggingSidebarHTML(sidebarContainer);
+      }
     });
   }
 
   private renderSlicerSidebarHTML(sidebar: HTMLElement): void {
+    // Remove rigging panel if present
+    sidebar.querySelector('#rigging-panel')?.remove();
+
     let elementsPanel = sidebar.querySelector('#slicer-elements-panel') as HTMLElement;
     if (!elementsPanel) {
       elementsPanel = document.createElement('div');
@@ -576,7 +666,7 @@ export class RigStudioApp {
           </div>
 
           <!-- Thumbnail -->
-          <img src="${thumb}" class="element-thumb" alt="${el.name}" style="flex-shrink:0;" />
+          ${thumb ? `<img src="${thumb}" class="element-thumb" alt="${el.name}" style="flex-shrink:0; width:28px; height:28px; object-fit:contain; border-radius:3px; background:#0f172a;" />` : `<div class="element-thumb-placeholder" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; border-radius:3px; font-size:0.75rem; flex-shrink:0;" title="${el.name}">🎨</div>`}
 
           <!-- Normal Name Display -->
           <div class="elem-name-display" style="flex:1; display:flex; align-items:center; gap:4px; min-width:0;">
@@ -755,12 +845,28 @@ export class RigStudioApp {
       riggingPanel.style.flex = '1';
       riggingPanel.style.display = 'flex';
       riggingPanel.style.flexDirection = 'column';
+      riggingPanel.style.minHeight = '0';
       sidebar.appendChild(riggingPanel);
     }
+
+    // Save previous scroll position
+    const scrollContainer = riggingPanel.querySelector('.rigging-panel-scroll-body') as HTMLElement | null;
+    const savedScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
 
     const bones = this.poseManager.getBones();
     const slots = this.poseManager.getSlots();
     const elements = this.spineDoc.skeleton.questforge?.elements || [];
+    const selectedBoneName = this.boneEditor?.getSelectedBone()?.name || null;
+    const activePose = this.poseManager.getActivePose();
+
+    // Elements matching current pose
+    const posePrefix = activePose === 'front' ? 'f_' : (activePose === 'side' ? 's_' : (activePose === 'back' ? 'b_' : `${activePose}_`));
+    const altPrefix = activePose === 'front' ? 'front_' : (activePose === 'side' ? 'side_' : (activePose === 'back' ? 'back_' : ''));
+
+    const poseElements = elements.filter(el =>
+      el.name.startsWith(posePrefix) || (altPrefix ? el.name.startsWith(altPrefix) : false) || el.name.toLowerCase().includes(`_${activePose}`)
+    );
+    const otherElements = elements.filter(el => !poseElements.includes(el));
 
     const boundAttachments = slots.map(s => this.poseManager.getSlotAttachment(s.name)).filter(Boolean);
     const currentGlobalScale = boundAttachments.length > 0 && boundAttachments[0]?.scaleX !== undefined
@@ -769,9 +875,22 @@ export class RigStudioApp {
 
     riggingPanel.innerHTML = `
       <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <span>Bones & Slot Bindings (${this.poseManager.getActivePose().toUpperCase()})</span>
+        <span>Bones & Layers (${activePose.toUpperCase()})</span>
         <button class="btn-studio btn-auto-align-all" style="font-size:0.68rem; padding:2px 8px; background:linear-gradient(135deg, #0284c7, #0369a1); color:#fff; font-weight:600;" title="Align all cutouts with bone directions and auto-scale to bone lengths">
           ⚡ Auto-Align & Fit
+        </button>
+      </div>
+
+      <!-- Mode Switcher Tabs: Draw Order (Z-Stack) vs Bone Hierarchy vs Element Gallery -->
+      <div class="sidebar-tab-bar" style="display:flex; border-bottom:1px solid var(--studio-border); background:#0b1120;">
+        <button class="btn-studio btn-tab-draw-order ${this.riggingSidebarMode === 'drawOrder' ? 'active' : ''}" style="flex:1; border-radius:0; border:none; padding:7px 2px; font-size:0.7rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:4px; background:${this.riggingSidebarMode === 'drawOrder' ? '#1e293b' : 'transparent'}; color:${this.riggingSidebarMode === 'drawOrder' ? '#38bdf8' : 'var(--studio-text-muted)'};">
+          📑 Draw Order
+        </button>
+        <button class="btn-studio btn-tab-bone-tree ${this.riggingSidebarMode === 'boneTree' ? 'active' : ''}" style="flex:1; border-radius:0; border:none; padding:7px 2px; font-size:0.7rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:4px; background:${this.riggingSidebarMode === 'boneTree' ? '#1e293b' : 'transparent'}; color:${this.riggingSidebarMode === 'boneTree' ? '#38bdf8' : 'var(--studio-text-muted)'};">
+          🌳 Bone Tree
+        </button>
+        <button class="btn-studio btn-tab-element-gallery ${this.riggingSidebarMode === 'elementGallery' ? 'active' : ''}" style="flex:1; border-radius:0; border:none; padding:7px 2px; font-size:0.7rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:4px; background:${this.riggingSidebarMode === 'elementGallery' ? '#1e293b' : 'transparent'}; color:${this.riggingSidebarMode === 'elementGallery' ? '#38bdf8' : 'var(--studio-text-muted)'};">
+          🎨 Elements (${elements.length})
         </button>
       </div>
 
@@ -788,68 +907,161 @@ export class RigStudioApp {
         </div>
       </div>
 
-      <div class="panel-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          ${slots.map((slot, sIdx) => {
-            const currentAttach = this.poseManager.getSlotAttachment(slot.name);
-            const rot = currentAttach?.rotation || 0;
-            const scX = currentAttach?.scaleX ?? 1;
-            return `
-              <div class="slot-binding-row" data-slot="${slot.name}" style="background:#1e293b; padding:6px 8px; border-radius:6px; border:1px solid var(--studio-border); display:flex; flex-direction:column; gap:4px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="slot-z-badge" style="font-size:0.65rem; padding:1px 5px; border-radius:3px; background:#0284c7; color:#fff; font-weight:700; font-family:var(--studio-font-mono);" title="Slot Draw Order (Z-Index)">Z:${sIdx + 1}</span>
-                    <span style="font-weight:700; font-size:0.75rem; color:#38bdf8;">🦴 ${slot.bone}</span>
-                  </div>
-                  <div style="display:flex; gap:3px;">
-                    <button class="btn-studio btn-slot-up" data-sidx="${sIdx}" style="padding:1px 4px; font-size:0.65rem;" title="Move Layer Up">▲</button>
-                    <button class="btn-studio btn-slot-down" data-sidx="${sIdx}" style="padding:1px 4px; font-size:0.65rem;" title="Move Layer Down">▼</button>
-                  </div>
+      ${this.riggingSidebarMode === 'drawOrder' ? `
+        <!-- Available Elements for this Pose (e.g. SIDE) -->
+        <div class="pose-elements-tray" style="background:#090d16; border-bottom:1px solid var(--studio-border); padding:6px 8px; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.68rem; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:4px;">
+              <span>🎨</span> Available ${activePose.toUpperCase()} Elements (${poseElements.length})
+            </span>
+            <button class="btn-studio btn-auto-bind-pose" style="font-size:0.65rem; padding:2px 8px; color:#10b981; border-color:rgba(16,185,129,0.4); font-weight:600;" title="Auto-bind all matching ${activePose.toUpperCase()} elements to slots and align them">
+              ⚡ Auto-Bind All to Bones
+            </button>
+          </div>
+          <div class="pose-chips-container" style="display:flex; gap:4px; overflow-x:auto; padding-bottom:3px; scrollbar-width:thin;">
+            ${poseElements.length > 0 ? poseElements.map(el => {
+              const thumb = this.slicer?.generateThumbnail(el) || '';
+              return `
+                <div class="pose-elem-chip" data-elem-name="${el.name}" title="${el.name} (${el.bounds.width}x${el.bounds.height}) — Click to assign to selected bone" style="display:flex; align-items:center; gap:4px; background:#1e293b; border:1px solid var(--studio-border); border-radius:4px; padding:2px 6px; font-size:0.65rem; cursor:pointer; flex-shrink:0;">
+                  ${thumb ? `<img src="${thumb}" style="width:18px; height:18px; object-fit:contain; border-radius:2px; background:#020617;" />` : ''}
+                  <span style="font-weight:600; color:#e2e8f0;">${el.name}</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="font-size:0.7rem; color:var(--studio-text-muted);">Element:</span>
-                  <select class="studio-select select-slot-element" data-slot="${slot.name}" style="flex:1; font-size:0.72rem; padding:2px 4px;">
-                    <option value="">(None)</option>
-                    ${elements.map(el => `<option value="${el.name}" ${currentAttach?.name === el.name ? 'selected' : ''}>${el.name}</option>`).join('')}
-                  </select>
-                </div>
-                ${currentAttach ? `
-                  <div class="slot-attach-details" style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; background:#090d16; padding:6px; border-radius:4px; margin-top:2px;">
-                    <div>
-                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                        <span style="font-size:0.65rem; color:var(--studio-text-muted);">Angle:</span>
-                        <span class="label-slot-rot" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${rot}°</span>
-                      </div>
-                      <input type="range" class="input-slot-rot" data-slot="${slot.name}" min="-180" max="180" step="5" value="${rot}" style="width:100%;" />
-                      <div style="display:flex; gap:2px; margin-top:3px;">
-                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="-90" style="padding:1px 3px; font-size:0.6rem; flex:1;">-90°</button>
-                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="0" style="padding:1px 3px; font-size:0.6rem; flex:1;">0°</button>
-                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="90" style="padding:1px 3px; font-size:0.6rem; flex:1;">+90°</button>
-                        <button class="btn-studio btn-slot-rot-auto" data-slot="${slot.name}" style="padding:1px 3px; font-size:0.6rem; flex:1;" title="Auto-align with bone direction">Auto</button>
-                      </div>
-                    </div>
-                    <div>
-                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                        <span style="font-size:0.65rem; color:var(--studio-text-muted);">Scale:</span>
-                        <span class="label-slot-scale" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${scX.toFixed(2)}x</span>
-                      </div>
-                      <input type="range" class="input-slot-scale" data-slot="${slot.name}" min="0.05" max="1.5" step="0.05" value="${scX}" style="width:100%;" />
-                      <div style="display:flex; gap:2px; margin-top:3px;">
-                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.25" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.25</button>
-                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.5" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.5</button>
-                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="1.0" style="padding:1px 3px; font-size:0.6rem; flex:1;">1.0</button>
-                      </div>
-                    </div>
-                  </div>
-                ` : ''}
+              `;
+            }).join('') : `
+              <div style="font-size:0.65rem; color:var(--studio-text-muted); padding:2px 0;">
+                No elements prefixed with '${posePrefix}' found.
               </div>
-            `;
-          }).join('')}
+            `}
+          </div>
         </div>
-      </div>
+
+        <div class="panel-body rigging-panel-scroll-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:8px;">
+          <div style="font-size:0.68rem; color:var(--studio-text-muted); padding:2px 4px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:#38bdf8; font-weight:600;">▲ Front (Drawn on top)</span>
+            <span style="font-size:0.63rem;">Drag layers to reorder Z-Stack</span>
+          </div>
+
+          <div class="slot-list-container" style="display:flex; flex-direction:column; gap:6px;">
+            ${slots.slice().reverse().map((slot, revIdx) => {
+              const actualIdx = slots.length - 1 - revIdx;
+              const isTop = actualIdx === slots.length - 1;
+              const isBottom = actualIdx === 0;
+              const isSelected = slot.bone === selectedBoneName;
+              const isExpanded = this.expandedSlots.has(slot.name) || isSelected;
+              const currentAttach = this.poseManager.getSlotAttachment(slot.name);
+              const attachElem = elements.find(e => e.name === currentAttach?.name);
+              const currentAttachThumb = attachElem ? (this.slicer?.generateThumbnail(attachElem) || '') : '';
+              const rot = currentAttach?.rotation || 0;
+              const scX = currentAttach?.scaleX ?? 1;
+
+              const badgeLabel = isTop
+                ? `Z:${actualIdx + 1} Front`
+                : (isBottom ? `Z:1 Back` : `Z:${actualIdx + 1}`);
+
+              return `
+                <div class="slot-binding-row ${isSelected ? 'selected active' : ''}" data-slot="${slot.name}" data-bone="${slot.bone}" data-sidx="${actualIdx}" draggable="true">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                    <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1;">
+                      <span class="drag-handle" title="Drag to reorder layer in Z-stack">⠿</span>
+                      <span class="slot-z-badge" style="font-size:0.65rem; padding:1px 6px; border-radius:3px; background:${isTop ? '#0284c7' : (isBottom ? '#334155' : '#1e3a5f')}; color:#fff; font-weight:700; font-family:var(--studio-font-mono); flex-shrink:0;">${badgeLabel}</span>
+                      <span class="slot-bone-name" style="font-weight:700; font-size:0.75rem; color:${isSelected ? '#38bdf8' : '#e2e8f0'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🦴 ${slot.bone}</span>
+                    </div>
+                    <div style="display:flex; gap:3px; align-items:center; flex-shrink:0;">
+                      <button class="btn-studio btn-slot-up" data-sidx="${actualIdx}" style="padding:1px 5px; font-size:0.65rem;" title="Bring Forward (Higher Z / Front)" ${isTop ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
+                      <button class="btn-studio btn-slot-down" data-sidx="${actualIdx}" style="padding:1px 5px; font-size:0.65rem;" title="Send Backward (Lower Z / Back)" ${isBottom ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
+                      <button class="btn-studio btn-toggle-slot" data-slot="${slot.name}" style="padding:1px 5px; font-size:0.65rem;" title="Toggle Transform Sliders">${isExpanded ? '▴' : '▾'}</button>
+                    </div>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
+                    <span style="font-size:0.68rem; color:var(--studio-text-muted); flex-shrink:0;">Element:</span>
+                    ${currentAttachThumb ? `<img src="${currentAttachThumb}" class="slot-attach-thumb" style="width:20px; height:20px; object-fit:contain; border-radius:3px; background:#020617; border:1px solid var(--studio-border); flex-shrink:0;" title="${currentAttach?.name}" />` : `<span style="font-size:0.75rem; flex-shrink:0; opacity:0.35;">🖼️</span>`}
+                    <select class="studio-select select-slot-element" data-slot="${slot.name}" style="flex:1; font-size:0.72rem; padding:2px 4px; min-width:0;">
+                      <option value="">(None)</option>
+                      ${poseElements.length > 0 ? `
+                        <optgroup label="⭐ ${activePose.toUpperCase()} Elements">
+                          ${poseElements.map(el => `<option value="${el.name}" ${currentAttach?.name === el.name ? 'selected' : ''}>${el.name}</option>`).join('')}
+                        </optgroup>
+                      ` : ''}
+                      ${otherElements.length > 0 ? `
+                        <optgroup label="Other Sliced Elements">
+                          ${otherElements.map(el => `<option value="${el.name}" ${currentAttach?.name === el.name ? 'selected' : ''}>${el.name}</option>`).join('')}
+                        </optgroup>
+                      ` : ''}
+                    </select>
+                    <button class="btn-studio btn-open-elem-picker" data-slot="${slot.name}" style="padding:2px 5px; font-size:0.65rem; flex-shrink:0;" title="Browse and pick element visually from thumbnail gallery">🖼️ Pick</button>
+                    <button class="btn-studio btn-slot-rot-auto" data-slot="${slot.name}" style="padding:2px 6px; font-size:0.65rem; flex-shrink:0;" title="Auto-align with bone direction and scale">⚡ Auto</button>
+                  </div>
+
+                  ${isExpanded && currentAttach ? `
+                    <div class="slot-attach-details" style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; background:#090d16; padding:6px; border-radius:4px; margin-top:4px;">
+                      <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                          <span style="font-size:0.65rem; color:var(--studio-text-muted);">Angle:</span>
+                          <span class="label-slot-rot" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${rot}°</span>
+                        </div>
+                        <input type="range" class="input-slot-rot" data-slot="${slot.name}" min="-180" max="180" step="5" value="${rot}" style="width:100%;" />
+                        <div style="display:flex; gap:2px; margin-top:3px;">
+                          <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="-90" style="padding:1px 3px; font-size:0.6rem; flex:1;">-90°</button>
+                          <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="0" style="padding:1px 3px; font-size:0.6rem; flex:1;">0°</button>
+                          <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="90" style="padding:1px 3px; font-size:0.6rem; flex:1;">+90°</button>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                          <span style="font-size:0.65rem; color:var(--studio-text-muted);">Scale:</span>
+                          <span class="label-slot-scale" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${scX.toFixed(2)}x</span>
+                        </div>
+                        <input type="range" class="input-slot-scale" data-slot="${slot.name}" min="0.05" max="1.5" step="0.05" value="${scX}" style="width:100%;" />
+                        <div style="display:flex; gap:2px; margin-top:3px;">
+                          <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.25" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.25</button>
+                          <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.5" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.5</button>
+                          <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="1.0" style="padding:1px 3px; font-size:0.6rem; flex:1;">1.0</button>
+                        </div>
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <div style="font-size:0.68rem; color:var(--studio-text-muted); padding:4px 4px 2px; text-align:right;">
+            ▼ Back (Drawn at bottom of canvas)
+          </div>
+        </div>
+      ` : this.riggingSidebarMode === 'boneTree' ? `
+        <div class="panel-body rigging-panel-scroll-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding:8px;">
+          <div style="font-size:0.68rem; color:var(--studio-text-muted); padding:2px 4px 6px;">
+            Skeletal Parent-Child Hierarchy (Click node to select bone in viewport):
+          </div>
+          ${this.renderBoneHierarchyTreeHTML(bones, slots, elements, selectedBoneName)}
+        </div>
+      ` : `
+        <div class="panel-body rigging-panel-scroll-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:8px;">
+          <div style="font-size:0.68rem; color:var(--studio-text-muted); padding:2px 4px;">
+            All Sliced Graphics (Click element to bind to selected bone 🦴 <b>${selectedBoneName || 'None'}</b>):
+          </div>
+          ${this.renderElementGalleryHTML(elements, slots, activePose, poseElements, otherElements, selectedBoneName)}
+        </div>
+      `}
     `;
 
-    // 1. Auto-align all button
+    // 1. Tab switching
+    riggingPanel.querySelector('.btn-tab-draw-order')?.addEventListener('click', () => {
+      this.riggingSidebarMode = 'drawOrder';
+      this.renderRiggingSidebarHTML(sidebar);
+    });
+    riggingPanel.querySelector('.btn-tab-bone-tree')?.addEventListener('click', () => {
+      this.riggingSidebarMode = 'boneTree';
+      this.renderRiggingSidebarHTML(sidebar);
+    });
+    riggingPanel.querySelector('.btn-tab-element-gallery')?.addEventListener('click', () => {
+      this.riggingSidebarMode = 'elementGallery';
+      this.renderRiggingSidebarHTML(sidebar);
+    });
+
+    // 2. Auto-align all button
     riggingPanel.querySelector('.btn-auto-align-all')?.addEventListener('click', () => {
       this.poseManager.autoAlignAllAttachments();
       this.renderRiggingSidebarHTML(sidebar);
@@ -857,7 +1069,39 @@ export class RigStudioApp {
       this.previewPlayer?.setSpineDocument(this.spineDoc);
     });
 
-    // 2. Global scale slider and chips
+    // 2b. Auto-bind pose elements button
+    riggingPanel.querySelector('.btn-auto-bind-pose')?.addEventListener('click', () => {
+      this.poseManager.autoBindPoseElements(activePose);
+      this.renderRiggingSidebarHTML(sidebar);
+      this.boneEditor?.render();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+    });
+
+    // 2c. Available pose element chips
+    riggingPanel.querySelectorAll('.pose-elem-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const elemName = chip.getAttribute('data-elem-name')!;
+        const elem = elements.find(el => el.name === elemName);
+        if (!elem) return;
+
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          const slot = slots.find(s => s.bone === selBone.name);
+          if (slot) {
+            this.poseManager.bindElementToSlot(slot.name, elem);
+            this.renderRiggingSidebarHTML(sidebar);
+            this.boneEditor?.render();
+            this.previewPlayer?.setSpineDocument(this.spineDoc);
+            return;
+          }
+        }
+        // If no bone selected, prompt to select a bone
+        alert(`Element selected: "${elemName}". Select a bone in the viewport or layer list to assign it.`);
+      });
+    });
+
+    // 3. Global scale slider and chips
     const globalScaleSlider = riggingPanel.querySelector('.input-global-cutout-scale') as HTMLInputElement;
     const globalScaleLabel = riggingPanel.querySelector('.label-global-scale') as HTMLElement;
     const applyGlobalScale = (sc: number) => {
@@ -885,9 +1129,9 @@ export class RigStudioApp {
       });
     });
 
-    // 3. Per-slot rotation controls
+    // 4. Per-slot rotation controls
     riggingPanel.querySelectorAll('.input-slot-rot').forEach(input => {
-      input.addEventListener('input', (e) => {
+      input.addEventListener('input', () => {
         const slotName = (input as HTMLElement).getAttribute('data-slot')!;
         const val = parseInt((input as HTMLInputElement).value, 10);
         const row = input.closest('.slot-binding-row');
@@ -900,7 +1144,8 @@ export class RigStudioApp {
     });
 
     riggingPanel.querySelectorAll('.btn-slot-rot-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const slotName = btn.getAttribute('data-slot')!;
         const val = parseInt(btn.getAttribute('data-val')!, 10);
         this.poseManager.setSlotAttachmentTransform(slotName, { rotation: val });
@@ -911,13 +1156,18 @@ export class RigStudioApp {
     });
 
     riggingPanel.querySelectorAll('.btn-slot-rot-auto').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const slotName = btn.getAttribute('data-slot')!;
         const attach = this.poseManager.getSlotAttachment(slotName);
         const elem = elements.find(el => el.name === attach?.name);
         if (elem) {
           const def = this.poseManager.computeDefaultElementTransform(slotName, elem);
-          this.poseManager.setSlotAttachmentTransform(slotName, { rotation: def.rotation });
+          this.poseManager.setSlotAttachmentTransform(slotName, {
+            rotation: def.rotation,
+            scaleX: def.scaleX,
+            scaleY: def.scaleY
+          });
           this.renderRiggingSidebarHTML(sidebar);
           this.boneEditor?.render();
           this.previewPlayer?.setSpineDocument(this.spineDoc);
@@ -925,9 +1175,9 @@ export class RigStudioApp {
       });
     });
 
-    // 4. Per-slot scale controls
+    // 5. Per-slot scale controls
     riggingPanel.querySelectorAll('.input-slot-scale').forEach(input => {
-      input.addEventListener('input', (e) => {
+      input.addEventListener('input', () => {
         const slotName = (input as HTMLElement).getAttribute('data-slot')!;
         const val = parseFloat((input as HTMLInputElement).value);
         const row = input.closest('.slot-binding-row');
@@ -940,7 +1190,8 @@ export class RigStudioApp {
     });
 
     riggingPanel.querySelectorAll('.btn-slot-scale-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const slotName = btn.getAttribute('data-slot')!;
         const val = parseFloat(btn.getAttribute('data-val')!);
         this.poseManager.setSlotAttachmentTransform(slotName, { scaleX: val, scaleY: val });
@@ -950,9 +1201,10 @@ export class RigStudioApp {
       });
     });
 
-    // 5. Bind element dropdown change
+    // 6. Bind element dropdown change
     riggingPanel.querySelectorAll('.select-slot-element').forEach(sel => {
       sel.addEventListener('change', (e) => {
+        e.stopPropagation();
         const slotName = (sel as HTMLElement).getAttribute('data-slot')!;
         const elemName = (sel as HTMLSelectElement).value;
         const elem = elements.find(el => el.name === elemName);
@@ -967,25 +1219,350 @@ export class RigStudioApp {
       });
     });
 
-    // 6. Bind slot up / down
-    riggingPanel.querySelectorAll('.btn-slot-up').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
-        if (sidx > 0) {
-          this.poseManager.moveSlotDrawOrder(sidx, sidx - 1);
-          this.renderRiggingSidebarHTML(sidebar);
-          this.boneEditor?.render();
-        }
+    // 6b. Open Element Picker Modal
+    riggingPanel.querySelectorAll('.btn-open-elem-picker').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slotName = btn.getAttribute('data-slot')!;
+        this.openElementPickerModal(slotName, sidebar);
       });
     });
-    riggingPanel.querySelectorAll('.btn-slot-down').forEach(btn => {
-      btn.addEventListener('click', () => {
+
+    // 7. Toggle slot controls expand/collapse
+    riggingPanel.querySelectorAll('.btn-toggle-slot').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slotName = btn.getAttribute('data-slot')!;
+        if (this.expandedSlots.has(slotName)) {
+          this.expandedSlots.delete(slotName);
+        } else {
+          this.expandedSlots.add(slotName);
+        }
+        this.renderRiggingSidebarHTML(sidebar);
+      });
+    });
+
+    // 8. Bind slot up / down in draw order
+    // Up (▲): Bring Forward (move towards Front: actualIdx + 1)
+    riggingPanel.querySelectorAll('.btn-slot-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
         if (sidx < slots.length - 1) {
           this.poseManager.moveSlotDrawOrder(sidx, sidx + 1);
           this.renderRiggingSidebarHTML(sidebar);
           this.boneEditor?.render();
+          const curSlot = slots[sidx + 1];
+          if (curSlot) {
+            this.boneEditor?.selectBone(curSlot.bone);
+            this.highlightBoneInSidebar(curSlot.bone, true);
+          }
         }
+      });
+    });
+
+    // Down (▼): Send Backward (move towards Back: actualIdx - 1)
+    riggingPanel.querySelectorAll('.btn-slot-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
+        if (sidx > 0) {
+          this.poseManager.moveSlotDrawOrder(sidx, sidx - 1);
+          this.renderRiggingSidebarHTML(sidebar);
+          this.boneEditor?.render();
+          const curSlot = slots[sidx - 1];
+          if (curSlot) {
+            this.boneEditor?.selectBone(curSlot.bone);
+            this.highlightBoneInSidebar(curSlot.bone, true);
+          }
+        }
+      });
+    });
+
+    // 9. Drag & Drop Reordering on .slot-binding-row
+    riggingPanel.querySelectorAll('.slot-binding-row').forEach(row => {
+      row.addEventListener('dragstart', (e: DragEvent) => {
+        const slotName = row.getAttribute('data-slot');
+        if (!slotName || !e.dataTransfer) return;
+        e.dataTransfer.setData('text/plain', slotName);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+
+      row.addEventListener('dragover', (e: DragEvent) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+          row.classList.add('drop-target-above');
+          row.classList.remove('drop-target-below');
+        } else {
+          row.classList.add('drop-target-below');
+          row.classList.remove('drop-target-above');
+        }
+      });
+
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drop-target-above', 'drop-target-below');
+      });
+
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging', 'drop-target-above', 'drop-target-below');
+      });
+
+      row.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault();
+        row.classList.remove('drop-target-above', 'drop-target-below');
+        const srcName = e.dataTransfer?.getData('text/plain');
+        const dstName = row.getAttribute('data-slot');
+        if (!srcName || !dstName || srcName === dstName) return;
+
+        // Current UI order is top to bottom (slots reversed)
+        const uiOrder = slots.slice().reverse().map(s => s.name);
+        const srcUiIdx = uiOrder.indexOf(srcName);
+        if (srcUiIdx === -1) return;
+        uiOrder.splice(srcUiIdx, 1);
+
+        const dstUiIdx = uiOrder.indexOf(dstName);
+        const rect = row.getBoundingClientRect();
+        const isAbove = e.clientY < rect.top + rect.height / 2;
+        const insertIdx = isAbove ? dstUiIdx : dstUiIdx + 1;
+        uiOrder.splice(insertIdx, 0, srcName);
+
+        // Convert UI order back to doc.slots order (reverse of UI)
+        const newDocSlots = uiOrder.reverse();
+        this.poseManager.reorderSlotsByNames(newDocSlots);
+        this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+
+        const movedSlot = slots.find(s => s.name === srcName);
+        if (movedSlot) {
+          this.boneEditor?.selectBone(movedSlot.bone);
+          this.highlightBoneInSidebar(movedSlot.bone, true);
+        }
+      });
+
+      // Row click to select bone in viewport
+      row.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('select') || target.closest('input')) return;
+        const boneName = row.getAttribute('data-bone');
+        if (boneName) {
+          this.boneEditor?.selectBone(boneName);
+          this.highlightBoneInSidebar(boneName, false);
+        }
+      });
+    });
+
+    // 10. Tree Node click to select bone
+    riggingPanel.querySelectorAll('.bone-tree-node').forEach(node => {
+      node.addEventListener('click', () => {
+        const boneName = node.getAttribute('data-bone');
+        if (boneName) {
+          this.boneEditor?.selectBone(boneName);
+          this.highlightBoneInSidebar(boneName, false);
+        }
+      });
+    });
+
+    // 11. Element Gallery card click to bind to selected bone
+    riggingPanel.querySelectorAll('.elem-gallery-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const elemName = card.getAttribute('data-elem-name')!;
+        const elem = elements.find(el => el.name === elemName);
+        if (!elem) return;
+
+        const selBone = this.boneEditor?.getSelectedBone();
+        if (selBone) {
+          const slot = slots.find(s => s.bone === selBone.name);
+          if (slot) {
+            this.poseManager.bindElementToSlot(slot.name, elem);
+            this.renderRiggingSidebarHTML(sidebar);
+            this.boneEditor?.render();
+            this.previewPlayer?.setSpineDocument(this.spineDoc);
+            return;
+          }
+        }
+        alert(`Select a bone in the viewport or tree first, then click an element to bind it.`);
+      });
+    });
+
+    // Restore scroll position
+    const newScrollContainer = riggingPanel.querySelector('.rigging-panel-scroll-body') as HTMLElement | null;
+    if (newScrollContainer && savedScrollTop > 0) {
+      newScrollContainer.scrollTop = savedScrollTop;
+    }
+
+    // Ensure active bone is highlighted in sidebar
+    if (selectedBoneName) {
+      this.highlightBoneInSidebar(selectedBoneName, false);
+    }
+  }
+
+  private renderBoneHierarchyTreeHTML(
+    bones: SpineBoneData[],
+    slots: SpineSlotData[],
+    elements: VectorOutlineElement[],
+    selectedBoneName: string | null
+  ): string {
+    const childrenMap = new Map<string, SpineBoneData[]>();
+    const rootBones: SpineBoneData[] = [];
+
+    for (const b of bones) {
+      if (!b.parent || b.name === 'root') {
+        rootBones.push(b);
+      } else {
+        if (!childrenMap.has(b.parent)) childrenMap.set(b.parent, []);
+        childrenMap.get(b.parent)!.push(b);
+      }
+    }
+
+    const renderNode = (b: SpineBoneData, depth: number): string => {
+      const isSelected = b.name === selectedBoneName;
+      const children = childrenMap.get(b.name) || [];
+      const slot = slots.find(s => s.bone === b.name);
+      const attach = slot ? this.poseManager.getSlotAttachment(slot.name) : null;
+
+      return `
+        <div class="bone-tree-node ${isSelected ? 'selected active' : ''}" data-bone="${b.name}" style="padding-left:${8 + depth * 16}px; display:flex; align-items:center; gap:6px; padding-top:6px; padding-bottom:6px; border-radius:6px; cursor:pointer; margin-bottom:2px; border:1px solid ${isSelected ? 'var(--studio-accent)' : 'transparent'}; background:${isSelected ? 'rgba(14, 116, 144, 0.25)' : 'transparent'};">
+          <span style="font-size:0.8rem; color:#64748b;">${children.length > 0 ? '📁' : '🦴'}</span>
+          <span style="font-size:0.75rem; font-weight:700; color:${isSelected ? '#38bdf8' : '#e2e8f0'};">${b.name}</span>
+          ${attach ? `<span style="font-size:0.62rem; color:#38bdf8; background:#0f172a; padding:1px 5px; border-radius:3px; border:1px solid #1e293b;">${attach.name}</span>` : ''}
+          <span style="font-size:0.62rem; color:#64748b; font-family:var(--studio-font-mono); margin-left:auto;">${b.rotation || 0}° L:${b.length || 0}</span>
+        </div>
+        ${children.map(c => renderNode(c, depth + 1)).join('')}
+      `;
+    };
+
+    return rootBones.map(r => renderNode(r, 0)).join('');
+  }
+
+  private renderElementGalleryHTML(
+    elements: VectorOutlineElement[],
+    slots: SpineSlotData[],
+    activePose: string,
+    poseElements: VectorOutlineElement[],
+    otherElements: VectorOutlineElement[],
+    selectedBoneName: string | null
+  ): string {
+    const renderCard = (el: VectorOutlineElement) => {
+      const thumb = this.slicer?.generateThumbnail(el) || '';
+      const boundSlot = slots.find(s => this.poseManager.getSlotAttachment(s.name)?.name === el.name);
+      return `
+        <div class="elem-gallery-card" data-elem-name="${el.name}" style="background:#1e293b; border:1px solid var(--studio-border); border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:4px; cursor:pointer; transition:all 0.15s ease;">
+          <div style="height:60px; background:#020617; border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+            ${thumb ? `<img src="${thumb}" style="max-height:100%; max-width:100%; object-fit:contain;" />` : `<span style="font-size:0.8rem; opacity:0.3;">🖼️</span>`}
+          </div>
+          <div style="font-weight:700; font-size:0.72rem; color:#e2e8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${el.name}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.62rem; color:var(--studio-text-muted);">
+            <span>${el.bounds.width}×${el.bounds.height}</span>
+            ${boundSlot ? `<span style="color:#38bdf8; font-weight:600;">🦴 ${boundSlot.bone}</span>` : '<span style="color:#64748b;">(unbound)</span>'}
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      ${poseElements.length > 0 ? `
+        <div style="font-weight:700; font-size:0.72rem; color:#38bdf8; margin-top:4px;">⭐ ${activePose.toUpperCase()} Graphics:</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:6px;">
+          ${poseElements.map(renderCard).join('')}
+        </div>
+      ` : ''}
+
+      ${otherElements.length > 0 ? `
+        <div style="font-weight:700; font-size:0.72rem; color:var(--studio-text-muted); margin-top:8px;">Other Sliced Graphics:</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:6px;">
+          ${otherElements.map(renderCard).join('')}
+        </div>
+      ` : ''}
+    `;
+  }
+
+  private openElementPickerModal(slotName: string, sidebar: HTMLElement): void {
+    const existing = document.querySelector('.element-picker-backdrop');
+    if (existing) existing.remove();
+
+    const elements = this.spineDoc.skeleton.questforge?.elements || [];
+    const activePose = this.poseManager.getActivePose();
+    const slot = this.poseManager.getSlots().find(s => s.name === slotName);
+    const boneName = slot ? slot.bone : slotName;
+
+    const posePrefix = activePose === 'front' ? 'f_' : (activePose === 'side' ? 's_' : (activePose === 'back' ? 'b_' : `${activePose}_`));
+    const altPrefix = activePose === 'front' ? 'front_' : (activePose === 'side' ? 'side_' : (activePose === 'back' ? 'back_' : ''));
+    const poseElements = elements.filter(el =>
+      el.name.startsWith(posePrefix) || (altPrefix ? el.name.startsWith(altPrefix) : false) || el.name.toLowerCase().includes(`_${activePose}`)
+    );
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'element-picker-backdrop';
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px);';
+
+    backdrop.innerHTML = `
+      <div class="element-picker-modal" style="background:#0f172a; border:1px solid var(--studio-border); border-radius:10px; width:520px; max-width:92vw; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); overflow:hidden;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--studio-border); background:#0b1120;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.1rem;">🖼️</span>
+            <div>
+              <div style="font-weight:700; font-size:0.85rem; color:#fff;">Assign Element to 🦴 ${boneName}</div>
+              <div style="font-size:0.68rem; color:#38bdf8;">Pose: ${activePose.toUpperCase()} • Slot: ${slotName}</div>
+            </div>
+          </div>
+          <button class="btn-studio btn-close-picker-modal" style="padding:2px 8px; font-size:0.8rem;">✕</button>
+        </div>
+
+        <div style="padding:8px 12px; background:#090d16; border-bottom:1px solid var(--studio-border); display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:0.7rem; color:var(--studio-text-muted);">Click any graphic card to bind:</span>
+          <button class="btn-studio btn-unbind-slot-picker" style="font-size:0.68rem; padding:2px 8px; color:#ef4444;">(Clear / Unbind)</button>
+        </div>
+
+        <div class="picker-cards-grid" style="flex:1; overflow-y:auto; padding:12px; display:grid; grid-template-columns:repeat(auto-fill, minmax(105px, 1fr)); gap:8px;">
+          ${elements.map(el => {
+            const isPoseMatch = poseElements.includes(el);
+            const thumb = this.slicer?.generateThumbnail(el) || '';
+            return `
+              <div class="picker-elem-card" data-elem-name="${el.name}" style="background:#1e293b; border:1px solid ${isPoseMatch ? '#0284c7' : 'var(--studio-border)'}; border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:4px; cursor:pointer; transition:all 0.15s ease; position:relative;">
+                ${isPoseMatch ? `<span style="position:absolute; top:4px; right:4px; font-size:0.58rem; background:#0284c7; color:#fff; padding:1px 4px; border-radius:3px; font-weight:700;">${activePose.toUpperCase()}</span>` : ''}
+                <div style="height:65px; background:#020617; border-radius:4px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                  ${thumb ? `<img src="${thumb}" style="max-height:100%; max-width:100%; object-fit:contain;" />` : `<span style="font-size:0.8rem; opacity:0.3;">🖼️</span>`}
+                </div>
+                <div style="font-weight:700; font-size:0.72rem; color:#e2e8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${el.name}">${el.name}</div>
+                <div style="font-size:0.62rem; color:var(--studio-text-muted); font-family:var(--studio-font-mono);">${el.bounds.width}×${el.bounds.height}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+
+    const closeModal = () => backdrop.remove();
+    backdrop.querySelector('.btn-close-picker-modal')?.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+
+    backdrop.querySelector('.btn-unbind-slot-picker')?.addEventListener('click', () => {
+      this.poseManager.unbindSlotAttachment(slotName);
+      this.renderRiggingSidebarHTML(sidebar);
+      this.boneEditor?.render();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+      closeModal();
+    });
+
+    backdrop.querySelectorAll('.picker-elem-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const elemName = card.getAttribute('data-elem-name')!;
+        const elem = elements.find(el => el.name === elemName);
+        if (elem) {
+          this.poseManager.bindElementToSlot(slotName, elem);
+          this.renderRiggingSidebarHTML(sidebar);
+          this.boneEditor?.render();
+          this.previewPlayer?.setSpineDocument(this.spineDoc);
+        }
+        closeModal();
       });
     });
   }
@@ -993,14 +1570,25 @@ export class RigStudioApp {
   private bindRiggingEvents(workspace: HTMLElement, sidebar: HTMLElement): void {
     const poseSelect = workspace.querySelector('.select-active-pose') as HTMLSelectElement;
     poseSelect?.addEventListener('change', () => {
-      this.poseManager.setActivePose(poseSelect.value);
+      const newPose = poseSelect.value;
+      this.poseManager.setActivePose(newPose);
+
+      // If the newly active pose currently has 0 bound attachments, auto-bind matching elements!
+      const hasAnyAttachment = this.poseManager.getSlots().some(s => this.poseManager.getSlotAttachment(s.name) !== null);
+      if (!hasAnyAttachment) {
+        this.poseManager.autoBindPoseElements(newPose);
+      }
+
       this.renderRiggingSidebarHTML(sidebar);
       this.boneEditor?.selectBone(null);
       this.boneEditor?.render();
       const hud = workspace.querySelector('#hud-bone-pose');
-      if (hud) hud.textContent = poseSelect.value.toUpperCase();
+      if (hud) hud.textContent = newPose.toUpperCase();
       this.previewPlayer?.setSpineDocument(this.spineDoc);
-      this.previewPlayer?.setPose(poseSelect.value);
+      this.previewPlayer?.setPose(newPose);
+
+      const previewPoseSelect = this.container.querySelector('.select-preview-pose') as HTMLSelectElement | null;
+      if (previewPoseSelect) previewPoseSelect.value = newPose;
     });
 
     workspace.querySelector('.btn-add-bone')?.addEventListener('click', () => {
@@ -1160,6 +1748,41 @@ export class RigStudioApp {
     this.container.querySelector('.btn-close-modal')?.addEventListener('click', () => {
       this.bridge.notifyClose();
     });
+
+    // Draggable Sidebar Horizontal Resizer
+    const resizerH = this.container.querySelector('#sidebar-resizer') as HTMLElement;
+    const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement;
+    if (resizerH && sidebar) {
+      let isResizingH = false;
+      let startX = 0;
+      let startW = 0;
+
+      resizerH.addEventListener('mousedown', (e: MouseEvent) => {
+        isResizingH = true;
+        startX = e.clientX;
+        startW = sidebar.getBoundingClientRect().width;
+        resizerH.classList.add('resizing');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e: MouseEvent) => {
+        if (!isResizingH) return;
+        const dx = startX - e.clientX;
+        const newW = Math.min(800, Math.max(280, startW + dx));
+        sidebar.style.width = `${newW}px`;
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isResizingH) {
+          isResizingH = false;
+          resizerH.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+      });
+    }
   }
 
   private updateSlicerZoomHUD(): void {
@@ -1196,16 +1819,38 @@ export class RigStudioApp {
   }
 
   private highlightElementInSidebar(id: string | null): void {
+    let targetEl: HTMLElement | null = null;
     this.container.querySelectorAll('.element-item').forEach(item => {
-      item.classList.toggle('active', item.getAttribute('data-elem-id') === id);
+      const isMatch = item.getAttribute('data-elem-id') === id;
+      item.classList.toggle('active', isMatch);
+      if (isMatch) targetEl = item as HTMLElement;
     });
+    if (targetEl) {
+      (targetEl as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
-  private highlightBoneInSidebar(name: string | null): void {
+  private highlightBoneInSidebar(name: string | null, shouldScroll: boolean = true): void {
+    let targetEl: HTMLElement | null = null;
+
     this.container.querySelectorAll('.slot-binding-row').forEach(row => {
-      const isMatch = row.getAttribute('data-slot') === name;
+      const isMatch = row.getAttribute('data-bone') === name || row.getAttribute('data-slot') === name;
+      row.classList.toggle('selected', isMatch);
+      row.classList.toggle('active', isMatch);
       (row as HTMLElement).style.borderColor = isMatch ? 'var(--studio-accent)' : 'var(--studio-border)';
+      if (isMatch) targetEl = row as HTMLElement;
     });
+
+    this.container.querySelectorAll('.bone-tree-node').forEach(node => {
+      const isMatch = node.getAttribute('data-bone') === name;
+      node.classList.toggle('selected', isMatch);
+      node.classList.toggle('active', isMatch);
+      if (isMatch && !targetEl) targetEl = node as HTMLElement;
+    });
+
+    if (shouldScroll && targetEl) {
+      (targetEl as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   private syncElementsToSpine(elements: VectorOutlineElement[]): void {

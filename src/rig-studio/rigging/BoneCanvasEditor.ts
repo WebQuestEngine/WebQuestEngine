@@ -196,7 +196,7 @@ export class BoneCanvasEditor {
       const world = this.screenToWorld(e.clientX, e.clientY);
       const transforms = this.computeWorldTransforms();
 
-      // Check if clicking selected bone tip or base
+      // Check if clicking selected bone tip or base or body
       if (this.selectedBoneName && transforms.has(this.selectedBoneName)) {
         const wt = transforms.get(this.selectedBoneName)!;
         const distTip = Math.hypot(world.x - wt.tipX, world.y - wt.tipY) * this.zoom;
@@ -210,17 +210,27 @@ export class BoneCanvasEditor {
           this.isDraggingBoneBase = true;
           return;
         }
+
+        const distBody = this.distToSegment(world.x, world.y, wt.worldX, wt.worldY, wt.tipX, wt.tipY) * this.zoom;
+        if (distBody < 12) {
+          this.isDraggingBoneBase = true;
+          return;
+        }
       }
 
       // Check hit on any bone
       for (const wt of transforms.values()) {
-        const distBase = Math.hypot(world.x - wt.worldX, world.y - wt.worldY) * this.zoom;
         const distTip = Math.hypot(world.x - wt.tipX, world.y - wt.tipY) * this.zoom;
+        const distBase = Math.hypot(world.x - wt.worldX, world.y - wt.worldY) * this.zoom;
+        const distBody = this.distToSegment(world.x, world.y, wt.worldX, wt.worldY, wt.tipX, wt.tipY) * this.zoom;
 
-        if (distBase < 14 || distTip < 14) {
+        if (distTip < 14) {
           this.selectBone(wt.bone.name);
-          if (distTip < 14) this.isDraggingBoneTip = true;
-          else this.isDraggingBoneBase = true;
+          this.isDraggingBoneTip = true;
+          return;
+        } else if (distBase < 14 || distBody < 12) {
+          this.selectBone(wt.bone.name);
+          this.isDraggingBoneBase = true;
           return;
         }
       }
@@ -445,5 +455,13 @@ export class BoneCanvasEditor {
     }
 
     this.ctx.restore();
+  }
+
+  private distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+    const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
   }
 }

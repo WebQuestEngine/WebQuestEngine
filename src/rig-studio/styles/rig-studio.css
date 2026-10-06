@@ -155,19 +155,182 @@ body.rig-studio-body {
 /* Main Layout */
 .studio-main {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 340px;
+  display: flex;
+  flex-direction: row;
   overflow: hidden;
   position: relative;
 }
 
 /* Center Workspace Area */
 .studio-workspace {
+  flex: 1;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   background: #020617;
   overflow: hidden;
   position: relative;
+}
+
+/* Horizontal Resizer Separator between Canvas and Sidebar */
+.studio-resizer-h {
+  width: 8px;
+  background: #0b1120;
+  border-left: 1px solid var(--studio-border);
+  border-right: 1px solid var(--studio-border);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  z-index: 40;
+  transition: background 0.15s ease;
+}
+
+.studio-resizer-h:hover,
+.studio-resizer-h.resizing {
+  background: #0284c7;
+}
+
+.studio-resizer-h .resizer-handle {
+  width: 2px;
+  height: 24px;
+  background: #475569;
+  border-radius: 1px;
+}
+
+.studio-resizer-h:hover .resizer-handle,
+.studio-resizer-h.resizing .resizer-handle {
+  background: #ffffff;
+}
+
+/* Vertical Resizer between Preview and Layers */
+.studio-resizer-v {
+  height: 6px;
+  background: #0b1120;
+  border-top: 1px solid var(--studio-border);
+  border-bottom: 1px solid var(--studio-border);
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  z-index: 30;
+  transition: background 0.15s ease;
+}
+
+.studio-resizer-v:hover,
+.studio-resizer-v.resizing {
+  background: #0284c7;
+}
+
+.studio-resizer-v .resizer-handle {
+  width: 24px;
+  height: 2px;
+  background: #475569;
+  border-radius: 1px;
+}
+
+.studio-resizer-v:hover .resizer-handle,
+.studio-resizer-v.resizing .resizer-handle {
+  background: #ffffff;
+}
+
+/* Right Persistent Sidebar */
+.studio-sidebar {
+  width: 440px;
+  min-width: 300px;
+  max-width: 800px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-surface);
+  border-left: none;
+  overflow: hidden;
+}
+
+/* Slot Binding & Layer Stack Items */
+.slot-binding-row {
+  background: #1e293b;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+}
+
+.slot-binding-row:hover {
+  background: #243248;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.slot-binding-row.selected,
+.slot-binding-row.active {
+  border-color: #38bdf8 !important;
+  background: rgba(14, 116, 144, 0.25) !important;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.slot-binding-row.dragging {
+  opacity: 0.4;
+  border: 1px dashed #38bdf8;
+}
+
+.slot-binding-row.drop-target-above {
+  border-top: 3px solid #38bdf8 !important;
+}
+
+.slot-binding-row.drop-target-below {
+  border-bottom: 3px solid #38bdf8 !important;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #64748b;
+  font-size: 0.9rem;
+  padding: 2px 4px;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.drag-handle:hover {
+  color: #38bdf8;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Bone Tree View */
+.bone-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.bone-tree-node:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.bone-tree-node.selected,
+.bone-tree-node.active {
+  background: rgba(14, 116, 144, 0.3);
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 .workspace-toolbar {

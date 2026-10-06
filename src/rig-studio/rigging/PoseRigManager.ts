@@ -98,6 +98,51 @@ export function getSideBonesPreset(): SpineBoneData[] {
   ];
 }
 
+/**
+ * Default Slot Draw Order Presets (Back to Front: index 0 is furthest back, index N-1 is furthest in front)
+ */
+export function getFrontSlotsOrderPreset(): string[] {
+  return [
+    // 1. Legs in back (drawn first, behind torso and hips)
+    'foot_r', 'leg_lower_r', 'leg_upper_r',
+    'foot_l', 'leg_lower_l', 'leg_upper_l',
+    // 2. Hips and Torso in middle
+    'hip', 'torso',
+    // 3. Arms and Head in front
+    'head',
+    'arm_upper_r', 'arm_lower_r', 'hand_r',
+    'arm_upper_l', 'arm_lower_l', 'hand_l'
+  ];
+}
+
+export function getBackSlotsOrderPreset(): string[] {
+  return [
+    // 1. Legs in back (behind torso and hips)
+    'foot_l', 'leg_lower_l', 'leg_upper_l',
+    'foot_r', 'leg_lower_r', 'leg_upper_r',
+    // 2. Hips and Torso in middle
+    'hip', 'torso',
+    // 3. Arms and Head in front
+    'head',
+    'arm_upper_l', 'arm_lower_l', 'hand_l',
+    'arm_upper_r', 'arm_lower_r', 'hand_r'
+  ];
+}
+
+export function getSideSlotsOrderPreset(): string[] {
+  return [
+    // 1. Background limbs in back
+    'foot_r', 'leg_lower_r', 'leg_upper_r',
+    'hand_r', 'arm_lower_r', 'arm_upper_r',
+    // 2. Hip and Torso in middle
+    'hip', 'torso',
+    // 3. Head and Foreground limbs in front
+    'head',
+    'foot_l', 'leg_lower_l', 'leg_upper_l',
+    'arm_upper_l', 'arm_lower_l', 'hand_l'
+  ];
+}
+
 export class PoseRigManager {
   private doc: SpineDocument;
   private activePose = 'front';
@@ -106,6 +151,7 @@ export class PoseRigManager {
     this.doc = doc;
     this.ensureDefaultSkins();
     this.ensurePoseBones();
+    this.ensurePoseSlots();
   }
 
   public setDocument(doc: SpineDocument): void {
@@ -113,6 +159,7 @@ export class PoseRigManager {
     this.activePose = 'front';
     this.ensureDefaultSkins();
     this.ensurePoseBones();
+    this.ensurePoseSlots();
   }
 
   public getDocument(): SpineDocument {
@@ -129,8 +176,9 @@ export class PoseRigManager {
       return;
     }
 
-    // 1. Save bones of previous pose
+    // 1. Save bones and slots of previous pose
     this.saveActivePoseBones();
+    this.saveActivePoseSlots();
 
     this.activePose = pose;
     this.ensureSkin(pose);
@@ -145,11 +193,57 @@ export class PoseRigManager {
     }
 
     this.doc.bones = JSON.parse(JSON.stringify(pb[pose]));
+
+    // 3. Load or generate slots order for newly selected pose
+    const ps = this.doc.skeleton.questforge?.poseSlots;
+    if (ps && ps[pose] && ps[pose].length > 0) {
+      this.reorderSlotsByNames(ps[pose]);
+    } else {
+      this.applyPoseSlotsOrder(pose);
+    }
   }
 
   public saveActivePoseBones(): void {
     const pb = this.getOrCreatePoseBonesMap();
     pb[this.activePose] = JSON.parse(JSON.stringify(this.doc.bones));
+  }
+
+  public saveActivePoseSlots(): void {
+    if (!this.doc.skeleton.questforge) {
+      this.doc.skeleton.questforge = {
+        posePreset: '3-way',
+        poseDirections: { front: ['down'], side: ['right', 'left'], back: ['up'] },
+        elements: []
+      };
+    }
+    if (!this.doc.skeleton.questforge.poseSlots) {
+      this.doc.skeleton.questforge.poseSlots = {};
+    }
+    this.doc.skeleton.questforge.poseSlots[this.activePose] = this.doc.slots.map(s => s.name);
+  }
+
+  public applyPoseSlotsOrder(pose: string): void {
+    let order: string[];
+    if (pose === 'front') order = getFrontSlotsOrderPreset();
+    else if (pose === 'back') order = getBackSlotsOrderPreset();
+    else if (pose === 'side') order = getSideSlotsOrderPreset();
+    else return;
+
+    this.reorderSlotsByNames(order);
+  }
+
+  public reorderSlotsByNames(names: string[]): void {
+    const existing = [...this.doc.slots];
+    const reordered: SpineSlotData[] = [];
+    for (const name of names) {
+      const idx = existing.findIndex(s => s.name === name || s.bone === name);
+      if (idx !== -1) {
+        reordered.push(existing.splice(idx, 1)[0]);
+      }
+    }
+    reordered.push(...existing);
+    this.doc.slots = reordered;
+    this.saveActivePoseSlots();
   }
 
   public getPoseList(): string[] {
@@ -260,6 +354,7 @@ export class PoseRigManager {
     if (fromIndex < 0 || fromIndex >= this.doc.slots.length || toIndex < 0 || toIndex >= this.doc.slots.length) return;
     const [moved] = this.doc.slots.splice(fromIndex, 1);
     this.doc.slots.splice(toIndex, 0, moved);
+    this.saveActivePoseSlots();
   }
 
   public getActiveSkin(): SpineSkinData {
@@ -366,6 +461,59 @@ export class PoseRigManager {
     if (transforms.rotation !== undefined) attachment.rotation = transforms.rotation;
     if (transforms.scaleX !== undefined) attachment.scaleX = transforms.scaleX;
     if (transforms.scaleY !== undefined) attachment.scaleY = transforms.scaleY;
+  }
+
+  public autoBindPoseElements(poseName?: string): void {
+    const pose = poseName || this.activePose;
+    this.ensureSkin(pose);
+    const elements = this.doc.skeleton.questforge?.elements || [];
+    if (elements.length === 0) return;
+
+    const prefix = pose === 'front' ? 'f_' : (pose === 'side' ? 's_' : (pose === 'back' ? 'b_' : `${pose}_`));
+    const altPrefix = pose === 'front' ? 'front_' : (pose === 'side' ? 'side_' : (pose === 'back' ? 'back_' : ''));
+
+    const poseElements = elements.filter(e =>
+      e.name.startsWith(prefix) || (altPrefix ? e.name.startsWith(altPrefix) : false)
+    );
+    const candidates = poseElements.length > 0 ? poseElements : elements;
+
+    for (const slot of this.doc.slots) {
+      const bName = slot.bone.toLowerCase();
+      let match = candidates.find(e => {
+        const cleanName = e.name.replace(new RegExp(`^(${prefix}|${altPrefix}|f_|s_|b_|front_|side_|back_)`), '').toLowerCase();
+        return cleanName === bName;
+      });
+
+      if (!match) {
+        if (bName.includes('arm') && bName.includes('_r')) {
+          match = candidates.find(e => e.name.includes('arm') && e.name.includes('_r'));
+        } else if (bName.includes('arm') && bName.includes('_l')) {
+          match = candidates.find(e => e.name.includes('arm') && e.name.includes('_l'));
+        } else if (bName.includes('leg') && bName.includes('_r')) {
+          match = candidates.find(e => e.name.includes('leg') && e.name.includes('_r'));
+        } else if (bName.includes('leg') && bName.includes('_l')) {
+          match = candidates.find(e => e.name.includes('leg') && e.name.includes('_l'));
+        } else if (bName.includes('hand') && bName.includes('_r')) {
+          match = candidates.find(e => (e.name.includes('hand') || e.name.includes('arm')) && e.name.includes('_r'));
+        } else if (bName.includes('hand') && bName.includes('_l')) {
+          match = candidates.find(e => (e.name.includes('hand') || e.name.includes('arm')) && e.name.includes('_l'));
+        } else if (bName.includes('foot') && bName.includes('_r')) {
+          match = candidates.find(e => (e.name.includes('foot') || e.name.includes('leg')) && e.name.includes('_r'));
+        } else if (bName.includes('foot') && bName.includes('_l')) {
+          match = candidates.find(e => (e.name.includes('foot') || e.name.includes('leg')) && e.name.includes('_l'));
+        } else if (bName === 'hip' || bName === 'torso') {
+          match = candidates.find(e => e.name.includes('torso') || e.name.includes('hip') || e.name.includes('body'));
+        } else if (bName === 'head') {
+          match = candidates.find(e => e.name.includes('head'));
+        }
+      }
+
+      if (match) {
+        this.bindElementToSlot(slot.name, match);
+      }
+    }
+
+    this.autoAlignAllAttachments();
   }
 
   public autoAlignAllAttachments(targetScale?: number): void {
@@ -486,6 +634,27 @@ export class PoseRigManager {
 
     if (pb[this.activePose]) {
       this.doc.bones = JSON.parse(JSON.stringify(pb[this.activePose]));
+    }
+  }
+
+  private ensurePoseSlots(): void {
+    if (!this.doc.skeleton.questforge) {
+      this.doc.skeleton.questforge = {
+        posePreset: '3-way',
+        poseDirections: { front: ['down'], side: ['right', 'left'], back: ['up'] },
+        elements: []
+      };
+    }
+    if (!this.doc.skeleton.questforge.poseSlots) {
+      this.doc.skeleton.questforge.poseSlots = {};
+    }
+    const ps = this.doc.skeleton.questforge.poseSlots;
+    if (!ps.front) ps.front = getFrontSlotsOrderPreset();
+    if (!ps.back) ps.back = getBackSlotsOrderPreset();
+    if (!ps.side) ps.side = getSideSlotsOrderPreset();
+
+    if (ps[this.activePose] && this.doc.slots && this.doc.slots.length > 0) {
+      this.reorderSlotsByNames(ps[this.activePose]);
     }
   }
 }
