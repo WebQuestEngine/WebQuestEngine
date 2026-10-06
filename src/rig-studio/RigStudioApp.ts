@@ -263,21 +263,42 @@ export class RigStudioApp {
     workspace.innerHTML = `
       <div class="workspace-toolbar slicer-toolbar">
         <div class="tool-group">
-          <button class="tool-btn" data-tool="select" title="Select Element or Drag Pivot">
-            <span>↖️</span> Select
+          <button class="tool-btn active" data-tool="select" title="Select Element, Move &amp; Edit Nodes (Del to delete selected node, Alt+Click to delete node)">
+            <span>↖️</span> Select / Edit
           </button>
-          <button class="tool-btn active" data-tool="polygon" title="Draw Vector Polygon Vertices">
-            <span>📐</span> Polygon Tool
+          <button class="tool-btn" data-tool="add_node" title="Add Nodes to Polygon Edges">
+            <span>➕</span> Add Node
+          </button>
+          <button class="tool-btn" data-tool="delete_node" title="Delete Polygon Nodes (Click on node)">
+            <span>➖</span> Del Node
+          </button>
+          <button class="tool-btn" data-tool="split" title="Knife: Drag a line across the element to slice it into two parts">
+            <span>✂️</span> Split / Knife
+          </button>
+          <div class="tool-separator"></div>
+          <button class="tool-btn" data-tool="polygon" title="Draw New Polygon from Scratch">
+            <span>📐</span> Polygon
           </button>
           <button class="tool-btn" data-tool="magic" title="Magic Alpha Contour Auto-Tracer">
             <span>✨</span> Magic Contour
           </button>
           <button class="tool-btn" data-tool="pivot" title="Move Rotational Pivot Anchor">
-            <span>🎯</span> Set Pivot
+            <span>🎯</span> Pivot
           </button>
-          <div class="tool-separator"></div>
           <button class="tool-btn" data-tool="pan" title="Pan Workspace">
             <span>✋</span> Pan
+          </button>
+        </div>
+
+        <div class="tool-group">
+          <button class="tool-btn btn-simplify-poly" title="Simplify Contour (Reduce redundant nodes with Douglas-Peucker)">
+            <span>📉</span> Simplify
+          </button>
+          <button class="tool-btn btn-smooth-poly" title="Smooth Contour Corners (Chaikin algorithm)">
+            <span>🌀</span> Smooth
+          </button>
+          <button class="tool-btn btn-subdivide-poly" title="Subdivide Edges (Double node density)">
+            <span>➗</span> Subdivide
           </button>
         </div>
 
@@ -294,7 +315,9 @@ export class RigStudioApp {
       <div class="viewport-hud">
         <span>Elements: <b id="hud-elem-count">0</b></span>
         <span>Selected: <b id="hud-selected-elem">None</b></span>
-        <span>Tool: <b id="hud-active-tool">Polygon</b></span>
+        <span>Nodes: <b id="hud-node-count">0</b></span>
+        <span>Selected Node: <b id="hud-selected-node">None</b></span>
+        <span>Tool: <b id="hud-active-tool">SELECT</b></span>
       </div>
     `;
 
@@ -309,6 +332,9 @@ export class RigStudioApp {
       onSelectElement: (elem) => {
         this.updateSlicerHUD();
         this.highlightElementInSidebar(elem?.id || null);
+      },
+      onVertexSelected: (idx, pt) => {
+        this.updateSlicerHUD();
       },
       onTextureLoaded: (img) => {
         this.loadedImage = img;
@@ -505,8 +531,13 @@ export class RigStudioApp {
       elementsPanel.style.display = 'flex';
       elementsPanel.style.flexDirection = 'column';
       elementsPanel.innerHTML = `
-        <div class="panel-header">
+        <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
           <span>Sliced Elements (<span id="sidebar-elem-count">0</span>)</span>
+        </div>
+        <div class="contour-tools-bar" style="display:flex; gap:3px; padding:6px 8px; border-bottom:1px solid var(--studio-border); background:#0b1120;">
+          <button class="btn-studio btn-simplify-poly" style="flex:1; font-size:0.65rem; padding:3px 2px;" title="Douglas-Peucker reduction">📉 Simplify</button>
+          <button class="btn-studio btn-smooth-poly" style="flex:1; font-size:0.65rem; padding:3px 2px;" title="Chaikin smooth corners">🌀 Smooth</button>
+          <button class="btn-studio btn-subdivide-poly" style="flex:1; font-size:0.65rem; padding:3px 2px;" title="Subdivide edges with midpoints">➗ Subdivide</button>
         </div>
         <div class="panel-body" style="flex:1; overflow-y:auto;">
           <div class="element-list" id="sidebar-element-list"></div>
@@ -559,6 +590,9 @@ export class RigStudioApp {
             <button class="btn-studio btn-save-rename" data-elem-id="${el.id}" style="padding:1px 5px; font-size:0.65rem; color:#10b981;" title="Save">✓</button>
             <button class="btn-studio btn-cancel-rename" data-elem-id="${el.id}" style="padding:1px 5px; font-size:0.65rem; color:#ef4444;" title="Cancel">✕</button>
           </div>
+
+          <!-- Node Count Badge -->
+          <span style="font-size:0.62rem; color:#94a3b8; font-family:var(--studio-font-mono); background:#1e293b; padding:1px 4px; border-radius:3px; flex-shrink:0;" title="${el.polygon.length} contour vertices">${el.polygon.length} pts</span>
 
           <!-- Deformation Mode Tag -->
           <span class="element-tag" style="flex-shrink:0;">${el.deformationMode.toUpperCase()}</span>
@@ -876,6 +910,36 @@ export class RigStudioApp {
       });
     });
 
+    this.container.querySelectorAll('.btn-simplify-poly').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.slicer?.simplifySelectedElement(2.0)) {
+          this.updateSlicerHUD();
+        } else {
+          alert('Select an element with a contour to simplify.');
+        }
+      });
+    });
+
+    this.container.querySelectorAll('.btn-smooth-poly').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.slicer?.smoothSelectedElement(1)) {
+          this.updateSlicerHUD();
+        } else {
+          alert('Select an element to smooth.');
+        }
+      });
+    });
+
+    this.container.querySelectorAll('.btn-subdivide-poly').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.slicer?.subdivideSelectedElement()) {
+          this.updateSlicerHUD();
+        } else {
+          alert('Select an element to subdivide.');
+        }
+      });
+    });
+
     this.container.querySelector('.btn-zoom-in')?.addEventListener('click', () => {
       if (!this.slicer) return;
       this.slicer.setZoom(this.slicer.getZoom() * 1.25);
@@ -960,6 +1024,20 @@ export class RigStudioApp {
 
     const sel = this.slicer?.getSelectedElement();
     if (selectedEl) selectedEl.textContent = sel ? sel.name : 'None';
+
+    const nodeCountEl = this.container.querySelector('#hud-node-count');
+    if (nodeCountEl) nodeCountEl.textContent = sel ? `${sel.polygon.length}` : '0';
+
+    const selNodeEl = this.container.querySelector('#hud-selected-node');
+    const selVertexIdx = this.slicer?.getSelectedVertexIndex();
+    if (selNodeEl) {
+      if (sel && typeof selVertexIdx === 'number' && sel.polygon[selVertexIdx]) {
+        const pt = sel.polygon[selVertexIdx];
+        selNodeEl.textContent = `#${selVertexIdx + 1} (${pt.x}, ${pt.y})`;
+      } else {
+        selNodeEl.textContent = 'None';
+      }
+    }
   }
 
   private highlightElementInSidebar(id: string | null): void {

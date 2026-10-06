@@ -159,7 +159,7 @@ export class MarchingSquares {
    * Douglas-Peucker polyline simplification algorithm.
    */
   public static douglasPeucker(points: Point2D[], epsilon: number): Point2D[] {
-    if (points.length <= 3) return points;
+    if (points.length <= 2) return points;
 
     let dmax = 0;
     let index = 0;

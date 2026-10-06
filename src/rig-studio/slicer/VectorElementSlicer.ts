@@ -1,22 +1,24 @@
 import { VectorOutlineElement } from '../types';
 import { MarchingSquares, Point2D } from './MarchingSquares';
+import { PolygonGeometry, EdgeProjection } from './PolygonGeometry';
 
-export type SlicerToolMode = 'select' | 'polygon' | 'magic' | 'pivot' | 'pan';
+export type SlicerToolMode = 'select' | 'polygon' | 'magic' | 'add_node' | 'delete_node' | 'split' | 'pivot' | 'pan';
 
 export interface SlicerEvents {
   onElementsChange?: (elements: VectorOutlineElement[]) => void;
   onSelectElement?: (element: VectorOutlineElement | null) => void;
   onTextureLoaded?: (img: HTMLImageElement) => void;
+  onVertexSelected?: (vertexIndex: number | null, point: Point2D | null) => void;
 }
 
 export class VectorElementSlicer {
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
+  private ctx: CanvasRenderingContext2D | null;
 
   private image: HTMLImageElement | null = null;
   private offscreenCanvas: HTMLCanvasElement;
-  private offscreenCtx: CanvasRenderingContext2D;
+  private offscreenCtx: CanvasRenderingContext2D | null;
 
   private elements: VectorOutlineElement[] = [];
   private selectedElementId: string | null = null;
@@ -30,14 +32,24 @@ export class VectorElementSlicer {
   private lastMouseY = 0;
 
   // Active Tool
-  private toolMode: SlicerToolMode = 'polygon';
+  private toolMode: SlicerToolMode = 'select';
 
   // In-progress polygon drawing
   private drawingPoints: Point2D[] = [];
   private hoverPoint: Point2D | null = null;
 
-  // Vertex or Pivot dragging
+  // Vertex / Node Editing
+  private selectedVertexIndex: number | null = null;
   private draggingVertexIndex: number | null = null;
+  private hoverVertexIndex: number | null = null;
+  private hoverEdgeInfo: EdgeProjection | null = null;
+
+  // Split / Knife Tool
+  private splitStartPoint: Point2D | null = null;
+  private splitEndPoint: Point2D | null = null;
+  private isDraggingSplit = false;
+
+  // Pivot dragging
   private isDraggingPivot = false;
   private isSpacePressed = false;
 
@@ -56,10 +68,10 @@ export class VectorElementSlicer {
     this.canvas.style.height = '100%';
     this.container.appendChild(this.canvas);
 
-    this.ctx = this.canvas.getContext('2d')!;
+    this.ctx = this.canvas.getContext('2d');
 
     this.offscreenCanvas = document.createElement('canvas');
-    this.offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true });
 
     this.bindEvents();
     this.resizeCanvas();
@@ -70,6 +82,10 @@ export class VectorElementSlicer {
     this.drawingPoints = [];
     this.draggingVertexIndex = null;
     this.isDraggingPivot = false;
+    this.isDraggingSplit = false;
+    this.splitStartPoint = null;
+    this.splitEndPoint = null;
+    this.hoverEdgeInfo = null;
     this.container.classList.toggle('panning', mode === 'pan');
     this.render();
   }
@@ -82,6 +98,7 @@ export class VectorElementSlicer {
     this.elements = JSON.parse(JSON.stringify(elements));
     if (this.selectedElementId && !this.elements.some(e => e.id === this.selectedElementId)) {
       this.selectedElementId = this.elements[0]?.id || null;
+      this.selectedVertexIndex = null;
     }
     this.render();
     if (this.events.onElementsChange) {
@@ -99,9 +116,24 @@ export class VectorElementSlicer {
 
   public selectElement(id: string | null): void {
     this.selectedElementId = id;
+    this.selectedVertexIndex = null;
     this.render();
     if (this.events.onSelectElement) {
       this.events.onSelectElement(this.getSelectedElement());
+    }
+  }
+
+  public getSelectedVertexIndex(): number | null {
+    return this.selectedVertexIndex;
+  }
+
+  public selectVertex(index: number | null): void {
+    this.selectedVertexIndex = index;
+    this.render();
+    const elem = this.getSelectedElement();
+    const pt = (elem && index !== null) ? elem.polygon[index] || null : null;
+    if (this.events.onVertexSelected) {
+      this.events.onVertexSelected(index, pt);
     }
   }
 
@@ -113,10 +145,11 @@ export class VectorElementSlicer {
         this.image = img;
         this.offscreenCanvas.width = img.naturalWidth;
         this.offscreenCanvas.height = img.naturalHeight;
-        this.offscreenCtx.clearRect(0, 0, img.naturalWidth, img.naturalHeight);
-        this.offscreenCtx.drawImage(img, 0, 0);
+        if (this.offscreenCtx) {
+          this.offscreenCtx.clearRect(0, 0, img.naturalWidth, img.naturalHeight);
+          this.offscreenCtx.drawImage(img, 0, 0);
+        }
 
-        // Center the view on load
         this.resetView();
         this.render();
         if (this.events.onTextureLoaded) {
@@ -151,6 +184,7 @@ export class VectorElementSlicer {
   }
 
   public resizeCanvas(): void {
+    if (!this.ctx) return;
     const rect = this.container.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = rect.width * dpr;
@@ -164,13 +198,6 @@ export class VectorElementSlicer {
     const x = (sx - rect.left - this.panX) / this.zoom;
     const y = (sy - rect.top - this.panY) / this.zoom;
     return { x, y };
-  }
-
-  private worldToScreen(wx: number, wy: number): Point2D {
-    return {
-      x: wx * this.zoom + this.panX,
-      y: wy * this.zoom + this.panY
-    };
   }
 
   private bindEvents(): void {
@@ -210,8 +237,17 @@ export class VectorElementSlicer {
         this.handlePolygonClick(world.x, world.y);
       } else if (this.toolMode === 'pivot') {
         this.handlePivotClick(world.x, world.y);
+      } else if (this.toolMode === 'add_node') {
+        this.handleAddNodeClick(world.x, world.y);
+      } else if (this.toolMode === 'delete_node') {
+        this.handleDeleteNodeClick(world.x, world.y);
+      } else if (this.toolMode === 'split') {
+        this.splitStartPoint = world;
+        this.splitEndPoint = world;
+        this.isDraggingSplit = true;
+        this.render();
       } else if (this.toolMode === 'select') {
-        this.handleSelectMouseDown(world.x, world.y);
+        this.handleSelectMouseDown(world.x, world.y, e.altKey || e.shiftKey);
       }
     });
 
@@ -228,6 +264,42 @@ export class VectorElementSlicer {
       if (!this.image) return;
       const world = this.screenToWorld(e.clientX, e.clientY);
       this.hoverPoint = world;
+
+      // Handle split drag
+      if (this.isDraggingSplit && this.splitStartPoint) {
+        this.splitEndPoint = world;
+        this.render();
+        return;
+      }
+
+      const selected = this.getSelectedElement();
+
+      // Check hovered vertex or edge on selected element
+      if (selected) {
+        let foundVertex = null;
+        for (let i = 0; i < selected.polygon.length; i++) {
+          const v = selected.polygon[i];
+          if (Math.hypot(world.x - v.x, world.y - v.y) * this.zoom < 11) {
+            foundVertex = i;
+            break;
+          }
+        }
+        this.hoverVertexIndex = foundVertex;
+
+        if (foundVertex === null && (this.toolMode === 'select' || this.toolMode === 'add_node')) {
+          const edgeProj = PolygonGeometry.findClosestEdge(world, selected.polygon);
+          if (edgeProj && edgeProj.distance * this.zoom < 14) {
+            this.hoverEdgeInfo = edgeProj;
+          } else {
+            this.hoverEdgeInfo = null;
+          }
+        } else {
+          this.hoverEdgeInfo = null;
+        }
+      } else {
+        this.hoverVertexIndex = null;
+        this.hoverEdgeInfo = null;
+      }
 
       if (this.isDraggingPivot && this.selectedElementId) {
         const elem = this.getSelectedElement();
@@ -250,7 +322,7 @@ export class VectorElementSlicer {
           this.render();
           if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
         }
-      } else if (this.toolMode === 'polygon' && this.drawingPoints.length > 0) {
+      } else {
         this.render();
       }
     });
@@ -259,6 +331,14 @@ export class VectorElementSlicer {
       this.isPanning = false;
       this.isDraggingPivot = false;
       this.draggingVertexIndex = null;
+
+      if (this.isDraggingSplit && this.splitStartPoint && this.splitEndPoint) {
+        this.splitSelectedElement(this.splitStartPoint, this.splitEndPoint);
+        this.isDraggingSplit = false;
+        this.splitStartPoint = null;
+        this.splitEndPoint = null;
+        this.render();
+      }
     });
 
     window.addEventListener('keydown', (e) => {
@@ -272,11 +352,19 @@ export class VectorElementSlicer {
         this.container.classList.add('panning');
       } else if (e.key === 'Escape') {
         this.drawingPoints = [];
+        this.isDraggingSplit = false;
+        this.splitStartPoint = null;
+        this.splitEndPoint = null;
         this.render();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (this.selectedElementId) {
+        // If a node is currently selected, delete that node!
+        if (this.selectedVertexIndex !== null && this.selectedElementId) {
+          this.deleteSelectedNode();
+        } else if (this.selectedElementId) {
+          // Otherwise delete the whole element
           this.elements = this.elements.filter(el => el.id !== this.selectedElementId);
           this.selectedElementId = this.elements[0]?.id || null;
+          this.selectedVertexIndex = null;
           this.render();
           if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
           if (this.events.onSelectElement) this.events.onSelectElement(this.getSelectedElement());
@@ -300,7 +388,7 @@ export class VectorElementSlicer {
   }
 
   private handleMagicClick(worldX: number, worldY: number): void {
-    if (!this.image) return;
+    if (!this.image || !this.offscreenCtx) return;
     const imageData = this.offscreenCtx.getImageData(0, 0, this.image.naturalWidth, this.image.naturalHeight);
     const contour = MarchingSquares.traceContour(imageData, worldX, worldY, 20, 2.0);
 
@@ -324,6 +412,7 @@ export class VectorElementSlicer {
 
       this.elements.push(newElem);
       this.selectedElementId = id;
+      this.selectedVertexIndex = null;
       this.render();
       if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
       if (this.events.onSelectElement) this.events.onSelectElement(newElem);
@@ -333,12 +422,10 @@ export class VectorElementSlicer {
   private handlePolygonClick(worldX: number, worldY: number): void {
     const pt = { x: Math.round(worldX), y: Math.round(worldY) };
 
-    // Check if clicked close to start point to close loop
     if (this.drawingPoints.length >= 3) {
       const start = this.drawingPoints[0];
       const dist = Math.hypot(pt.x - start.x, pt.y - start.y) * this.zoom;
       if (dist < 14) {
-        // Complete element
         const id = `elem_${Date.now()}`;
         const name = `part_${this.elements.length + 1}`;
         const bounds = this.computePolygonBounds(this.drawingPoints);
@@ -358,6 +445,7 @@ export class VectorElementSlicer {
 
         this.elements.push(newElem);
         this.selectedElementId = id;
+        this.selectedVertexIndex = null;
         this.drawingPoints = [];
         this.render();
         if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
@@ -383,8 +471,26 @@ export class VectorElementSlicer {
     if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
   }
 
-  private handleSelectMouseDown(worldX: number, worldY: number): void {
+  private handleAddNodeClick(worldX: number, worldY: number): void {
+    this.addNodeAtPoint(worldX, worldY);
+  }
+
+  private handleDeleteNodeClick(worldX: number, worldY: number): void {
     const selected = this.getSelectedElement();
+    if (!selected) return;
+
+    for (let i = 0; i < selected.polygon.length; i++) {
+      const v = selected.polygon[i];
+      if (Math.hypot(worldX - v.x, worldY - v.y) * this.zoom < 12) {
+        this.deleteNodeAtIndex(i);
+        return;
+      }
+    }
+  }
+
+  private handleSelectMouseDown(worldX: number, worldY: number, isAltOrShift = false): void {
+    const selected = this.getSelectedElement();
+
     if (selected) {
       // Check if clicking pivot
       const pivotWorldX = selected.bounds.x + selected.pivot.x;
@@ -397,10 +503,24 @@ export class VectorElementSlicer {
       // Check if clicking a vertex
       for (let i = 0; i < selected.polygon.length; i++) {
         const v = selected.polygon[i];
-        if (Math.hypot(worldX - v.x, worldY - v.y) * this.zoom < 10) {
+        if (Math.hypot(worldX - v.x, worldY - v.y) * this.zoom < 11) {
+          if (isAltOrShift) {
+            // Alt/Shift click deletes this node directly!
+            this.deleteNodeAtIndex(i);
+            return;
+          }
+          this.selectedVertexIndex = i;
           this.draggingVertexIndex = i;
+          this.render();
+          if (this.events.onVertexSelected) this.events.onVertexSelected(i, v);
           return;
         }
+      }
+
+      // Check if clicking a hovered edge to insert node
+      if (this.hoverEdgeInfo && this.hoverEdgeInfo.distance * this.zoom < 12) {
+        this.addNodeAtPoint(worldX, worldY);
+        return;
       }
     }
 
@@ -409,6 +529,7 @@ export class VectorElementSlicer {
       const elem = this.elements[i];
       if (this.isPointInPolygon({ x: worldX, y: worldY }, elem.polygon)) {
         this.selectedElementId = elem.id;
+        this.selectedVertexIndex = null;
         this.render();
         if (this.events.onSelectElement) this.events.onSelectElement(elem);
         return;
@@ -417,8 +538,154 @@ export class VectorElementSlicer {
 
     // Clicked empty space
     this.selectedElementId = null;
+    this.selectedVertexIndex = null;
     this.render();
     if (this.events.onSelectElement) this.events.onSelectElement(null);
+  }
+
+  /**
+   * Adds a node to the selected polygon along the closest edge.
+   */
+  public addNodeAtPoint(worldX: number, worldY: number): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    const edgeProj = PolygonGeometry.findClosestEdge({ x: worldX, y: worldY }, selected.polygon);
+    if (!edgeProj) return false;
+
+    selected.polygon = PolygonGeometry.insertNodeOnEdge(selected.polygon, edgeProj.edgeIndex, edgeProj.point);
+    this.selectedVertexIndex = edgeProj.edgeIndex + 1;
+    this.recalculateBounds(selected);
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  /**
+   * Deletes the currently selected node.
+   */
+  public deleteSelectedNode(): boolean {
+    if (this.selectedVertexIndex === null) return false;
+    return this.deleteNodeAtIndex(this.selectedVertexIndex);
+  }
+
+  /**
+   * Deletes the node at the specified index.
+   */
+  public deleteNodeAtIndex(index: number): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    const updated = PolygonGeometry.deleteNode(selected.polygon, index);
+    if (!updated) {
+      return false; // Polygon requires at least 3 nodes
+    }
+
+    selected.polygon = updated;
+    this.selectedVertexIndex = null;
+    this.recalculateBounds(selected);
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  /**
+   * Slices the selected polygon into two separate elements using a cut line.
+   */
+  public splitSelectedElement(p1: Point2D, p2: Point2D): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    const split = PolygonGeometry.splitPolygon(selected.polygon, p1, p2);
+    if (!split) return false;
+
+    const { poly1, poly2 } = split;
+    const oldName = selected.name;
+
+    // Piece 1 replaces current element
+    selected.polygon = poly1;
+    this.recalculateBounds(selected);
+    selected.pivot = {
+      x: Math.round(selected.bounds.width / 2),
+      y: Math.round(selected.bounds.height / 2)
+    };
+
+    // Piece 2 added as a new element
+    const newId = `elem_${Date.now()}`;
+    const newName = `${oldName}_part2`;
+    const bounds2 = this.computePolygonBounds(poly2);
+    const pivot2 = {
+      x: Math.round(bounds2.width / 2),
+      y: Math.round(bounds2.height / 2)
+    };
+
+    const newElem: VectorOutlineElement = {
+      id: newId,
+      name: newName,
+      polygon: poly2,
+      bounds: bounds2,
+      pivot: pivot2,
+      deformationMode: selected.deformationMode
+    };
+
+    this.elements.push(newElem);
+    this.selectedElementId = selected.id;
+    this.selectedVertexIndex = null;
+    this.render();
+
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  /**
+   * Simplifies the selected polygon contour using Douglas-Peucker.
+   */
+  public simplifySelectedElement(epsilon = 2.0): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    const simplified = PolygonGeometry.simplifyPolygon(selected.polygon, epsilon);
+    if (simplified.length < 3) return false;
+
+    selected.polygon = simplified;
+    this.selectedVertexIndex = null;
+    this.recalculateBounds(selected);
+    this.render();
+
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  /**
+   * Smooths the selected polygon corners using Chaikin algorithm.
+   */
+  public smoothSelectedElement(iterations = 1): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    selected.polygon = PolygonGeometry.smoothChaikin(selected.polygon, iterations);
+    this.selectedVertexIndex = null;
+    this.recalculateBounds(selected);
+    this.render();
+
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  /**
+   * Subdivides polygon edges with midpoints.
+   */
+  public subdivideSelectedElement(): boolean {
+    const selected = this.getSelectedElement();
+    if (!selected) return false;
+
+    selected.polygon = PolygonGeometry.subdivide(selected.polygon);
+    this.selectedVertexIndex = null;
+    this.recalculateBounds(selected);
+    this.render();
+
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
   }
 
   private isPointInPolygon(p: Point2D, poly: Point2D[]): boolean {
@@ -458,9 +725,6 @@ export class VectorElementSlicer {
     elem.bounds = this.computePolygonBounds(elem.polygon);
   }
 
-  /**
-   * Generates a trimmed, isolated data URL image for an element.
-   */
   public generateThumbnail(elem: VectorOutlineElement): string {
     if (!this.image) return '';
     const thumbCanvas = document.createElement('canvas');
@@ -470,7 +734,6 @@ export class VectorElementSlicer {
     if (!tctx) return '';
 
     tctx.save();
-    // Clip with polygon
     tctx.beginPath();
     for (let i = 0; i < elem.polygon.length; i++) {
       const px = elem.polygon[i].x - elem.bounds.x;
@@ -498,6 +761,7 @@ export class VectorElementSlicer {
   }
 
   public render(): void {
+    if (!this.ctx) return;
     const rect = this.container.getBoundingClientRect();
     const w = rect.width;
     const h = rect.height;
@@ -539,28 +803,92 @@ export class VectorElementSlicer {
       this.ctx.strokeStyle = isSelected ? '#38bdf8' : '#0284c7';
       this.ctx.stroke();
 
-      // Draw vertices if selected
+      // Draw vertices and controls if selected
       if (isSelected) {
-        for (const pt of elem.polygon) {
-          this.ctx.fillStyle = '#ffffff';
+        // Highlight hovered edge segment
+        if (this.hoverEdgeInfo && (this.toolMode === 'select' || this.toolMode === 'add_node')) {
+          const idx = this.hoverEdgeInfo.edgeIndex;
+          const pA = elem.polygon[idx];
+          const pB = elem.polygon[(idx + 1) % elem.polygon.length];
+
           this.ctx.beginPath();
-          this.ctx.arc(pt.x, pt.y, 4 / this.zoom, 0, Math.PI * 2);
+          this.ctx.moveTo(pA.x, pA.y);
+          this.ctx.lineTo(pB.x, pB.y);
+          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.lineWidth = 3.5 / this.zoom;
+          this.ctx.stroke();
+
+          // Draw ghost node "+"
+          const ghost = this.hoverEdgeInfo.point;
+          this.ctx.beginPath();
+          this.ctx.arc(ghost.x, ghost.y, 6 / this.zoom, 0, Math.PI * 2);
+          this.ctx.fillStyle = '#22d3ee';
           this.ctx.fill();
-          this.ctx.strokeStyle = '#0284c7';
+          this.ctx.strokeStyle = '#ffffff';
           this.ctx.lineWidth = 1.5 / this.zoom;
           this.ctx.stroke();
+
+          // Plus sign
+          this.ctx.beginPath();
+          const arm = 3.5 / this.zoom;
+          this.ctx.moveTo(ghost.x - arm, ghost.y);
+          this.ctx.lineTo(ghost.x + arm, ghost.y);
+          this.ctx.moveTo(ghost.x, ghost.y - arm);
+          this.ctx.lineTo(ghost.x, ghost.y + arm);
+          this.ctx.strokeStyle = '#0f172a';
+          this.ctx.lineWidth = 1.2 / this.zoom;
+          this.ctx.stroke();
+        }
+
+        // Draw vertices
+        for (let i = 0; i < elem.polygon.length; i++) {
+          const pt = elem.polygon[i];
+          const isNodeSelected = i === this.selectedVertexIndex;
+          const isNodeHovered = i === this.hoverVertexIndex;
+
+          const radius = (isNodeSelected ? 6.5 : (isNodeHovered ? 5.5 : 4)) / this.zoom;
+
+          this.ctx.beginPath();
+          this.ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+
+          if (isNodeSelected) {
+            this.ctx.fillStyle = '#f59e0b';
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.stroke();
+
+            // Glowing ring around selected node
+            this.ctx.beginPath();
+            this.ctx.arc(pt.x, pt.y, (radius + 3) / this.zoom, 0, Math.PI * 2);
+            this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
+            this.ctx.lineWidth = 1.5 / this.zoom;
+            this.ctx.stroke();
+          } else if (isNodeHovered && this.toolMode === 'delete_node') {
+            this.ctx.fillStyle = '#ef4444';
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1.5 / this.zoom;
+            this.ctx.stroke();
+          } else {
+            this.ctx.fillStyle = isNodeHovered ? '#38bdf8' : '#ffffff';
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#0284c7';
+            this.ctx.lineWidth = 1.5 / this.zoom;
+            this.ctx.stroke();
+          }
         }
 
         // Draw Pivot Crosshair
         const pWorldX = elem.bounds.x + elem.pivot.x;
         const pWorldY = elem.bounds.y + elem.pivot.y;
-        const arm = 9 / this.zoom;
+        const pArm = 9 / this.zoom;
 
         this.ctx.beginPath();
-        this.ctx.moveTo(pWorldX - arm, pWorldY);
-        this.ctx.lineTo(pWorldX + arm, pWorldY);
-        this.ctx.moveTo(pWorldX, pWorldY - arm);
-        this.ctx.lineTo(pWorldX, pWorldY + arm);
+        this.ctx.moveTo(pWorldX - pArm, pWorldY);
+        this.ctx.lineTo(pWorldX + pArm, pWorldY);
+        this.ctx.moveTo(pWorldX, pWorldY - pArm);
+        this.ctx.lineTo(pWorldX, pWorldY + pArm);
         this.ctx.strokeStyle = '#f59e0b';
         this.ctx.lineWidth = 2.5 / this.zoom;
         this.ctx.stroke();
@@ -600,6 +928,36 @@ export class VectorElementSlicer {
         this.ctx.lineWidth = 1.2 / this.zoom;
         this.ctx.stroke();
       }
+    }
+
+    // 4. Draw Split Knife Cut Line
+    if (this.isDraggingSplit && this.splitStartPoint && this.splitEndPoint) {
+      this.ctx.save();
+      this.ctx.setLineDash([6 / this.zoom, 4 / this.zoom]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.splitStartPoint.x, this.splitStartPoint.y);
+      this.ctx.lineTo(this.splitEndPoint.x, this.splitEndPoint.y);
+      this.ctx.strokeStyle = '#f97316';
+      this.ctx.lineWidth = 2.5 / this.zoom;
+      this.ctx.stroke();
+      this.ctx.restore();
+
+      // Endpoint circles
+      this.ctx.beginPath();
+      this.ctx.arc(this.splitStartPoint.x, this.splitStartPoint.y, 5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#f97316';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.lineWidth = 1.2 / this.zoom;
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.arc(this.splitEndPoint.x, this.splitEndPoint.y, 5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#f97316';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.lineWidth = 1.2 / this.zoom;
+      this.ctx.stroke();
     }
 
     this.ctx.restore();
