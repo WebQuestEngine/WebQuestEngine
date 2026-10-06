@@ -268,30 +268,82 @@ export class PoseRigManager {
   }
 
   /**
+   * Computes intelligent default rotation and scale for a sliced element bound to a slot/bone.
+   * - Head, torso, chest extend UP from pivot -> rotation: +90° to align with bone
+   * - Limbs (arms, legs, feet) extend DOWN from pivot -> rotation: -90° to align with bone
+   * - Scale is computed to fit bone length (typically 0.25 for 4x high-res graphics)
+   */
+  public computeDefaultElementTransform(
+    slotName: string,
+    element: VectorOutlineElement
+  ): { rotation: number; scaleX: number; scaleY: number; x: number; y: number } {
+    const slot = this.doc.slots.find(s => s.name === slotName);
+    const bone = slot ? this.doc.bones.find(b => b.name === slot.bone) : null;
+    const bName = (bone?.name || slotName).toLowerCase();
+
+    // 1. Rotation alignment
+    let rotation = -90;
+    const isUpward = bName.includes('head') || bName.includes('torso') || bName.includes('chest') || bName.includes('hip') ||
+      (element.bounds.height > 0 && (element.pivot.y / element.bounds.height > 0.55));
+    if (isUpward) {
+      rotation = 90;
+    }
+
+    // 2. Scale alignment
+    let scale = 1.0;
+    if (bone && bone.length && element.bounds.height > 0) {
+      const rawScale = bone.length / element.bounds.height;
+      if (element.bounds.height > 50 || rawScale < 0.6) {
+        scale = Math.round(rawScale * 100) / 100;
+        if (Math.abs(scale - 0.25) < 0.08) scale = 0.25;
+        else if (Math.abs(scale - 0.5) < 0.08) scale = 0.5;
+        scale = Math.max(0.05, Math.min(2.0, scale));
+      }
+    }
+
+    return {
+      rotation,
+      scaleX: scale,
+      scaleY: scale,
+      x: 0,
+      y: 0
+    };
+  }
+
+  /**
    * Binds a sliced vector element to a slot in the active pose/skin.
    */
   public bindElementToSlot(
     slotName: string,
     element: VectorOutlineElement,
-    offsetX = 0,
-    offsetY = 0,
-    rotation = 0
+    offsetX?: number,
+    offsetY?: number,
+    rotation?: number,
+    scaleX?: number,
+    scaleY?: number
   ): void {
     const skin = this.getActiveSkin();
     if (!skin.attachments[slotName]) {
       skin.attachments[slotName] = {};
     }
 
+    const def = this.computeDefaultElementTransform(slotName, element);
+    const finalRot = rotation !== undefined ? rotation : def.rotation;
+    const finalScaleX = scaleX !== undefined ? scaleX : def.scaleX;
+    const finalScaleY = scaleY !== undefined ? scaleY : def.scaleY;
+    const finalX = offsetX !== undefined ? offsetX : 0;
+    const finalY = offsetY !== undefined ? offsetY : 0;
+
     const attachment: SpineAttachmentData = {
       type: element.deformationMode === 'mesh' ? 'mesh' : 'region',
       name: element.name,
-      x: offsetX,
-      y: offsetY,
-      rotation,
+      x: finalX,
+      y: finalY,
+      rotation: finalRot,
       width: element.bounds.width,
       height: element.bounds.height,
-      scaleX: 1,
-      scaleY: 1
+      scaleX: finalScaleX,
+      scaleY: finalScaleY
     };
 
     skin.attachments[slotName][slotName] = attachment;
@@ -300,6 +352,71 @@ export class PoseRigManager {
     const slot = this.doc.slots.find(s => s.name === slotName);
     if (slot) {
       slot.attachment = slotName;
+    }
+  }
+
+  public setSlotAttachmentTransform(
+    slotName: string,
+    transforms: { x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number }
+  ): void {
+    const attachment = this.getSlotAttachment(slotName);
+    if (!attachment) return;
+    if (transforms.x !== undefined) attachment.x = transforms.x;
+    if (transforms.y !== undefined) attachment.y = transforms.y;
+    if (transforms.rotation !== undefined) attachment.rotation = transforms.rotation;
+    if (transforms.scaleX !== undefined) attachment.scaleX = transforms.scaleX;
+    if (transforms.scaleY !== undefined) attachment.scaleY = transforms.scaleY;
+  }
+
+  public autoAlignAllAttachments(targetScale?: number): void {
+    const skin = this.getActiveSkin();
+    const elements = this.doc.skeleton.questforge?.elements || [];
+
+    // Calculate common scale if not provided
+    let resolvedScale = targetScale;
+    if (resolvedScale === undefined) {
+      const limbScales: number[] = [];
+      for (const slot of this.doc.slots) {
+        const attach = skin.attachments[slot.name]?.[slot.name];
+        if (!attach) continue;
+        const elem = elements.find(e => e.name === attach.name);
+        const bone = this.doc.bones.find(b => b.name === slot.bone);
+        if (elem && bone && bone.length && elem.bounds.height > 0) {
+          const s = bone.length / elem.bounds.height;
+          if (s < 0.8) limbScales.push(s);
+        }
+      }
+      if (limbScales.length > 0) {
+        resolvedScale = Math.round((limbScales.reduce((a, b) => a + b, 0) / limbScales.length) * 100) / 100;
+        if (Math.abs(resolvedScale - 0.25) < 0.08) resolvedScale = 0.25;
+      } else {
+        resolvedScale = 0.25;
+      }
+    }
+
+    for (const slot of this.doc.slots) {
+      const attach = skin.attachments[slot.name]?.[slot.name];
+      if (!attach) continue;
+      const elem = elements.find(e => e.name === attach.name);
+      if (!elem) continue;
+
+      const def = this.computeDefaultElementTransform(slot.name, elem);
+      attach.rotation = def.rotation;
+      attach.scaleX = resolvedScale;
+      attach.scaleY = resolvedScale;
+      attach.x = 0;
+      attach.y = 0;
+    }
+  }
+
+  public setGlobalAttachmentScale(scale: number): void {
+    const skin = this.getActiveSkin();
+    for (const slot of this.doc.slots) {
+      const attach = skin.attachments[slot.name]?.[slot.name];
+      if (attach) {
+        attach.scaleX = scale;
+        attach.scaleY = scale;
+      }
     }
   }
 

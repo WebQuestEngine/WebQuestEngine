@@ -350,8 +350,13 @@ export class BoneCanvasEditor {
       if (elem && this.sourceImage) {
         this.ctx.save();
         this.ctx.translate(wt.worldX, wt.worldY);
-        this.ctx.rotate(((wt.worldRotation + (attachment.rotation || 0)) * Math.PI) / 180);
+        this.ctx.rotate((wt.worldRotation * Math.PI) / 180);
         this.ctx.translate(attachment.x || 0, attachment.y || 0);
+        this.ctx.rotate(((attachment.rotation || 0) * Math.PI) / 180);
+
+        const sX = attachment.scaleX !== undefined ? attachment.scaleX : 1;
+        const sY = attachment.scaleY !== undefined ? attachment.scaleY : 1;
+        this.ctx.scale(sX, sY);
 
         // Draw cropped element from source image
         this.ctx.save();

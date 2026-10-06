@@ -166,4 +166,65 @@ describe('PoseRigManager', () => {
     manager.setActivePose('side');
     expect(manager.getBones().find(b => b.name === 'head')?.x).toBe(99);
   });
+
+  it('computes smart default alignment rotation and scale for elements', () => {
+    const doc = createMockDoc();
+    const manager = new PoseRigManager(doc);
+
+    // Torso (upward body part) -> rotation: 90
+    const torsoElem: VectorOutlineElement = {
+      id: 'torso_1',
+      name: 'f_torso',
+      polygon: [],
+      pivot: { x: 50, y: 80 },
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+      deformationMode: 'cutout'
+    };
+    const torsoTransform = manager.computeDefaultElementTransform('torso', torsoElem);
+    expect(torsoTransform.rotation).toBe(90);
+
+    // Limb element (e.g. arm or leg pointing downward) -> rotation: -90
+    const armBone = manager.addBone('arm_upper_r', 'torso', 10, 0, 25);
+    const armElem: VectorOutlineElement = {
+      id: 'arm_1',
+      name: 'f_arm_upper_r',
+      polygon: [],
+      pivot: { x: 20, y: 10 },
+      bounds: { x: 0, y: 0, width: 40, height: 100 },
+      deformationMode: 'cutout'
+    };
+    const armTransform = manager.computeDefaultElementTransform('arm_upper_r', armElem);
+    expect(armTransform.rotation).toBe(-90);
+    // 25 / 100 = 0.25 scale
+    expect(armTransform.scaleX).toBe(0.25);
+  });
+
+  it('auto-aligns all attachments and updates global scale', () => {
+    const doc = createMockDoc();
+    const manager = new PoseRigManager(doc);
+
+    const torsoElem: VectorOutlineElement = {
+      id: 'torso_1',
+      name: 'f_torso',
+      polygon: [],
+      pivot: { x: 50, y: 80 },
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+      deformationMode: 'cutout'
+    };
+    doc.skeleton.questforge!.elements = [torsoElem];
+
+    // Bind with raw default
+    manager.bindElementToSlot('torso', torsoElem, 0, 0, 0, 1, 1);
+    expect(manager.getSlotAttachment('torso')?.rotation).toBe(0);
+
+    // Auto-align all
+    manager.autoAlignAllAttachments(0.25);
+    const updated = manager.getSlotAttachment('torso');
+    expect(updated?.rotation).toBe(90);
+    expect(updated?.scaleX).toBe(0.25);
+
+    // Global scale change
+    manager.setGlobalAttachmentScale(0.5);
+    expect(manager.getSlotAttachment('torso')?.scaleX).toBe(0.5);
+  });
 });

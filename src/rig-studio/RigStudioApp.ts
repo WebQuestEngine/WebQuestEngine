@@ -762,14 +762,38 @@ export class RigStudioApp {
     const slots = this.poseManager.getSlots();
     const elements = this.spineDoc.skeleton.questforge?.elements || [];
 
+    const boundAttachments = slots.map(s => this.poseManager.getSlotAttachment(s.name)).filter(Boolean);
+    const currentGlobalScale = boundAttachments.length > 0 && boundAttachments[0]?.scaleX !== undefined
+      ? boundAttachments[0].scaleX
+      : 0.25;
+
     riggingPanel.innerHTML = `
-      <div class="panel-header">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
         <span>Bones & Slot Bindings (${this.poseManager.getActivePose().toUpperCase()})</span>
+        <button class="btn-studio btn-auto-align-all" style="font-size:0.68rem; padding:2px 8px; background:linear-gradient(135deg, #0284c7, #0369a1); color:#fff; font-weight:600;" title="Align all cutouts with bone directions and auto-scale to bone lengths">
+          ⚡ Auto-Align & Fit
+        </button>
       </div>
+
+      <div style="padding:6px 10px; background:#0f172a; border-bottom:1px solid var(--studio-border); display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:0.68rem; color:var(--studio-text-muted); font-weight:600;">Global Cutout Scale:</span>
+          <span class="label-global-scale" style="font-size:0.7rem; font-family:var(--studio-font-mono); color:#38bdf8; font-weight:700;">${currentGlobalScale.toFixed(2)}x</span>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="range" class="input-global-cutout-scale" min="0.05" max="1.5" step="0.05" value="${currentGlobalScale}" style="flex:1;" />
+          <button class="btn-studio btn-chip-global-scale" data-val="0.25" style="padding:1px 5px; font-size:0.65rem;">0.25</button>
+          <button class="btn-studio btn-chip-global-scale" data-val="0.5" style="padding:1px 5px; font-size:0.65rem;">0.5</button>
+          <button class="btn-studio btn-chip-global-scale" data-val="1.0" style="padding:1px 5px; font-size:0.65rem;">1.0</button>
+        </div>
+      </div>
+
       <div class="panel-body" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
         <div style="display:flex; flex-direction:column; gap:6px;">
           ${slots.map((slot, sIdx) => {
             const currentAttach = this.poseManager.getSlotAttachment(slot.name);
+            const rot = currentAttach?.rotation || 0;
+            const scX = currentAttach?.scaleX ?? 1;
             return `
               <div class="slot-binding-row" data-slot="${slot.name}" style="background:#1e293b; padding:6px 8px; border-radius:6px; border:1px solid var(--studio-border); display:flex; flex-direction:column; gap:4px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -789,6 +813,35 @@ export class RigStudioApp {
                     ${elements.map(el => `<option value="${el.name}" ${currentAttach?.name === el.name ? 'selected' : ''}>${el.name}</option>`).join('')}
                   </select>
                 </div>
+                ${currentAttach ? `
+                  <div class="slot-attach-details" style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; background:#090d16; padding:6px; border-radius:4px; margin-top:2px;">
+                    <div>
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                        <span style="font-size:0.65rem; color:var(--studio-text-muted);">Angle:</span>
+                        <span class="label-slot-rot" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${rot}°</span>
+                      </div>
+                      <input type="range" class="input-slot-rot" data-slot="${slot.name}" min="-180" max="180" step="5" value="${rot}" style="width:100%;" />
+                      <div style="display:flex; gap:2px; margin-top:3px;">
+                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="-90" style="padding:1px 3px; font-size:0.6rem; flex:1;">-90°</button>
+                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="0" style="padding:1px 3px; font-size:0.6rem; flex:1;">0°</button>
+                        <button class="btn-studio btn-slot-rot-chip" data-slot="${slot.name}" data-val="90" style="padding:1px 3px; font-size:0.6rem; flex:1;">+90°</button>
+                        <button class="btn-studio btn-slot-rot-auto" data-slot="${slot.name}" style="padding:1px 3px; font-size:0.6rem; flex:1;" title="Auto-align with bone direction">Auto</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                        <span style="font-size:0.65rem; color:var(--studio-text-muted);">Scale:</span>
+                        <span class="label-slot-scale" style="font-size:0.65rem; font-family:var(--studio-font-mono); color:#38bdf8;">${scX.toFixed(2)}x</span>
+                      </div>
+                      <input type="range" class="input-slot-scale" data-slot="${slot.name}" min="0.05" max="1.5" step="0.05" value="${scX}" style="width:100%;" />
+                      <div style="display:flex; gap:2px; margin-top:3px;">
+                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.25" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.25</button>
+                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="0.5" style="padding:1px 3px; font-size:0.6rem; flex:1;">0.5</button>
+                        <button class="btn-studio btn-slot-scale-chip" data-slot="${slot.name}" data-val="1.0" style="padding:1px 3px; font-size:0.6rem; flex:1;">1.0</button>
+                      </div>
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             `;
           }).join('')}
@@ -796,7 +849,108 @@ export class RigStudioApp {
       </div>
     `;
 
-    // Bind element dropdown change
+    // 1. Auto-align all button
+    riggingPanel.querySelector('.btn-auto-align-all')?.addEventListener('click', () => {
+      this.poseManager.autoAlignAllAttachments();
+      this.renderRiggingSidebarHTML(sidebar);
+      this.boneEditor?.render();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+    });
+
+    // 2. Global scale slider and chips
+    const globalScaleSlider = riggingPanel.querySelector('.input-global-cutout-scale') as HTMLInputElement;
+    const globalScaleLabel = riggingPanel.querySelector('.label-global-scale') as HTMLElement;
+    const applyGlobalScale = (sc: number) => {
+      this.poseManager.setGlobalAttachmentScale(sc);
+      this.renderRiggingSidebarHTML(sidebar);
+      this.boneEditor?.render();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+    };
+
+    globalScaleSlider?.addEventListener('input', () => {
+      const val = parseFloat(globalScaleSlider.value);
+      if (globalScaleLabel) globalScaleLabel.textContent = `${val.toFixed(2)}x`;
+      this.poseManager.setGlobalAttachmentScale(val);
+      this.boneEditor?.render();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+    });
+    globalScaleSlider?.addEventListener('change', () => {
+      this.renderRiggingSidebarHTML(sidebar);
+    });
+
+    riggingPanel.querySelectorAll('.btn-chip-global-scale').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = parseFloat(btn.getAttribute('data-val')!);
+        applyGlobalScale(val);
+      });
+    });
+
+    // 3. Per-slot rotation controls
+    riggingPanel.querySelectorAll('.input-slot-rot').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const slotName = (input as HTMLElement).getAttribute('data-slot')!;
+        const val = parseInt((input as HTMLInputElement).value, 10);
+        const row = input.closest('.slot-binding-row');
+        const lbl = row?.querySelector('.label-slot-rot');
+        if (lbl) lbl.textContent = `${val}°`;
+        this.poseManager.setSlotAttachmentTransform(slotName, { rotation: val });
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    riggingPanel.querySelectorAll('.btn-slot-rot-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const slotName = btn.getAttribute('data-slot')!;
+        const val = parseInt(btn.getAttribute('data-val')!, 10);
+        this.poseManager.setSlotAttachmentTransform(slotName, { rotation: val });
+        this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    riggingPanel.querySelectorAll('.btn-slot-rot-auto').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const slotName = btn.getAttribute('data-slot')!;
+        const attach = this.poseManager.getSlotAttachment(slotName);
+        const elem = elements.find(el => el.name === attach?.name);
+        if (elem) {
+          const def = this.poseManager.computeDefaultElementTransform(slotName, elem);
+          this.poseManager.setSlotAttachmentTransform(slotName, { rotation: def.rotation });
+          this.renderRiggingSidebarHTML(sidebar);
+          this.boneEditor?.render();
+          this.previewPlayer?.setSpineDocument(this.spineDoc);
+        }
+      });
+    });
+
+    // 4. Per-slot scale controls
+    riggingPanel.querySelectorAll('.input-slot-scale').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const slotName = (input as HTMLElement).getAttribute('data-slot')!;
+        const val = parseFloat((input as HTMLInputElement).value);
+        const row = input.closest('.slot-binding-row');
+        const lbl = row?.querySelector('.label-slot-scale');
+        if (lbl) lbl.textContent = `${val.toFixed(2)}x`;
+        this.poseManager.setSlotAttachmentTransform(slotName, { scaleX: val, scaleY: val });
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    riggingPanel.querySelectorAll('.btn-slot-scale-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const slotName = btn.getAttribute('data-slot')!;
+        const val = parseFloat(btn.getAttribute('data-val')!);
+        this.poseManager.setSlotAttachmentTransform(slotName, { scaleX: val, scaleY: val });
+        this.renderRiggingSidebarHTML(sidebar);
+        this.boneEditor?.render();
+        this.previewPlayer?.setSpineDocument(this.spineDoc);
+      });
+    });
+
+    // 5. Bind element dropdown change
     riggingPanel.querySelectorAll('.select-slot-element').forEach(sel => {
       sel.addEventListener('change', (e) => {
         const slotName = (sel as HTMLElement).getAttribute('data-slot')!;
@@ -807,12 +961,13 @@ export class RigStudioApp {
         } else {
           this.poseManager.unbindSlotAttachment(slotName);
         }
+        this.renderRiggingSidebarHTML(sidebar);
         this.boneEditor?.render();
         this.previewPlayer?.setSpineDocument(this.spineDoc);
       });
     });
 
-    // Bind slot up / down
+    // 6. Bind slot up / down
     riggingPanel.querySelectorAll('.btn-slot-up').forEach(btn => {
       btn.addEventListener('click', () => {
         const sidx = parseInt(btn.getAttribute('data-sidx')!, 10);
