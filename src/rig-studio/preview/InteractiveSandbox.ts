@@ -132,7 +132,8 @@ export class InteractiveSandbox {
     if (!this.boneGraphicsContainer) return;
     this.boneGraphicsContainer.removeChildren();
 
-    const bones = this.doc.bones || [];
+    const poseBones = this.doc.skeleton?.questforge?.poseBones?.[this.currentPose];
+    const bones = (poseBones && poseBones.length > 0) ? poseBones : (this.doc.bones || []);
     for (const b of bones) {
       const gfx = new PIXI.Graphics();
       const length = b.length || 20;
@@ -154,6 +155,10 @@ export class InteractiveSandbox {
 
   private bindKeyboard(): void {
     window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       const k = e.key.toLowerCase();
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright'].includes(k)) {
         this.keysPressed.add(k);
@@ -191,6 +196,7 @@ export class InteractiveSandbox {
       this.targetY = this.charY;
       this.isMoving = true;
 
+      const prevPose = this.currentPose;
       // Update pose and direction
       if (Math.abs(moveDx) > Math.abs(moveDy)) {
         this.currentPose = 'side';
@@ -202,6 +208,9 @@ export class InteractiveSandbox {
         this.currentPose = 'back';
         this.isFacingLeft = false;
       }
+      if (this.currentPose !== prevPose) {
+        this.rebuildCharacter();
+      }
     } else if (this.isMoving) {
       const dist = Math.hypot(this.targetX - this.charX, this.targetY - this.charY);
       if (dist > 4) {
@@ -210,6 +219,7 @@ export class InteractiveSandbox {
         this.charX += dx * Math.min(dist, speed);
         this.charY += dy * Math.min(dist, speed);
 
+        const prevPose = this.currentPose;
         if (Math.abs(dx) > Math.abs(dy)) {
           this.currentPose = 'side';
           this.isFacingLeft = dx < 0;
@@ -219,6 +229,9 @@ export class InteractiveSandbox {
         } else {
           this.currentPose = 'back';
           this.isFacingLeft = false;
+        }
+        if (this.currentPose !== prevPose) {
+          this.rebuildCharacter();
         }
       } else {
         this.isMoving = false;

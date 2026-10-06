@@ -188,6 +188,23 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
     return 'front';
   }
 
+  private applyPoseBones(skinName: string): void {
+    const poseBones = this.config.spineDoc?.skeleton?.questforge?.poseBones?.[skinName];
+    if (!poseBones || poseBones.length === 0) return;
+    for (const b of poseBones) {
+      const node = this.boneNodes.get(b.name);
+      if (node) {
+        node.localX = b.x;
+        node.localY = b.y;
+        node.localRotation = b.rotation || 0;
+        node.data = b;
+        node.container.x = b.x;
+        node.container.y = b.y;
+        node.container.rotation = ((b.rotation || 0) * Math.PI) / 180;
+      }
+    }
+  }
+
   public update(delta: number, state: CharacterRenderState): void {
     if (!this.container || (this.container as any).destroyed) return;
 
@@ -195,6 +212,7 @@ export class SkeletalCharacterVisualizer implements ICharacterVisualizer {
     const targetSkin = this.resolveTargetSkin(state);
     if (targetSkin !== this.currentSkin && this.config.skeleton?.attachments?.[targetSkin]) {
       this.currentSkin = targetSkin;
+      this.applyPoseBones(targetSkin);
       this.buildSlots();
     }
 

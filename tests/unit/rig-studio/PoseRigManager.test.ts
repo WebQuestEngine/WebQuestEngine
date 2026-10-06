@@ -107,4 +107,63 @@ describe('PoseRigManager', () => {
     const reorderedSlots = manager.getSlots().map(s => s.name);
     expect(reorderedSlots).toEqual(['slot_b', 'torso', 'slot_a']);
   });
+
+  it('provides distinct bone structures per pose with mirror reversal in back pose and profile alignment in side pose', () => {
+    const doc = createMockDoc();
+    doc.bones = []; // let it initialize from humanoid presets
+    const manager = new PoseRigManager(doc);
+
+    // 1. FRONT POSE
+    expect(manager.getActivePose()).toBe('front');
+    const frontBones = manager.getBones();
+    const frontArmR = frontBones.find(b => b.name === 'arm_upper_r');
+    const frontArmL = frontBones.find(b => b.name === 'arm_upper_l');
+    const frontLegR = frontBones.find(b => b.name === 'leg_upper_r');
+    const frontLegL = frontBones.find(b => b.name === 'leg_upper_l');
+
+    // In Front pose: Right limbs are on viewer's LEFT (negative Y in parent's local space = negative X world)
+    expect(frontArmR?.y).toBeLessThan(0);
+    expect(frontLegR?.y).toBeLessThan(0);
+    // Left limbs are on viewer's RIGHT (positive Y in parent's local space = positive X world)
+    expect(frontArmL?.y).toBeGreaterThan(0);
+    expect(frontLegL?.y).toBeGreaterThan(0);
+
+    // 2. BACK POSE
+    manager.setActivePose('back');
+    expect(manager.getActivePose()).toBe('back');
+    const backBones = manager.getBones();
+    const backArmR = backBones.find(b => b.name === 'arm_upper_r');
+    const backArmL = backBones.find(b => b.name === 'arm_upper_l');
+    const backLegR = backBones.find(b => b.name === 'leg_upper_r');
+    const backLegL = backBones.find(b => b.name === 'leg_upper_l');
+
+    // In Back pose: Reversed! Right limbs are on viewer's RIGHT, Left limbs are on viewer's LEFT
+    expect(backArmR?.y).toBeGreaterThan(0);
+    expect(backLegR?.y).toBeGreaterThan(0);
+    expect(backArmL?.y).toBeLessThan(0);
+    expect(backLegL?.y).toBeLessThan(0);
+
+    // 3. SIDE POSE
+    manager.setActivePose('side');
+    expect(manager.getActivePose()).toBe('side');
+    const sideBones = manager.getBones();
+    const sideFootL = sideBones.find(b => b.name === 'foot_l');
+    const sideFootR = sideBones.find(b => b.name === 'foot_r');
+
+    // In Side pose: Feet point forward horizontally (rotation near -90 from lower leg)
+    expect(sideFootL?.rotation).toBeLessThan(-80);
+    expect(sideFootR?.rotation).toBeLessThan(-80);
+
+    // 4. Custom bone modification in one pose does not corrupt another pose
+    const headSide = sideBones.find(b => b.name === 'head')!;
+    headSide.x = 99; // modify in side
+    manager.saveActivePoseBones();
+
+    manager.setActivePose('front');
+    const headFront = manager.getBones().find(b => b.name === 'head')!;
+    expect(headFront.x).not.toBe(99);
+
+    manager.setActivePose('side');
+    expect(manager.getBones().find(b => b.name === 'head')?.x).toBe(99);
+  });
 });

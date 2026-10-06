@@ -262,6 +262,11 @@ export class VectorElementSlicer {
     });
 
     window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
       if (e.code === 'Space') {
         this.isSpacePressed = true;
         this.container.classList.add('panning');
@@ -280,6 +285,11 @@ export class VectorElementSlicer {
     });
 
     window.addEventListener('keyup', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
       if (e.code === 'Space') {
         this.isSpacePressed = false;
         if (this.toolMode !== 'pan') {
@@ -593,5 +603,24 @@ export class VectorElementSlicer {
     }
 
     this.ctx.restore();
+  }
+
+  public renameElement(id: string, newName: string): boolean {
+    const trimmed = newName.trim();
+    if (!trimmed) return false;
+    const elem = this.elements.find(el => el.id === id);
+    if (!elem) return false;
+    elem.name = trimmed;
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    return true;
+  }
+
+  public moveElement(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 0 || fromIndex >= this.elements.length || toIndex < 0 || toIndex >= this.elements.length) return;
+    const [moved] = this.elements.splice(fromIndex, 1);
+    this.elements.splice(toIndex, 0, moved);
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
   }
 }

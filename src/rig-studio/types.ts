@@ -26,6 +26,7 @@ export interface SpineQuestForgeMetadata {
   elements: VectorOutlineElement[];
   activePose?: string;
   activeAnimation?: string;
+  poseBones?: Record<string, SpineBoneData[]>;
 }
 
 /**

@@ -1,6 +1,103 @@
 import { SpineDocument, SpineBoneData, SpineSlotData, SpineSkinData, SpineAttachmentData, VectorOutlineElement } from '../types';
 import { Direction8Way } from '../../engine/types';
 
+/**
+ * Standard Humanoid Bone Presets for QuestForge Rig Studio
+ * Coordinate Space:
+ *   Origin (0,0) is at the ground level center between feet.
+ *   X > 0 is viewer right (screen-right), X < 0 is viewer left (screen-left).
+ *   Y < 0 is upwards (towards head), Y = 0 is ground.
+ */
+
+/**
+ * Front Pose Preset: Facing the viewer (Mirror perspective)
+ * Character's RIGHT limbs are to the LEFT of the head/centerline (screen-left, X < 0).
+ * Character's LEFT limbs are to the RIGHT of the head/centerline (screen-right, X > 0).
+ * Arms hang naturally down at the sides; legs go down from hip to knees and feet.
+ */
+export function getFrontBonesPreset(): SpineBoneData[] {
+  return [
+    { name: 'root', x: 0, y: 0, length: 15, rotation: 0 },
+    { name: 'hip', parent: 'root', x: 0, y: -65, length: 20, rotation: -90 },
+    { name: 'torso', parent: 'hip', x: 20, y: 0, length: 26, rotation: 0 },
+    { name: 'head', parent: 'torso', x: 26, y: 0, length: 28, rotation: 0 },
+    // Right arm (Viewer's LEFT, X < 0)
+    { name: 'arm_upper_r', parent: 'torso', x: 24, y: -18, length: 26, rotation: 190 },
+    { name: 'arm_lower_r', parent: 'arm_upper_r', x: 26, y: 0, length: 24, rotation: -5 },
+    { name: 'hand_r', parent: 'arm_lower_r', x: 24, y: 0, length: 14, rotation: 0 },
+    // Left arm (Viewer's RIGHT, X > 0)
+    { name: 'arm_upper_l', parent: 'torso', x: 24, y: 18, length: 26, rotation: 170 },
+    { name: 'arm_lower_l', parent: 'arm_upper_l', x: 26, y: 0, length: 24, rotation: 5 },
+    { name: 'hand_l', parent: 'arm_lower_l', x: 24, y: 0, length: 14, rotation: 0 },
+    // Right leg (Viewer's LEFT, X < 0)
+    { name: 'leg_upper_r', parent: 'hip', x: 0, y: -9, length: 32, rotation: 180 },
+    { name: 'leg_lower_r', parent: 'leg_upper_r', x: 32, y: 0, length: 28, rotation: 0 },
+    { name: 'foot_r', parent: 'leg_lower_r', x: 28, y: 0, length: 14, rotation: 60 },
+    // Left leg (Viewer's RIGHT, X > 0)
+    { name: 'leg_upper_l', parent: 'hip', x: 0, y: 9, length: 32, rotation: 180 },
+    { name: 'leg_lower_l', parent: 'leg_upper_l', x: 32, y: 0, length: 28, rotation: 0 },
+    { name: 'foot_l', parent: 'leg_lower_l', x: 28, y: 0, length: 14, rotation: -60 }
+  ];
+}
+
+/**
+ * Back Pose Preset: Viewed from behind
+ * Reverses left/right sides across the vertical centerline.
+ * Character's RIGHT limbs are now to the RIGHT of the head (screen-right, X > 0).
+ * Character's LEFT limbs are now to the LEFT of the head (screen-left, X < 0).
+ */
+export function getBackBonesPreset(): SpineBoneData[] {
+  return [
+    { name: 'root', x: 0, y: 0, length: 15, rotation: 0 },
+    { name: 'hip', parent: 'root', x: 0, y: -65, length: 20, rotation: -90 },
+    { name: 'torso', parent: 'hip', x: 20, y: 0, length: 26, rotation: 0 },
+    { name: 'head', parent: 'torso', x: 26, y: 0, length: 28, rotation: 0 },
+    // Left arm (Viewer's LEFT, X < 0)
+    { name: 'arm_upper_l', parent: 'torso', x: 24, y: -18, length: 26, rotation: 190 },
+    { name: 'arm_lower_l', parent: 'arm_upper_l', x: 26, y: 0, length: 24, rotation: -5 },
+    { name: 'hand_l', parent: 'arm_lower_l', x: 24, y: 0, length: 14, rotation: 0 },
+    // Right arm (Viewer's RIGHT, X > 0)
+    { name: 'arm_upper_r', parent: 'torso', x: 24, y: 18, length: 26, rotation: 170 },
+    { name: 'arm_lower_r', parent: 'arm_upper_r', x: 26, y: 0, length: 24, rotation: 5 },
+    { name: 'hand_r', parent: 'arm_lower_r', x: 24, y: 0, length: 14, rotation: 0 },
+    // Left leg (Viewer's LEFT, X < 0)
+    { name: 'leg_upper_l', parent: 'hip', x: 0, y: -9, length: 32, rotation: 180 },
+    { name: 'leg_lower_l', parent: 'leg_upper_l', x: 32, y: 0, length: 28, rotation: 0 },
+    { name: 'foot_l', parent: 'leg_lower_l', x: 28, y: 0, length: 14, rotation: 60 },
+    // Right leg (Viewer's RIGHT, X > 0)
+    { name: 'leg_upper_r', parent: 'hip', x: 0, y: 9, length: 32, rotation: 180 },
+    { name: 'leg_lower_r', parent: 'leg_upper_r', x: 32, y: 0, length: 28, rotation: 0 },
+    { name: 'foot_r', parent: 'leg_lower_r', x: 28, y: 0, length: 14, rotation: -60 }
+  ];
+}
+
+/**
+ * Side Pose Preset: Profile view facing right (+X)
+ * Limbs are aligned along the profile/depth axis, and feet point forward horizontally (+X).
+ */
+export function getSideBonesPreset(): SpineBoneData[] {
+  return [
+    { name: 'root', x: 0, y: 0, length: 15, rotation: 0 },
+    { name: 'hip', parent: 'root', x: 0, y: -65, length: 20, rotation: -90 },
+    { name: 'torso', parent: 'hip', x: 20, y: 0, length: 26, rotation: 0 },
+    { name: 'head', parent: 'torso', x: 26, y: 0, length: 28, rotation: 0 },
+    // Foreground limbs (left side in profile facing right)
+    { name: 'arm_upper_l', parent: 'torso', x: 24, y: -3, length: 26, rotation: 176 },
+    { name: 'arm_lower_l', parent: 'arm_upper_l', x: 26, y: 0, length: 24, rotation: 10 },
+    { name: 'hand_l', parent: 'arm_lower_l', x: 24, y: 0, length: 14, rotation: 0 },
+    { name: 'leg_upper_l', parent: 'hip', x: 0, y: -3, length: 32, rotation: 178 },
+    { name: 'leg_lower_l', parent: 'leg_upper_l', x: 32, y: 0, length: 28, rotation: 4 },
+    { name: 'foot_l', parent: 'leg_lower_l', x: 28, y: 0, length: 16, rotation: -92 },
+    // Background limbs (right side in profile, slight depth offset)
+    { name: 'arm_upper_r', parent: 'torso', x: 24, y: 3, length: 26, rotation: 184 },
+    { name: 'arm_lower_r', parent: 'arm_upper_r', x: 26, y: 0, length: 24, rotation: -6 },
+    { name: 'hand_r', parent: 'arm_lower_r', x: 24, y: 0, length: 14, rotation: 0 },
+    { name: 'leg_upper_r', parent: 'hip', x: 0, y: 3, length: 32, rotation: 182 },
+    { name: 'leg_lower_r', parent: 'leg_upper_r', x: 32, y: 0, length: 28, rotation: -4 },
+    { name: 'foot_r', parent: 'leg_lower_r', x: 28, y: 0, length: 16, rotation: -88 }
+  ];
+}
+
 export class PoseRigManager {
   private doc: SpineDocument;
   private activePose = 'front';
@@ -8,11 +105,14 @@ export class PoseRigManager {
   constructor(doc: SpineDocument) {
     this.doc = doc;
     this.ensureDefaultSkins();
+    this.ensurePoseBones();
   }
 
   public setDocument(doc: SpineDocument): void {
     this.doc = doc;
+    this.activePose = 'front';
     this.ensureDefaultSkins();
+    this.ensurePoseBones();
   }
 
   public getDocument(): SpineDocument {
@@ -24,8 +124,32 @@ export class PoseRigManager {
   }
 
   public setActivePose(pose: string): void {
+    if (this.activePose === pose && this.doc.bones && this.doc.bones.length > 0) {
+      this.ensureSkin(pose);
+      return;
+    }
+
+    // 1. Save bones of previous pose
+    this.saveActivePoseBones();
+
     this.activePose = pose;
     this.ensureSkin(pose);
+
+    // 2. Load or generate bones for newly selected pose
+    const pb = this.getOrCreatePoseBonesMap();
+    if (!pb[pose] || pb[pose].length === 0) {
+      if (pose === 'front') pb.front = getFrontBonesPreset();
+      else if (pose === 'back') pb.back = getBackBonesPreset();
+      else if (pose === 'side') pb.side = getSideBonesPreset();
+      else pb[pose] = JSON.parse(JSON.stringify(this.doc.bones));
+    }
+
+    this.doc.bones = JSON.parse(JSON.stringify(pb[pose]));
+  }
+
+  public saveActivePoseBones(): void {
+    const pb = this.getOrCreatePoseBonesMap();
+    pb[this.activePose] = JSON.parse(JSON.stringify(this.doc.bones));
   }
 
   public getPoseList(): string[] {
@@ -48,7 +172,7 @@ export class PoseRigManager {
       };
     }
     this.doc.skeleton.questforge.poseDirections[name] = directions;
-    this.activePose = name;
+    this.setActivePose(name);
   }
 
   public removePose(name: string): void {
@@ -57,7 +181,10 @@ export class PoseRigManager {
     if (this.doc.skeleton.questforge?.poseDirections) {
       delete this.doc.skeleton.questforge.poseDirections[name];
     }
-    this.activePose = this.doc.skins[0].name;
+    if (this.doc.skeleton.questforge?.poseBones) {
+      delete this.doc.skeleton.questforge.poseBones[name];
+    }
+    this.setActivePose(this.doc.skins[0].name);
   }
 
   public getBones(): SpineBoneData[] {
@@ -83,6 +210,7 @@ export class PoseRigManager {
       scaleY: 1
     };
     this.doc.bones.push(bone);
+    this.saveActivePoseBones();
 
     // Also create a matching slot by default
     this.addSlot(finalName, finalName);
@@ -102,6 +230,8 @@ export class PoseRigManager {
     }
 
     this.doc.bones = this.doc.bones.filter(b => b.name !== name);
+    this.saveActivePoseBones();
+
     // Remove slots associated with this bone
     this.doc.slots = this.doc.slots.filter(s => s.bone !== name);
   }
@@ -205,6 +335,40 @@ export class PoseRigManager {
         name: poseName,
         attachments: {}
       });
+    }
+  }
+
+  private getOrCreatePoseBonesMap(): Record<string, SpineBoneData[]> {
+    if (!this.doc.skeleton.questforge) {
+      this.doc.skeleton.questforge = {
+        posePreset: '3-way',
+        poseDirections: { front: ['down'], side: ['right', 'left'], back: ['up'] },
+        elements: []
+      };
+    }
+    if (!this.doc.skeleton.questforge.poseBones) {
+      this.doc.skeleton.questforge.poseBones = {};
+    }
+    return this.doc.skeleton.questforge.poseBones;
+  }
+
+  private ensurePoseBones(): void {
+    const pb = this.getOrCreatePoseBonesMap();
+
+    if (!pb.front) {
+      pb.front = (this.doc.bones && this.doc.bones.length > 0)
+        ? JSON.parse(JSON.stringify(this.doc.bones))
+        : getFrontBonesPreset();
+    }
+    if (!pb.back) {
+      pb.back = getBackBonesPreset();
+    }
+    if (!pb.side) {
+      pb.side = getSideBonesPreset();
+    }
+
+    if (pb[this.activePose]) {
+      this.doc.bones = JSON.parse(JSON.stringify(pb[this.activePose]));
     }
   }
 }

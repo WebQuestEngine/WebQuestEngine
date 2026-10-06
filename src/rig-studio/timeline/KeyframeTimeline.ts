@@ -394,6 +394,10 @@ export class KeyframeTimeline {
 
     // Delete keyframe
     window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedKeyframe) {
         this.deleteSelectedKeyframe();
       }

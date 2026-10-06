@@ -47,6 +47,13 @@ export class PersistentPreviewPlayer {
     this.app.ticker.add(this.tickerRef);
   }
 
+  private currentPose = 'front';
+
+  public setPose(poseName: string): void {
+    this.currentPose = poseName;
+    this.rebuildSkeleton();
+  }
+
   public setSpineDocument(doc: SpineDocument): void {
     this.currentDoc = doc;
     const animNames = Object.keys(doc.animations || {});
@@ -69,34 +76,59 @@ export class PersistentPreviewPlayer {
     this.isPlaying = play !== undefined ? play : !this.isPlaying;
   }
 
+  private boneContainers = new Map<string, PIXI.Container>();
+
   private rebuildSkeleton(): void {
     if (!this.boneGraphicsContainer || !this.currentDoc) return;
     this.boneGraphicsContainer.removeChildren();
+    this.boneContainers.clear();
 
-    // Draw simple bone rig visualization
-    const bones = this.currentDoc.bones || [];
+    const poseBones = this.currentDoc.skeleton?.questforge?.poseBones?.[this.currentPose];
+    const bones = (poseBones && poseBones.length > 0) ? poseBones : (this.currentDoc.bones || []);
+
+    // 1. Create a container and visual graphics for every bone
     for (const b of bones) {
+      const bContainer = new PIXI.Container();
+      bContainer.label = b.name;
+      bContainer.x = b.x;
+      bContainer.y = b.y;
+      bContainer.rotation = ((b.rotation || 0) * Math.PI) / 180;
+
       const gfx = new PIXI.Graphics();
       const length = b.length || 20;
 
-      // Joint circle
+      // Bone body (tapered trapezoid from base to tip)
+      gfx.poly([
+        0, -3.5,
+        length, -1.8,
+        length, 1.8,
+        0, 3.5
+      ]);
+      gfx.fill({ color: 0x38bdf8, alpha: 0.75 });
+      gfx.stroke({ color: 0x0284c7, width: 1.2 });
+
+      // Base joint circle
       gfx.circle(0, 0, 4);
       gfx.fill({ color: 0x0284c7 });
+      gfx.stroke({ color: 0xffffff, width: 1 });
 
-      // Bone body
-      gfx.roundRect(0, -3, length, 6, 2);
-      gfx.fill({ color: 0x38bdf8 });
-
-      // End joint
+      // Tip joint circle
       gfx.circle(length, 0, 3);
-      gfx.fill({ color: 0x0284c7 });
+      gfx.fill({ color: 0xf59e0b });
+      gfx.stroke({ color: 0xffffff, width: 0.8 });
 
-      gfx.label = b.name;
-      gfx.x = b.x;
-      gfx.y = b.y;
-      gfx.rotation = ((b.rotation || 0) * Math.PI) / 180;
+      bContainer.addChild(gfx);
+      this.boneContainers.set(b.name, bContainer);
+    }
 
-      this.boneGraphicsContainer.addChild(gfx);
+    // 2. Assemble hierarchical scene graph based on bone parenting
+    for (const b of bones) {
+      const c = this.boneContainers.get(b.name)!;
+      if (b.parent && this.boneContainers.has(b.parent)) {
+        this.boneContainers.get(b.parent)!.addChild(c);
+      } else {
+        this.boneGraphicsContainer.addChild(c);
+      }
     }
   }
 
@@ -117,12 +149,14 @@ export class PersistentPreviewPlayer {
 
     const t = this.animTimer % maxTime;
 
-    // Evaluate rotations
+    // Evaluate rotations through bone hierarchy
     for (const [boneName, bTrack] of Object.entries(animTrack.bones)) {
-      const child = this.boneGraphicsContainer.children.find(c => c.label === boneName);
+      const child = this.boneContainers.get(boneName);
       if (!child) continue;
 
-      const baseBone = this.currentDoc.bones.find(b => b.name === boneName);
+      const poseBones = this.currentDoc.skeleton?.questforge?.poseBones?.[this.currentPose];
+      const bones = (poseBones && poseBones.length > 0) ? poseBones : (this.currentDoc.bones || []);
+      const baseBone = bones.find(b => b.name === boneName);
       const baseRot = baseBone?.rotation || 0;
 
       if (bTrack.rotate && bTrack.rotate.length > 0) {

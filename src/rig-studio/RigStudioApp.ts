@@ -60,21 +60,49 @@ export class RigStudioApp {
       },
       bones: [
         { name: 'root', x: 0, y: 0 },
-        { name: 'hip', parent: 'root', x: 0, y: -45, length: 15 },
-        { name: 'torso', parent: 'hip', x: 0, y: -20, length: 25 },
-        { name: 'head', parent: 'torso', x: 0, y: -30, length: 20 },
-        { name: 'arm_l', parent: 'torso', x: -16, y: -25, length: 22, rotation: 25 },
-        { name: 'arm_r', parent: 'torso', x: 16, y: -25, length: 22, rotation: -25 },
-        { name: 'leg_l', parent: 'hip', x: -10, y: 0, length: 35, rotation: 10 },
-        { name: 'leg_r', parent: 'hip', x: 10, y: 0, length: 35, rotation: -10 }
+        // Pelvis / Hip (waist center)
+        { name: 'hip', parent: 'root', x: 0, y: -65, length: 18, rotation: -90 },
+        // Spine / Torso (chest)
+        { name: 'torso', parent: 'hip', x: 18, y: 0, length: 32, rotation: 0 },
+        // Head
+        { name: 'head', parent: 'torso', x: 32, y: 0, length: 28, rotation: 0 },
+
+        // Left Arm (upper arm above elbow, lower arm below elbow, hand/palm)
+        { name: 'arm_upper_l', parent: 'torso', x: 26, y: -16, length: 24, rotation: 140 },
+        { name: 'arm_lower_l', parent: 'arm_upper_l', x: 24, y: 0, length: 22, rotation: 15 },
+        { name: 'hand_l', parent: 'arm_lower_l', x: 22, y: 0, length: 14, rotation: 10 },
+
+        // Right Arm (upper arm above elbow, lower arm below elbow, hand/palm)
+        { name: 'arm_upper_r', parent: 'torso', x: 26, y: 16, length: 24, rotation: -140 },
+        { name: 'arm_lower_r', parent: 'arm_upper_r', x: 24, y: 0, length: 22, rotation: -15 },
+        { name: 'hand_r', parent: 'arm_lower_r', x: 22, y: 0, length: 14, rotation: -10 },
+
+        // Left Leg (upper leg above knee, lower leg below knee, foot)
+        { name: 'leg_upper_l', parent: 'hip', x: 0, y: -12, length: 36, rotation: 180 },
+        { name: 'leg_lower_l', parent: 'leg_upper_l', x: 36, y: 0, length: 34, rotation: 0 },
+        { name: 'foot_l', parent: 'leg_lower_l', x: 34, y: 0, length: 16, rotation: 75 },
+
+        // Right Leg (upper leg above knee, lower leg below knee, foot)
+        { name: 'leg_upper_r', parent: 'hip', x: 0, y: 12, length: 36, rotation: 180 },
+        { name: 'leg_lower_r', parent: 'leg_upper_r', x: 36, y: 0, length: 34, rotation: 0 },
+        { name: 'foot_r', parent: 'leg_lower_r', x: 34, y: 0, length: 16, rotation: 75 }
       ],
       slots: [
         { name: 'head', bone: 'head', attachment: 'head' },
         { name: 'torso', bone: 'torso', attachment: 'torso' },
-        { name: 'arm_l', bone: 'arm_l', attachment: 'arm_l' },
-        { name: 'arm_r', bone: 'arm_r', attachment: 'arm_r' },
-        { name: 'leg_l', bone: 'leg_l', attachment: 'leg_l' },
-        { name: 'leg_r', bone: 'leg_r', attachment: 'leg_r' }
+        { name: 'hip', bone: 'hip', attachment: 'hip' },
+        { name: 'arm_upper_l', bone: 'arm_upper_l', attachment: 'arm_upper_l' },
+        { name: 'arm_lower_l', bone: 'arm_lower_l', attachment: 'arm_lower_l' },
+        { name: 'hand_l', bone: 'hand_l', attachment: 'hand_l' },
+        { name: 'arm_upper_r', bone: 'arm_upper_r', attachment: 'arm_upper_r' },
+        { name: 'arm_lower_r', bone: 'arm_lower_r', attachment: 'arm_lower_r' },
+        { name: 'hand_r', bone: 'hand_r', attachment: 'hand_r' },
+        { name: 'leg_upper_l', bone: 'leg_upper_l', attachment: 'leg_upper_l' },
+        { name: 'leg_lower_l', bone: 'leg_lower_l', attachment: 'leg_lower_l' },
+        { name: 'foot_l', bone: 'foot_l', attachment: 'foot_l' },
+        { name: 'leg_upper_r', bone: 'leg_upper_r', attachment: 'leg_upper_r' },
+        { name: 'leg_lower_r', bone: 'leg_lower_r', attachment: 'leg_lower_r' },
+        { name: 'foot_r', bone: 'foot_r', attachment: 'foot_r' }
       ],
       skins: [
         { name: 'front', attachments: {} },
@@ -84,18 +112,24 @@ export class RigStudioApp {
       animations: {
         idle: {
           bones: {
-            torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 3 }, { time: 1.6, angle: 0 }] },
-            head: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: -2 }, { time: 1.6, angle: 0 }] },
-            arm_l: { rotate: [{ time: 0, angle: 25 }, { time: 0.8, angle: 20 }, { time: 1.6, angle: 25 }] },
-            arm_r: { rotate: [{ time: 0, angle: -25 }, { time: 0.8, angle: -20 }, { time: 1.6, angle: -25 }] }
+            torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 2 }, { time: 1.6, angle: 0 }] },
+            head: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: -1.5 }, { time: 1.6, angle: 0 }] },
+            arm_upper_l: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: -4 }, { time: 1.6, angle: 0 }] },
+            arm_lower_l: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: -6 }, { time: 1.6, angle: 0 }] },
+            arm_upper_r: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 4 }, { time: 1.6, angle: 0 }] },
+            arm_lower_r: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 6 }, { time: 1.6, angle: 0 }] }
           }
         },
         walk: {
           bones: {
-            leg_l: { rotate: [{ time: 0, angle: -25 }, { time: 0.4, angle: 25 }, { time: 0.8, angle: -25 }] },
-            leg_r: { rotate: [{ time: 0, angle: 25 }, { time: 0.4, angle: -25 }, { time: 0.8, angle: 25 }] },
-            arm_l: { rotate: [{ time: 0, angle: 35 }, { time: 0.4, angle: -20 }, { time: 0.8, angle: 35 }] },
-            arm_r: { rotate: [{ time: 0, angle: -20 }, { time: 0.4, angle: 35 }, { time: 0.8, angle: -20 }] }
+            leg_upper_l: { rotate: [{ time: 0, angle: -24 }, { time: 0.4, angle: 24 }, { time: 0.8, angle: -24 }] },
+            leg_lower_l: { rotate: [{ time: 0, angle: 0 }, { time: 0.2, angle: 28 }, { time: 0.4, angle: 0 }, { time: 0.8, angle: 0 }] },
+            leg_upper_r: { rotate: [{ time: 0, angle: 24 }, { time: 0.4, angle: -24 }, { time: 0.8, angle: 24 }] },
+            leg_lower_r: { rotate: [{ time: 0, angle: 0 }, { time: 0.4, angle: 0 }, { time: 0.6, angle: 28 }, { time: 0.8, angle: 0 }] },
+            arm_upper_l: { rotate: [{ time: 0, angle: 25 }, { time: 0.4, angle: -20 }, { time: 0.8, angle: 25 }] },
+            arm_lower_l: { rotate: [{ time: 0, angle: 10 }, { time: 0.4, angle: 0 }, { time: 0.8, angle: 10 }] },
+            arm_upper_r: { rotate: [{ time: 0, angle: -20 }, { time: 0.4, angle: 25 }, { time: 0.8, angle: -20 }] },
+            arm_lower_r: { rotate: [{ time: 0, angle: 0 }, { time: 0.4, angle: 10 }, { time: 0.8, angle: 0 }] }
           }
         }
       }
@@ -305,6 +339,8 @@ export class RigStudioApp {
           <div class="tool-separator"></div>
           <button class="tool-btn btn-add-bone">🦴 Add Bone</button>
           <button class="tool-btn btn-del-bone" style="color:#ef4444;">✕ Delete Bone</button>
+          <div class="tool-separator"></div>
+          <button class="tool-btn btn-humanoid-preset" title="Apply Humanoid Skeleton (upper/lower arms, hands, upper/lower legs, feet)">👤 Humanoid Preset</button>
         </div>
 
         <div class="tool-group">
@@ -329,6 +365,7 @@ export class RigStudioApp {
         this.highlightBoneInSidebar(bone?.name || null);
       },
       onBoneModified: (bone) => {
+        this.poseManager.saveActivePoseBones();
         this.previewPlayer?.setSpineDocument(this.spineDoc);
         this.timeline?.setDocument(this.spineDoc);
       }
@@ -451,6 +488,11 @@ export class RigStudioApp {
     animSelect?.addEventListener('change', () => {
       this.previewPlayer?.setAnimation(animSelect.value);
     });
+
+    const posePreviewSelect = previewPanel.querySelector('.select-preview-pose') as HTMLSelectElement;
+    posePreviewSelect?.addEventListener('change', () => {
+      this.previewPlayer?.setPose(posePreviewSelect.value);
+    });
   }
 
   private renderSlicerSidebarHTML(sidebar: HTMLElement): void {
@@ -489,26 +531,174 @@ export class RigStudioApp {
       return;
     }
 
-    listEl.innerHTML = elements.map(el => {
+    listEl.innerHTML = elements.map((el, idx) => {
       const thumb = this.slicer?.generateThumbnail(el) || '';
       return `
-        <div class="element-item" data-elem-id="${el.id}">
-          <img src="${thumb}" class="element-thumb" alt="${el.name}" />
-          <span class="element-name">${el.name}</span>
-          <span class="element-tag">${el.deformationMode.toUpperCase()}</span>
-          <button class="btn-studio btn-delete-elem" data-elem-id="${el.id}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444;" title="Delete Element">✕</button>
+        <div class="element-item" data-elem-id="${el.id}" data-idx="${idx}" style="display:flex; align-items:center; gap:6px; padding:4px 6px;">
+          <!-- Z-Order indicator badge -->
+          <span class="element-z-badge" style="font-size:0.65rem; padding:2px 5px; border-radius:3px; background:#0284c7; color:#fff; font-weight:700; font-family:var(--studio-font-mono); flex-shrink:0;" title="Draw Order (Z-Index: higher is drawn on top)">Z:${idx + 1}</span>
+
+          <!-- Z-Order Controls -->
+          <div style="display:flex; flex-direction:column; gap:1px; flex-shrink:0;">
+            <button class="btn-studio btn-elem-up" data-idx="${idx}" style="padding:0 3px; font-size:0.6rem; line-height:1; height:12px;" title="Bring Forward (Higher Z)" ${idx === elements.length - 1 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▲</button>
+            <button class="btn-studio btn-elem-down" data-idx="${idx}" style="padding:0 3px; font-size:0.6rem; line-height:1; height:12px;" title="Send Backward (Lower Z)" ${idx === 0 ? 'disabled style="opacity:0.3; cursor:default;"' : ''}>▼</button>
+          </div>
+
+          <!-- Thumbnail -->
+          <img src="${thumb}" class="element-thumb" alt="${el.name}" style="flex-shrink:0;" />
+
+          <!-- Normal Name Display -->
+          <div class="elem-name-display" style="flex:1; display:flex; align-items:center; gap:4px; min-width:0;">
+            <span class="element-name" title="Double click to rename" style="flex:1; font-weight:600; font-size:0.75rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;">${el.name}</span>
+            <button class="btn-studio btn-rename-elem" data-elem-id="${el.id}" style="padding:1px 4px; font-size:0.65rem;" title="Rename Part">✏️</button>
+          </div>
+
+          <!-- Inline Rename Form -->
+          <div class="elem-rename-form" style="display:none; flex:1; align-items:center; gap:3px;">
+            <input type="text" class="studio-input input-elem-name" value="${el.name}" style="flex:1; min-width:50px; font-size:0.72rem; padding:2px 4px;" />
+            <button class="btn-studio btn-save-rename" data-elem-id="${el.id}" style="padding:1px 5px; font-size:0.65rem; color:#10b981;" title="Save">✓</button>
+            <button class="btn-studio btn-cancel-rename" data-elem-id="${el.id}" style="padding:1px 5px; font-size:0.65rem; color:#ef4444;" title="Cancel">✕</button>
+          </div>
+
+          <!-- Deformation Mode Tag -->
+          <span class="element-tag" style="flex-shrink:0;">${el.deformationMode.toUpperCase()}</span>
+
+          <!-- Delete Button -->
+          <button class="btn-studio btn-delete-elem" data-elem-id="${el.id}" style="padding:2px 6px; font-size:0.7rem; color:#ef4444; flex-shrink:0;" title="Delete Element">✕</button>
         </div>
       `;
     }).join('');
 
+    // Reorder Z-Order: Bring Forward (▲)
+    listEl.querySelectorAll('.btn-elem-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx')!, 10);
+        if (idx < elements.length - 1) {
+          this.slicer?.moveElement(idx, idx + 1);
+          this.syncElementsToSpine(this.slicer?.getElements() || []);
+          this.renderSlicerSidebarElements();
+          this.boneEditor?.setElements(this.slicer?.getElements() || []);
+        }
+      });
+    });
+
+    // Reorder Z-Order: Send Backward (▼)
+    listEl.querySelectorAll('.btn-elem-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx')!, 10);
+        if (idx > 0) {
+          this.slicer?.moveElement(idx, idx - 1);
+          this.syncElementsToSpine(this.slicer?.getElements() || []);
+          this.renderSlicerSidebarElements();
+          this.boneEditor?.setElements(this.slicer?.getElements() || []);
+        }
+      });
+    });
+
+    // Renaming Part Logic
+    const startRename = (item: HTMLElement) => {
+      const nameDisplay = item.querySelector('.elem-name-display') as HTMLElement;
+      const renameForm = item.querySelector('.elem-rename-form') as HTMLElement;
+      const input = item.querySelector('.input-elem-name') as HTMLInputElement;
+      if (!nameDisplay || !renameForm || !input) return;
+
+      nameDisplay.style.display = 'none';
+      renameForm.style.display = 'flex';
+      input.focus();
+      input.select();
+    };
+
+    const cancelRename = (item: HTMLElement) => {
+      const nameDisplay = item.querySelector('.elem-name-display') as HTMLElement;
+      const renameForm = item.querySelector('.elem-rename-form') as HTMLElement;
+      if (nameDisplay && renameForm) {
+        nameDisplay.style.display = 'flex';
+        renameForm.style.display = 'none';
+      }
+    };
+
+    const saveRename = (item: HTMLElement, id: string) => {
+      const input = item.querySelector('.input-elem-name') as HTMLInputElement;
+      if (!input) return;
+      const newName = input.value.trim();
+      const elem = this.slicer?.getElements().find(el => el.id === id);
+      if (elem && newName && newName !== elem.name) {
+        const oldName = elem.name;
+        this.slicer?.renameElement(id, newName);
+
+        // Update any slot bindings across all skins
+        for (const skin of this.spineDoc.skins || []) {
+          for (const [slotKey, attachMap] of Object.entries(skin.attachments || {})) {
+            for (const [attachKey, attachData] of Object.entries(attachMap as any)) {
+              if (attachData && (attachData as any).name === oldName) {
+                (attachData as any).name = newName;
+              }
+            }
+          }
+        }
+
+        this.syncElementsToSpine(this.slicer?.getElements() || []);
+        this.renderSlicerSidebarElements();
+        this.boneEditor?.setElements(this.slicer?.getElements() || []);
+        this.updateSlicerHUD();
+      } else {
+        cancelRename(item);
+      }
+    };
+
     listEl.querySelectorAll('.element-item').forEach(item => {
+      const id = item.getAttribute('data-elem-id')!;
+
+      // Double-click name to rename
+      item.querySelector('.element-name')?.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        startRename(item as HTMLElement);
+      });
+
+      // ✏️ Rename button
+      item.querySelector('.btn-rename-elem')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startRename(item as HTMLElement);
+      });
+
+      // Confirm Rename ✓
+      item.querySelector('.btn-save-rename')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        saveRename(item as HTMLElement, id);
+      });
+
+      // Cancel Rename ✕
+      item.querySelector('.btn-cancel-rename')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cancelRename(item as HTMLElement);
+      });
+
+      // Enter/Escape keyboard handling (and stop propagation of typing events like Backspace, Delete, Space)
+      const inputElem = item.querySelector('.input-elem-name') as HTMLInputElement | null;
+      inputElem?.addEventListener('keydown', (e: KeyboardEvent) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveRename(item as HTMLElement, id);
+        } else if (e.key === 'Escape') {
+          cancelRename(item as HTMLElement);
+        }
+      });
+      inputElem?.addEventListener('keyup', (e: KeyboardEvent) => {
+        e.stopPropagation();
+      });
+
+      // Select element on row click
       item.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).classList.contains('btn-delete-elem')) return;
-        const id = item.getAttribute('data-elem-id');
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('input')) return;
         this.slicer?.selectElement(id);
       });
     });
 
+    // Delete Element
     listEl.querySelectorAll('.btn-delete-elem').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -549,7 +739,10 @@ export class RigStudioApp {
             return `
               <div class="slot-binding-row" data-slot="${slot.name}" style="background:#1e293b; padding:6px 8px; border-radius:6px; border:1px solid var(--studio-border); display:flex; flex-direction:column; gap:4px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-weight:700; font-size:0.75rem; color:#38bdf8;">🦴 ${slot.bone}</span>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="slot-z-badge" style="font-size:0.65rem; padding:1px 5px; border-radius:3px; background:#0284c7; color:#fff; font-weight:700; font-family:var(--studio-font-mono);" title="Slot Draw Order (Z-Index)">Z:${sIdx + 1}</span>
+                    <span style="font-weight:700; font-size:0.75rem; color:#38bdf8;">🦴 ${slot.bone}</span>
+                  </div>
                   <div style="display:flex; gap:3px;">
                     <button class="btn-studio btn-slot-up" data-sidx="${sIdx}" style="padding:1px 4px; font-size:0.65rem;" title="Move Layer Up">▲</button>
                     <button class="btn-studio btn-slot-down" data-sidx="${sIdx}" style="padding:1px 4px; font-size:0.65rem;" title="Move Layer Down">▼</button>
@@ -613,9 +806,12 @@ export class RigStudioApp {
     poseSelect?.addEventListener('change', () => {
       this.poseManager.setActivePose(poseSelect.value);
       this.renderRiggingSidebarHTML(sidebar);
+      this.boneEditor?.selectBone(null);
       this.boneEditor?.render();
       const hud = workspace.querySelector('#hud-bone-pose');
       if (hud) hud.textContent = poseSelect.value.toUpperCase();
+      this.previewPlayer?.setSpineDocument(this.spineDoc);
+      this.previewPlayer?.setPose(poseSelect.value);
     });
 
     workspace.querySelector('.btn-add-bone')?.addEventListener('click', () => {
@@ -645,6 +841,27 @@ export class RigStudioApp {
     workspace.querySelector('.btn-reset-bone-view')?.addEventListener('click', () => {
       this.boneEditor?.resetView();
     });
+
+    workspace.querySelector('.btn-humanoid-preset')?.addEventListener('click', () => {
+      if (confirm('Apply humanoid skeletal rig preset (upper/lower arms, hands, upper/lower legs, and feet)?')) {
+        this.applyHumanoidRigPreset(sidebar);
+      }
+    });
+  }
+
+  private applyHumanoidRigPreset(sidebar?: HTMLElement): void {
+    const defaultDoc = this.createDefaultSpineDocument();
+    this.spineDoc.bones = JSON.parse(JSON.stringify(defaultDoc.bones));
+    this.spineDoc.slots = JSON.parse(JSON.stringify(defaultDoc.slots));
+    this.spineDoc.animations = JSON.parse(JSON.stringify(defaultDoc.animations));
+    this.poseManager.setDocument(this.spineDoc);
+
+    const targetSidebar = sidebar || (this.container.querySelector('#right-sidebar') as HTMLElement);
+    if (targetSidebar) this.renderRiggingSidebarHTML(targetSidebar);
+
+    this.boneEditor?.render();
+    this.previewPlayer?.setSpineDocument(this.spineDoc);
+    this.timeline?.setDocument(this.spineDoc);
   }
 
   private bindSlicerToolEvents(): void {

@@ -288,6 +288,10 @@ export class BoneCanvasEditor {
     });
 
     window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       if (e.code === 'Space') {
         this.isSpacePressed = true;
         this.container.classList.add('panning');
@@ -295,6 +299,10 @@ export class BoneCanvasEditor {
     });
 
     window.addEventListener('keyup', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
       if (e.code === 'Space') {
         this.isSpacePressed = false;
         this.container.classList.remove('panning');
