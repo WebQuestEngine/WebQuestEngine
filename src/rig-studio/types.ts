@@ -146,6 +146,49 @@ export interface SpineDocument {
 }
 
 /**
+ * Studio Mode Views (Matching Character Rig Studio Workflow)
+ */
+export type StudioView = 'front' | 'back' | 'left' | 'right';
+
+export type JointToolMode = 'select' | 'add_joint' | 'move' | 'preview';
+
+export type AnatomicalJointId =
+  | 'head'
+  | 'neck'
+  | 'shoulder_l'
+  | 'shoulder_r'
+  | 'elbow_l'
+  | 'elbow_r'
+  | 'wrist_l'
+  | 'wrist_r'
+  | 'hip_l'
+  | 'hip_r'
+  | 'knee_l'
+  | 'knee_r'
+  | 'ankle_l'
+  | 'ankle_r';
+
+export interface AnatomicalJointDef {
+  id: AnatomicalJointId;
+  name: string;
+  color: string;
+  parentId?: AnatomicalJointId;
+  symmetricWith?: AnatomicalJointId;
+  isCenter?: boolean;
+}
+
+export interface ViewArtworkData {
+  viewId: StudioView;
+  label: string;
+  image: HTMLImageElement | null;
+  imageUrl: string;
+  fileName: string;
+  fileSize: string;
+  joints: Record<string, { x: number; y: number }>;
+  visible: boolean;
+}
+
+/**
  * Studio Mode Tabs
  */
 export type StudioTab = 'slicer' | 'rigging' | 'timeline' | 'sandbox';
