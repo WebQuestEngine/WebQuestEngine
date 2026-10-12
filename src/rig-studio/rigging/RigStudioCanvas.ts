@@ -7,6 +7,7 @@ import {
 } from '../types';
 import {
   ANATOMICAL_JOINTS,
+  ANATOMICAL_BONES,
   BONE_CONNECTIONS,
   DEFAULT_ENVELOPES,
   getDefaultJointPositions,
@@ -18,6 +19,8 @@ export interface RigStudioCanvasEvents {
   onJointSelected?: (jointId: AnatomicalJointId | null) => void;
   onJointsModified?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
   onImageDropped?: (file: File) => void;
+  onPartDroppedOnBone?: (boneId: AnatomicalJointId, partData: any) => void;
+  onFileDroppedOnBone?: (boneId: AnatomicalJointId, file: File) => void;
 }
 
 export class RigStudioCanvas {
@@ -48,11 +51,16 @@ export class RigStudioCanvas {
 
   private selectedJointId: AnatomicalJointId | null = null;
   private hoveredJointId: AnatomicalJointId | null = null;
+  private dragHoverBoneId: AnatomicalJointId | null = null;
+  private dragHoverPart: any | null = null;
 
   // Pan & Zoom
   private zoom = 1.35;
   private panX = 0;
   private panY = 0;
+  // Ghost rest pose in preview mode
+  private showGhostPose = false;
+
   private isPanning = false;
   private isSpacePressed = false;
   private lastMouseX = 0;
@@ -150,6 +158,71 @@ export class RigStudioCanvas {
   public setParts(partsMap: Record<string, BonePartAttachment>): void {
     this.parts = { ...partsMap };
     this.render();
+  }
+
+  public setDragHoverPart(part: any | null): void {
+    this.dragHoverPart = part;
+    this.render();
+  }
+
+  public setShowGhost(show: boolean): void {
+    this.showGhostPose = show;
+    this.render();
+  }
+
+  public getShowGhost(): boolean {
+    return this.showGhostPose;
+  }
+
+  /**
+   * Automatically slices and extracts each anatomical bone segment
+   * from the loaded character artwork into individual BonePartAttachments.
+   */
+  public autoExtractBoneParts(): Record<string, BonePartAttachment> {
+    if (!this.sourceImage || !this.imageBounds.width || !this.imageBounds.height) {
+      return {};
+    }
+
+    const img = this.sourceImage;
+    const bw = this.imageBounds.width;
+    const bh = this.imageBounds.height;
+    const results: Record<string, BonePartAttachment> = {};
+
+    for (const joint of ANATOMICAL_JOINTS) {
+      const seg = this.getBoneSegmentJoints(joint.id, this.restJoints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(joint.id);
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = bw;
+      offCanvas.height = bh;
+      const offCtx = offCanvas.getContext('2d');
+      if (!offCtx) continue;
+
+      offCtx.save();
+      offCtx.translate(bw / 2, bh);
+      pathCapsule(offCtx, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y, radius);
+      offCtx.clip();
+      offCtx.drawImage(img, -bw / 2, -bh, bw, bh);
+      offCtx.restore();
+
+      const dataUrl = offCanvas.toDataURL('image/png');
+      const partImg = new Image();
+      partImg.src = dataUrl;
+
+      results[joint.id] = {
+        boneId: joint.id,
+        image: partImg,
+        imageUrl: dataUrl,
+        fileName: `${joint.id}_extracted.png`,
+        fileSize: `${Math.round((dataUrl.length * 0.75) / 1024)} KB`,
+        scale: 1.0,
+        offsetX: 0,
+        offsetY: 0
+      };
+    }
+
+    return results;
   }
 
   public setView(
@@ -264,27 +337,60 @@ export class RigStudioCanvas {
       this.render();
     }, { passive: false });
 
-    // Drag and drop images
+    // Drag and drop onto bones or workspace
     this.container.addEventListener('dragover', (e) => {
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
       this.container.classList.add('drag-over');
+
+      const world = this.screenToWorld(e.clientX, e.clientY);
+      const hoveredBone = this.getBoneAtPoint(world.x, world.y);
+      if (this.dragHoverBoneId !== hoveredBone) {
+        this.dragHoverBoneId = hoveredBone;
+        this.render();
+      }
     });
 
     this.container.addEventListener('dragleave', (e) => {
       e.preventDefault();
       this.container.classList.remove('drag-over');
+      if (this.dragHoverBoneId || this.dragHoverPart) {
+        this.dragHoverBoneId = null;
+        this.dragHoverPart = null;
+        this.render();
+      }
     });
 
     this.container.addEventListener('drop', (e) => {
       e.preventDefault();
       this.container.classList.remove('drag-over');
+      const targetBone = this.dragHoverBoneId;
+      this.dragHoverBoneId = null;
+      this.dragHoverPart = null;
+
+      // 1. Check if dragging an element/part from the Parts Library
+      const partJson = e.dataTransfer?.getData('application/rig-part');
+      if (partJson && targetBone) {
+        try {
+          const partData = JSON.parse(partJson);
+          this.events.onPartDroppedOnBone?.(targetBone, partData);
+          this.render();
+          return;
+        } catch {}
+      }
+
+      // 2. Check if dragging image files from desktop
       if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const file = e.dataTransfer.files[0];
         if (file.type.startsWith('image/')) {
-          if (this.events.onImageDropped) this.events.onImageDropped(file);
+          if (targetBone) {
+            this.events.onFileDroppedOnBone?.(targetBone, file);
+          } else if (this.events.onImageDropped) {
+            this.events.onImageDropped(file);
+          }
         }
       }
+      this.render();
     });
 
     this.container.addEventListener('mousedown', (e) => {
@@ -563,37 +669,30 @@ export class RigStudioCanvas {
     const imgX = -bw / 2;
     const imgY = -bh;
 
-    // In Preview Mode: Draw faint ghost of original rest pose
+    const hasParts = Object.keys(this.parts).length > 0 || (this.dragHoverBoneId && this.dragHoverPart);
+
+    // In Preview Mode: Draw faint ghost of original rest pose if enabled
     if (this.toolMode === 'preview') {
-      if (this.sourceImage) {
+      if (this.sourceImage && this.showGhostPose) {
         this.ctx.save();
-        this.ctx.globalAlpha = 0.22;
+        this.ctx.globalAlpha = 0.15;
         this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
         this.ctx.restore();
       }
 
       // Draw posed character artwork with limb deformation and attached parts
-      this.drawPosedArtwork(bw, bh);
+      this.drawCharacterModel(this.previewJoints, this.restJoints);
     } else {
-      // Setup mode: render rest artwork
-      if (this.sourceImage) {
+      // Setup / Editing Mode
+      if (!hasParts && this.sourceImage) {
+        // No parts attached yet: render intact base character artwork
         this.ctx.save();
         this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
         this.ctx.restore();
-      }
-      // Draw attached parts over rest pose if any
-      this.drawAttachedPartsRest();
-    }
-  }
-
-  private drawAttachedPartsRest(): void {
-    const rj = this.restJoints;
-    for (const [boneId, part] of Object.entries(this.parts)) {
-      if (!part) continue;
-      const bKey = boneId as AnatomicalJointId;
-      const seg = this.getBoneSegmentJoints(bKey, rj);
-      if (seg) {
-        this.drawAttachedPart(part, seg.p1, seg.p2);
+      } else {
+        // When parts are attached or preview-dragged, render character model where attached parts
+        // cleanly replace the base body segments without drawing both!
+        this.drawCharacterModel(this.restJoints, this.restJoints);
       }
     }
   }
@@ -617,7 +716,10 @@ export class RigStudioCanvas {
         const dx = joints.wrist_l.x - joints.elbow_l.x;
         const dy = joints.wrist_l.y - joints.elbow_l.y;
         const len = Math.hypot(dx, dy) || 1;
-        return { p1: joints.wrist_l, p2: { x: joints.wrist_l.x + (dx / len) * 24, y: joints.wrist_l.y + (dy / len) * 24 } };
+        return {
+          p1: joints.wrist_l,
+          p2: { x: joints.wrist_l.x + (dx / len) * 28, y: joints.wrist_l.y + (dy / len) * 28 }
+        };
       }
       case 'shoulder_r':
         return { p1: joints.shoulder_r, p2: joints.elbow_r };
@@ -627,27 +729,30 @@ export class RigStudioCanvas {
         const dx = joints.wrist_r.x - joints.elbow_r.x;
         const dy = joints.wrist_r.y - joints.elbow_r.y;
         const len = Math.hypot(dx, dy) || 1;
-        return { p1: joints.wrist_r, p2: { x: joints.wrist_r.x + (dx / len) * 24, y: joints.wrist_r.y + (dy / len) * 24 } };
+        return {
+          p1: joints.wrist_r,
+          p2: { x: joints.wrist_r.x + (dx / len) * 28, y: joints.wrist_r.y + (dy / len) * 28 }
+        };
       }
       case 'hip_l':
         return { p1: joints.hip_l, p2: joints.knee_l };
       case 'knee_l':
         return { p1: joints.knee_l, p2: joints.ankle_l };
       case 'ankle_l': {
-        const dx = joints.ankle_l.x - joints.knee_l.x;
-        const dy = joints.ankle_l.y - joints.knee_l.y;
-        const len = Math.hypot(dx, dy) || 1;
-        return { p1: joints.ankle_l, p2: { x: joints.ankle_l.x + (dx / len) * 24, y: joints.ankle_l.y + (dy / len) * 24 } };
+        return {
+          p1: joints.ankle_l,
+          p2: { x: joints.ankle_l.x + 4, y: joints.ankle_l.y + 36 }
+        };
       }
       case 'hip_r':
         return { p1: joints.hip_r, p2: joints.knee_r };
       case 'knee_r':
         return { p1: joints.knee_r, p2: joints.ankle_r };
       case 'ankle_r': {
-        const dx = joints.ankle_r.x - joints.knee_r.x;
-        const dy = joints.ankle_r.y - joints.knee_r.y;
-        const len = Math.hypot(dx, dy) || 1;
-        return { p1: joints.ankle_r, p2: { x: joints.ankle_r.x + (dx / len) * 24, y: joints.ankle_r.y + (dy / len) * 24 } };
+        return {
+          p1: joints.ankle_r,
+          p2: { x: joints.ankle_r.x - 4, y: joints.ankle_r.y + 36 }
+        };
       }
       default:
         return null;
@@ -655,118 +760,182 @@ export class RigStudioCanvas {
   }
 
   /**
-   * Articulates character artwork limbs according to the posed preview joints.
+   * Renders the articulated character model.
+   * If a bone has an attached part (or is currently being hovered with a dragged part),
+   * the attached part is rendered in place of the base artwork.
+   * Otherwise, if base sourceImage exists, renders the clipped limb segment.
    */
-  private drawPosedArtwork(bw: number, bh: number): void {
+  private drawCharacterModel(
+    pj: Record<AnatomicalJointId, { x: number; y: number }>,
+    rj: Record<AnatomicalJointId, { x: number; y: number }>
+  ): void {
     const img = this.sourceImage;
-    const pj = this.previewJoints;
-    const rj = this.restJoints;
+
+    const getPart = (boneId: AnatomicalJointId): BonePartAttachment | null => {
+      if (this.dragHoverBoneId === boneId && this.dragHoverPart) {
+        return {
+          boneId,
+          image: this.dragHoverPart.image,
+          imageUrl: this.dragHoverPart.imageUrl,
+          fileName: this.dragHoverPart.name,
+          scale: 1.0,
+          offsetX: 0,
+          offsetY: 0
+        };
+      }
+      return this.parts[boneId] || null;
+    };
 
     this.ctx.save();
 
-    // 1. Torso
-    if (this.parts.neck) {
-      const seg = this.getBoneSegmentJoints('neck', pj);
-      if (seg) this.drawAttachedPart(this.parts.neck, seg.p1, seg.p2);
-    } else if (img) {
-      const torsoDy = pj.neck.y - rj.neck.y;
-      const torsoDx = pj.neck.x - rj.neck.x;
-      this.ctx.save();
-      this.ctx.translate(torsoDx, torsoDy);
-      // Torso capsule clipping
-      const hipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
-      pathCapsule(this.ctx, hipMid.x, hipMid.y, rj.neck.x, rj.neck.y, this.getEnvelopeRadius('neck'));
-      this.ctx.clip();
-      this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
-      this.ctx.restore();
-    }
-
-    // 2. Head (Moving and Tilting around Neck)
-    if (this.parts.head) {
-      const seg = this.getBoneSegmentJoints('head', pj);
-      if (seg) this.drawAttachedPart(this.parts.head, seg.p1, seg.p2);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
-    }
-
-    // 3. Left Arm
-    if (this.parts.shoulder_l) {
-      const seg = this.getBoneSegmentJoints('shoulder_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.shoulder_l, seg.p1, seg.p2);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
-    }
-
-    if (this.parts.elbow_l) {
-      const seg = this.getBoneSegmentJoints('elbow_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.elbow_l, seg.p1, seg.p2);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
-    }
-
-    if (this.parts.wrist_l) {
-      const seg = this.getBoneSegmentJoints('wrist_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.wrist_l, seg.p1, seg.p2);
-    }
-
-    // 4. Right Arm
-    if (this.parts.shoulder_r) {
+    // Layer 1: Far Arm (Right Upper Arm, Forearm, Hand)
+    const partShR = getPart('shoulder_r');
+    if (partShR) {
       const seg = this.getBoneSegmentJoints('shoulder_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.shoulder_r, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('shoulder_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partShR, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
       this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, this.getEnvelopeRadius('shoulder_r'));
     }
 
-    if (this.parts.elbow_r) {
+    const partElbR = getPart('elbow_r');
+    if (partElbR) {
       const seg = this.getBoneSegmentJoints('elbow_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.elbow_r, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('elbow_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partElbR, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
       this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, this.getEnvelopeRadius('elbow_r'));
     }
 
-    if (this.parts.wrist_r) {
+    const partWriR = getPart('wrist_r');
+    if (partWriR) {
       const seg = this.getBoneSegmentJoints('wrist_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.wrist_r, seg.p1, seg.p2);
-    }
-
-    // 5. Left Leg
-    if (this.parts.hip_l) {
-      const seg = this.getBoneSegmentJoints('hip_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.hip_l, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partWriR, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
-      this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
+      const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
+      const pSeg = this.getBoneSegmentJoints('wrist_r', pj);
+      if (rSeg && pSeg) {
+        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_r'));
+      }
     }
 
-    if (this.parts.knee_l) {
-      const seg = this.getBoneSegmentJoints('knee_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.knee_l, seg.p1, seg.p2);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
-    }
-
-    if (this.parts.ankle_l) {
-      const seg = this.getBoneSegmentJoints('ankle_l', pj);
-      if (seg) this.drawAttachedPart(this.parts.ankle_l, seg.p1, seg.p2);
-    }
-
-    // 6. Right Leg
-    if (this.parts.hip_r) {
+    // Layer 2: Far Leg (Right Thigh, Calf, Boot)
+    const partHipR = getPart('hip_r');
+    if (partHipR) {
       const seg = this.getBoneSegmentJoints('hip_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.hip_r, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('hip_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partHipR, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
       this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, this.getEnvelopeRadius('hip_r'));
     }
 
-    if (this.parts.knee_r) {
+    const partKneR = getPart('knee_r');
+    if (partKneR) {
       const seg = this.getBoneSegmentJoints('knee_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.knee_r, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('knee_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partKneR, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
       this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, this.getEnvelopeRadius('knee_r'));
     }
 
-    if (this.parts.ankle_r) {
+    const partAnkR = getPart('ankle_r');
+    if (partAnkR) {
       const seg = this.getBoneSegmentJoints('ankle_r', pj);
-      if (seg) this.drawAttachedPart(this.parts.ankle_r, seg.p1, seg.p2);
+      const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
+      if (seg && rSeg) this.drawAttachedPart(partAnkR, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
+      const pSeg = this.getBoneSegmentJoints('ankle_r', pj);
+      if (rSeg && pSeg) {
+        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_r'));
+      }
+    }
+
+    // Layer 3: Torso (Spine between hip midpoint and neck)
+    const partTorso = getPart('neck');
+    if (partTorso) {
+      const seg = this.getBoneSegmentJoints('neck', pj);
+      const rSeg = this.getBoneSegmentJoints('neck', rj);
+      if (seg && rSeg) this.drawAttachedPart(partTorso, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      const restHipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
+      const posedHipMid = { x: (pj.hip_l.x + pj.hip_r.x) / 2, y: (pj.hip_l.y + pj.hip_r.y) / 2 };
+      this.drawLimbSegment(img, restHipMid, rj.neck, posedHipMid, pj.neck, this.getEnvelopeRadius('neck') * 1.35);
+    }
+
+    // Layer 4: Near Leg (Left Thigh, Calf, Boot)
+    const partHipL = getPart('hip_l');
+    if (partHipL) {
+      const seg = this.getBoneSegmentJoints('hip_l', pj);
+      const rSeg = this.getBoneSegmentJoints('hip_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partHipL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
+    }
+
+    const partKneL = getPart('knee_l');
+    if (partKneL) {
+      const seg = this.getBoneSegmentJoints('knee_l', pj);
+      const rSeg = this.getBoneSegmentJoints('knee_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partKneL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
+    }
+
+    const partAnkL = getPart('ankle_l');
+    if (partAnkL) {
+      const seg = this.getBoneSegmentJoints('ankle_l', pj);
+      const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partAnkL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
+      const pSeg = this.getBoneSegmentJoints('ankle_l', pj);
+      if (rSeg && pSeg) {
+        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_l'));
+      }
+    }
+
+    // Layer 5: Head (Pivoting around neck)
+    const partHead = getPart('head');
+    if (partHead) {
+      const seg = this.getBoneSegmentJoints('head', pj);
+      const rSeg = this.getBoneSegmentJoints('head', rj);
+      if (seg && rSeg) this.drawAttachedPart(partHead, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
+    }
+
+    // Layer 6: Near Arm (Left Upper Arm, Forearm, Hand)
+    const partShL = getPart('shoulder_l');
+    if (partShL) {
+      const seg = this.getBoneSegmentJoints('shoulder_l', pj);
+      const rSeg = this.getBoneSegmentJoints('shoulder_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partShL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
+    }
+
+    const partElbL = getPart('elbow_l');
+    if (partElbL) {
+      const seg = this.getBoneSegmentJoints('elbow_l', pj);
+      const rSeg = this.getBoneSegmentJoints('elbow_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partElbL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
+    }
+
+    const partWriL = getPart('wrist_l');
+    if (partWriL) {
+      const seg = this.getBoneSegmentJoints('wrist_l', pj);
+      const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
+      if (seg && rSeg) this.drawAttachedPart(partWriL, seg.p1, seg.p2, rSeg.p1);
+    } else if (img) {
+      const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
+      const pSeg = this.getBoneSegmentJoints('wrist_l', pj);
+      if (rSeg && pSeg) {
+        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_l'));
+      }
     }
 
     this.ctx.restore();
@@ -775,29 +944,66 @@ export class RigStudioCanvas {
   private drawAttachedPart(
     part: BonePartAttachment,
     pointA: { x: number; y: number },
-    pointB: { x: number; y: number }
+    pointB: { x: number; y: number },
+    restJoint?: { x: number; y: number }
   ): void {
-    const dx = pointB.x - pointA.x;
-    const dy = pointB.y - pointA.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const angle = Math.atan2(dy, dx);
-
     const img = part.image;
     if (!img.width || !img.height) return;
 
+    const bw = this.imageBounds.width;
+    const bh = this.imageBounds.height;
+    const isFullCanvas = (img.width === bw && img.height === bh);
+
+    const posedAngle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
+
     this.ctx.save();
-    this.ctx.translate(pointA.x, pointA.y);
-    this.ctx.rotate(angle);
 
-    const scale = part.scale || 1.0;
-    const aspect = img.height / img.width;
-    const targetW = len * scale;
-    const targetH = targetW * aspect;
+    if (isFullCanvas && restJoint) {
+      const restSeg = this.getBoneSegmentJoints(part.boneId, this.restJoints);
+      const restAngle = restSeg ? Math.atan2(restSeg.p2.y - restSeg.p1.y, restSeg.p2.x - restSeg.p1.x) : posedAngle;
+      const rotDelta = posedAngle - restAngle;
 
-    const offX = part.offsetX || 0;
-    const offY = part.offsetY || -targetH / 2;
+      this.ctx.translate(pointA.x, pointA.y);
+      this.ctx.rotate(rotDelta);
+      this.ctx.translate(-restJoint.x, -restJoint.y);
+      this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+    } else {
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === part.boneId);
+      const isSpine = boneDef?.category === 'spine';
 
-    this.ctx.drawImage(img, offX, offY, targetW, targetH);
+      // Character scale factor from original spritesheet resolution (e.g. 1536) to canvas character height (380)
+      const refHeight = this.sourceImage?.naturalHeight || 1536;
+      const charScale = bh / refHeight;
+
+      const scale = (part.scale ?? 1.0) * charScale;
+      const targetW = img.width * scale;
+      const targetH = img.height * scale;
+
+      this.ctx.translate(pointA.x, pointA.y);
+
+      if (isSpine) {
+        // Spine parts (Head, Torso): upright sprites with bottom-center anchor at joint pointA
+        // Bone vector points upwards (approx -90 deg). rotAngle = posedAngle + Math.PI / 2
+        const rotAngle = posedAngle + Math.PI / 2 + (part.rotation || 0);
+        this.ctx.rotate(rotAngle);
+
+        const offX = (part.offsetX ?? 0) - targetW / 2;
+        const offY = (part.offsetY ?? 0) - targetH;
+        this.ctx.drawImage(img, offX, offY, targetW, targetH);
+      } else {
+        // Limb parts (Arms, Legs): sprites are drawn pointing vertically down along +Y axis.
+        // We orient the sprite's +Y axis along the bone vector (posedAngle).
+        // rotAngle = posedAngle - Math.PI / 2
+        const rotAngle = posedAngle - Math.PI / 2 + (part.rotation || 0);
+        this.ctx.rotate(rotAngle);
+
+        // Proximal joint pointA connects to top-center of limb sprite (targetW / 2, 0)
+        const offX = (part.offsetX ?? 0) - targetW / 2;
+        const offY = (part.offsetY ?? 0);
+        this.ctx.drawImage(img, offX, offY, targetW, targetH);
+      }
+    }
+
     this.ctx.restore();
   }
 
@@ -816,14 +1022,9 @@ export class RigStudioCanvas {
     const posedAngle = Math.atan2(posedB.y - posedA.y, posedB.x - posedA.x);
     const rotDelta = posedAngle - restAngle;
 
-    const restLen = Math.hypot(restB.x - restA.x, restB.y - restA.y) || 1;
-    const posedLen = Math.hypot(posedB.x - posedA.x, posedB.y - posedA.y) || 1;
-    const scale = posedLen / restLen;
-
     this.ctx.save();
     this.ctx.translate(posedA.x, posedA.y);
     this.ctx.rotate(rotDelta);
-    this.ctx.scale(1, scale);
     this.ctx.translate(-restA.x, -restA.y);
 
     // Accurate capsule clipping matching bone envelope
@@ -834,29 +1035,94 @@ export class RigStudioCanvas {
     this.ctx.restore();
   }
 
+  public getBoneAtPoint(wx: number, wy: number): AnatomicalJointId | null {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    let closestBone: AnatomicalJointId | null = null;
+    let minDistance = Infinity;
+
+    for (const bone of ANATOMICAL_BONES) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(bone.id);
+      const dist = this.distToSegment(wx, wy, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+      if (dist <= radius * 1.5 && dist < minDistance) {
+        minDistance = dist;
+        closestBone = bone.id;
+      }
+    }
+
+    return closestBone;
+  }
+
+  private distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    return Math.hypot(px - projX, py - projY);
+  }
+
   private drawEnvelopes(): void {
     const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
 
-    for (const joint of ANATOMICAL_JOINTS) {
-      const seg = this.getBoneSegmentJoints(joint.id, joints);
+    for (const bone of ANATOMICAL_BONES) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
       if (!seg) continue;
 
-      const radius = this.getEnvelopeRadius(joint.id);
-      const isSelected = this.selectedJointId === joint.id;
+      const radius = this.getEnvelopeRadius(bone.id);
+      const isSelected = this.selectedJointId === bone.id;
+      const isDragHover = this.dragHoverBoneId === bone.id;
 
       this.ctx.save();
       pathCapsule(this.ctx, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y, radius);
 
-      if (isSelected) {
+      if (isDragHover) {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.38)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#38bdf8';
+        this.ctx.lineWidth = 2.5 / this.zoom;
+        this.ctx.setLineDash([]);
+        this.ctx.stroke();
+
+        // Draw drop target text badge with clear Bone name
+        const midX = (seg.p1.x + seg.p2.x) / 2;
+        const midY = (seg.p1.y + seg.p2.y) / 2;
+        this.ctx.save();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `600 ${Math.max(9, 11 / this.zoom)}px Inter, sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        this.ctx.shadowBlur = 4;
+        this.ctx.fillText(`Drop on ${bone.name}`, midX, midY);
+        this.ctx.restore();
+      } else if (isSelected) {
         this.ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
         this.ctx.fill();
         this.ctx.strokeStyle = '#38bdf8';
         this.ctx.lineWidth = 1.5 / this.zoom;
         this.ctx.stroke();
+
+        // Display bone name when selected
+        const midX = (seg.p1.x + seg.p2.x) / 2;
+        const midY = (seg.p1.y + seg.p2.y) / 2;
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.font = `600 ${Math.max(8, 10 / this.zoom)}px Inter, sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        this.ctx.shadowBlur = 3;
+        this.ctx.fillText(bone.name, midX, midY);
+        this.ctx.restore();
       } else {
-        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.06)';
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
         this.ctx.fill();
-        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
         this.ctx.lineWidth = 1 / this.zoom;
         this.ctx.setLineDash([4 / this.zoom, 3 / this.zoom]);
         this.ctx.stroke();
@@ -868,12 +1134,51 @@ export class RigStudioCanvas {
 
   private drawBones(): void {
     const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    const hipMid = {
+      x: (joints.hip_l.x + joints.hip_r.x) / 2,
+      y: (joints.hip_l.y + joints.hip_r.y) / 2
+    };
 
-    for (const [parentKey, childKey] of BONE_CONNECTIONS) {
-      const p = joints[parentKey];
-      const c = joints[childKey];
-      if (!p || !c) continue;
+    // Clean anatomical skeleton connections: each bone starts from a joint, has length and envelope
+    const bonePairs: [{ x: number; y: number }, { x: number; y: number }][] = [
+      // Spine & Head
+      [hipMid, joints.neck],
+      [joints.neck, joints.head],
 
+      // Pelvis branches
+      [hipMid, joints.hip_l],
+      [hipMid, joints.hip_r],
+
+      // Shoulders & Forearms
+      [joints.neck, joints.shoulder_l],
+      [joints.shoulder_l, joints.elbow_l],
+      [joints.elbow_l, joints.wrist_l],
+
+      [joints.neck, joints.shoulder_r],
+      [joints.shoulder_r, joints.elbow_r],
+      [joints.elbow_r, joints.wrist_r],
+
+      // Legs
+      [joints.hip_l, joints.knee_l],
+      [joints.knee_l, joints.ankle_l],
+
+      [joints.hip_r, joints.knee_r],
+      [joints.knee_r, joints.ankle_r]
+    ];
+
+    // Include hand bones (starting at wrist joint, projecting outward)
+    const wristLSeg = this.getBoneSegmentJoints('wrist_l', joints);
+    const wristRSeg = this.getBoneSegmentJoints('wrist_r', joints);
+    if (wristLSeg) bonePairs.push([wristLSeg.p1, wristLSeg.p2]);
+    if (wristRSeg) bonePairs.push([wristRSeg.p1, wristRSeg.p2]);
+
+    // Include foot bones (starting at ankle joint, projecting downward)
+    const ankleLSeg = this.getBoneSegmentJoints('ankle_l', joints);
+    const ankleRSeg = this.getBoneSegmentJoints('ankle_r', joints);
+    if (ankleLSeg) bonePairs.push([ankleLSeg.p1, ankleLSeg.p2]);
+    if (ankleRSeg) bonePairs.push([ankleRSeg.p1, ankleRSeg.p2]);
+
+    for (const [p, c] of bonePairs) {
       const dx = c.x - p.x;
       const dy = c.y - p.y;
       const len = Math.hypot(dx, dy);
@@ -886,8 +1191,8 @@ export class RigStudioCanvas {
       this.ctx.rotate(angle);
 
       // Stylized tapered bone link
-      const baseW = 4.0 / this.zoom;
-      const tipW = 1.8 / this.zoom;
+      const baseW = 3.6 / this.zoom;
+      const tipW = 1.6 / this.zoom;
 
       this.ctx.beginPath();
       this.ctx.moveTo(0, -baseW);
@@ -896,14 +1201,35 @@ export class RigStudioCanvas {
       this.ctx.lineTo(0, baseW);
       this.ctx.closePath();
 
-      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+      const grad = this.ctx.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+      grad.addColorStop(1, 'rgba(2, 132, 199, 0.3)');
+      this.ctx.fillStyle = grad;
       this.ctx.fill();
 
       this.ctx.strokeStyle = '#38bdf8';
       this.ctx.lineWidth = 1.2 / this.zoom;
       this.ctx.stroke();
 
+      // Rounded base joint ring
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, baseW * 0.9, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.6)';
+      this.ctx.fill();
+
       this.ctx.restore();
+    }
+
+    // Draw fingertip and toe tip indicators
+    const tips = [wristLSeg?.p2, wristRSeg?.p2, ankleLSeg?.p2, ankleRSeg?.p2].filter(Boolean) as { x: number; y: number }[];
+    for (const tip of tips) {
+      this.ctx.beginPath();
+      this.ctx.arc(tip.x, tip.y, 2.5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#38bdf8';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#0f172a';
+      this.ctx.lineWidth = 1 / this.zoom;
+      this.ctx.stroke();
     }
   }
 
@@ -922,38 +1248,71 @@ export class RigStudioCanvas {
       this.ctx.save();
       this.ctx.translate(pt.x, pt.y);
 
-      // Outer Selection Ring
+      // 1. Soft drop shadow underneath pin
+      this.ctx.beginPath();
+      this.ctx.arc(0, 1.2 / this.zoom, pinRadius + 1.5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      this.ctx.fill();
+
+      // 2. Outer Halo Selection / Hover Ring
       if (isSelected || isHovered) {
         this.ctx.beginPath();
         this.ctx.arc(0, 0, pinRadius + 4 / this.zoom, 0, Math.PI * 2);
-        this.ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)';
-        this.ctx.lineWidth = 1.5 / this.zoom;
+        this.ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.7)';
+        this.ctx.lineWidth = 1.8 / this.zoom;
         this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, pinRadius + 2.5 / this.zoom, 0, Math.PI * 2);
+        this.ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.12)';
+        this.ctx.fill();
       }
 
-      // Outer colored glow
+      // 3. Dark Outer Rim
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pinRadius + 0.5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#0f172a';
+      this.ctx.fill();
+
+      // 4. Glossy 3D Spherical Radial Gradient
+      const grad = this.ctx.createRadialGradient(
+        -pinRadius * 0.35, -pinRadius * 0.35, pinRadius * 0.1,
+        0, 0, pinRadius
+      );
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.35, joint.color);
+      grad.addColorStop(1, this.shadeColor(joint.color, -0.3));
+
       this.ctx.beginPath();
       this.ctx.arc(0, 0, pinRadius, 0, Math.PI * 2);
-      this.ctx.fillStyle = joint.color;
-      this.ctx.shadowColor = joint.color;
-      this.ctx.shadowBlur = (isSelected ? 10 : 6);
+      this.ctx.fillStyle = grad;
       this.ctx.fill();
-      this.ctx.shadowBlur = 0;
 
-      // Inner white center
+      // 5. Delicate Center Core Dot
       this.ctx.beginPath();
-      this.ctx.arc(0, 0, pinRadius * 0.45, 0, Math.PI * 2);
+      this.ctx.arc(0, 0, pinRadius * 0.35, 0, Math.PI * 2);
       this.ctx.fillStyle = '#ffffff';
+      this.ctx.shadowColor = joint.color;
+      this.ctx.shadowBlur = 4;
       this.ctx.fill();
-
-      // Pin stroke
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, pinRadius, 0, Math.PI * 2);
-      this.ctx.strokeStyle = '#ffffff';
-      this.ctx.lineWidth = 1 / this.zoom;
-      this.ctx.stroke();
 
       this.ctx.restore();
     }
   }
+
+  private shadeColor(color: string, percent: number): string {
+    let num = parseInt(color.replace('#', ''), 16);
+    if (isNaN(num)) return color;
+    let amt = Math.round(2.55 * percent * 100);
+    let R = (num >> 16) + amt;
+    let G = ((num >> 8) & 0x00FF) + amt;
+    let B = (num & 0x0000FF) + amt;
+    return '#' + (
+      0x1000000 +
+      (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
+      (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
+      (B < 255 ? (B < 1 ? 0 : B) : 255)
+    ).toString(16).slice(1);
+  }
 }
+
