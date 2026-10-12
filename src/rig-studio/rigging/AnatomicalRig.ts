@@ -153,6 +153,260 @@ export function solveTwoBoneIK(
   return { mid: newMid, end: newEnd };
 }
 
+export const DEFAULT_ENVELOPES: Record<AnatomicalJointId, number> = {
+  head: 32,
+  neck: 30,
+  shoulder_l: 22,
+  shoulder_r: 22,
+  elbow_l: 18,
+  elbow_r: 18,
+  wrist_l: 16,
+  wrist_r: 16,
+  hip_l: 24,
+  hip_r: 24,
+  knee_l: 20,
+  knee_r: 20,
+  ankle_l: 18,
+  ankle_r: 18,
+};
+
+/**
+ * Creates a rounded capsule path between two points.
+ */
+export function pathCapsule(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  radius: number
+): void {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / len) * radius;
+  const ny = (dx / len) * radius;
+
+  const a1 = Math.atan2(ny, nx);
+  ctx.beginPath();
+  ctx.arc(x1, y1, radius, a1, a1 + Math.PI);
+  ctx.arc(x2, y2, radius, a1 + Math.PI, a1 + Math.PI * 2);
+  ctx.closePath();
+}
+
+/**
+ * Poses a joint while strictly preserving all bone lengths.
+ */
+export function poseJointPreservingBones(
+  jointId: AnatomicalJointId,
+  targetX: number,
+  targetY: number,
+  restJoints: Record<AnatomicalJointId, { x: number; y: number }>,
+  currentPosed: Record<AnatomicalJointId, { x: number; y: number }>
+): Record<AnatomicalJointId, { x: number; y: number }> {
+  const result: Record<AnatomicalJointId, { x: number; y: number }> = JSON.parse(JSON.stringify(currentPosed));
+  const target = { x: targetX, y: targetY };
+
+  // 1. Wrists (2-Bone IK)
+  if (jointId === 'wrist_l') {
+    const root = result.shoulder_l;
+    const mid = result.elbow_l;
+    const end = result.wrist_l;
+    const ik = solveTwoBoneIK(root, mid, end, target, true);
+    result.elbow_l = ik.mid;
+    result.wrist_l = ik.end;
+    return result;
+  }
+  if (jointId === 'wrist_r') {
+    const root = result.shoulder_r;
+    const mid = result.elbow_r;
+    const end = result.wrist_r;
+    const ik = solveTwoBoneIK(root, mid, end, target, false);
+    result.elbow_r = ik.mid;
+    result.wrist_r = ik.end;
+    return result;
+  }
+
+  // 2. Ankles (2-Bone IK)
+  if (jointId === 'ankle_l') {
+    const root = result.hip_l;
+    const mid = result.knee_l;
+    const end = result.ankle_l;
+    const ik = solveTwoBoneIK(root, mid, end, target, false);
+    result.knee_l = ik.mid;
+    result.ankle_l = ik.end;
+    return result;
+  }
+  if (jointId === 'ankle_r') {
+    const root = result.hip_r;
+    const mid = result.knee_r;
+    const end = result.ankle_r;
+    const ik = solveTwoBoneIK(root, mid, end, target, true);
+    result.knee_r = ik.mid;
+    result.ankle_r = ik.end;
+    return result;
+  }
+
+  // 3. Elbows (Maintain Upper Arm bone length and carry Forearm/Wrist)
+  if (jointId === 'elbow_l' || jointId === 'elbow_r') {
+    const isLeft = jointId === 'elbow_l';
+    const shoulder = isLeft ? result.shoulder_l : result.shoulder_r;
+    const elbow = isLeft ? result.elbow_l : result.elbow_r;
+    const wrist = isLeft ? result.wrist_l : result.wrist_r;
+    const restShoulder = isLeft ? restJoints.shoulder_l : restJoints.shoulder_r;
+    const restElbow = isLeft ? restJoints.elbow_l : restJoints.elbow_r;
+    const restWrist = isLeft ? restJoints.wrist_l : restJoints.wrist_r;
+
+    const upperLen = Math.hypot(restElbow.x - restShoulder.x, restElbow.y - restShoulder.y);
+    const lowerLen = Math.hypot(restWrist.x - restElbow.x, restWrist.y - restElbow.y);
+
+    const oldAngle = Math.atan2(elbow.y - shoulder.y, elbow.x - shoulder.x);
+    const newAngle = Math.atan2(target.y - shoulder.y, target.x - shoulder.x);
+    const deltaAngle = newAngle - oldAngle;
+
+    const newElbow = {
+      x: shoulder.x + Math.cos(newAngle) * upperLen,
+      y: shoulder.y + Math.sin(newAngle) * upperLen
+    };
+
+    const oldWristAngle = Math.atan2(wrist.y - elbow.y, wrist.x - elbow.x);
+    const newWristAngle = oldWristAngle + deltaAngle;
+    const newWrist = {
+      x: newElbow.x + Math.cos(newWristAngle) * lowerLen,
+      y: newElbow.y + Math.sin(newWristAngle) * lowerLen
+    };
+
+    if (isLeft) {
+      result.elbow_l = newElbow;
+      result.wrist_l = newWrist;
+    } else {
+      result.elbow_r = newElbow;
+      result.wrist_r = newWrist;
+    }
+    return result;
+  }
+
+  // 4. Knees (Maintain Thigh bone length and carry Calf/Ankle)
+  if (jointId === 'knee_l' || jointId === 'knee_r') {
+    const isLeft = jointId === 'knee_l';
+    const hip = isLeft ? result.hip_l : result.hip_r;
+    const knee = isLeft ? result.knee_l : result.knee_r;
+    const ankle = isLeft ? result.ankle_l : result.ankle_r;
+    const restHip = isLeft ? restJoints.hip_l : restJoints.hip_r;
+    const restKnee = isLeft ? restJoints.knee_l : restJoints.knee_r;
+    const restAnkle = isLeft ? restJoints.ankle_l : restJoints.ankle_r;
+
+    const thighLen = Math.hypot(restKnee.x - restHip.x, restKnee.y - restHip.y);
+    const calfLen = Math.hypot(restAnkle.x - restKnee.x, restAnkle.y - restKnee.y);
+
+    const oldAngle = Math.atan2(knee.y - hip.y, knee.x - hip.x);
+    const newAngle = Math.atan2(target.y - hip.y, target.x - hip.x);
+    const deltaAngle = newAngle - oldAngle;
+
+    const newKnee = {
+      x: hip.x + Math.cos(newAngle) * thighLen,
+      y: hip.y + Math.sin(newAngle) * thighLen
+    };
+
+    const oldAnkleAngle = Math.atan2(ankle.y - knee.y, ankle.x - knee.x);
+    const newAnkleAngle = oldAnkleAngle + deltaAngle;
+    const newAnkle = {
+      x: newKnee.x + Math.cos(newAnkleAngle) * calfLen,
+      y: newKnee.y + Math.sin(newAnkleAngle) * calfLen
+    };
+
+    if (isLeft) {
+      result.knee_l = newKnee;
+      result.ankle_l = newAnkle;
+    } else {
+      result.knee_r = newKnee;
+      result.ankle_r = newAnkle;
+    }
+    return result;
+  }
+
+  // 5. Head (Maintain Neck -> Head bone length and rotate around neck)
+  if (jointId === 'head') {
+    const neck = result.neck;
+    const restNeck = restJoints.neck;
+    const restHead = restJoints.head;
+    const headLen = Math.hypot(restHead.x - restNeck.x, restHead.y - restNeck.y);
+
+    const headAngle = Math.atan2(target.y - neck.y, target.x - neck.x);
+    result.head = {
+      x: neck.x + Math.cos(headAngle) * headLen,
+      y: neck.y + Math.sin(headAngle) * headLen
+    };
+    return result;
+  }
+
+  // 6. Shoulders (Maintain Clavicle distance and translate entire arm chain)
+  if (jointId === 'shoulder_l' || jointId === 'shoulder_r') {
+    const isLeft = jointId === 'shoulder_l';
+    const shoulder = isLeft ? result.shoulder_l : result.shoulder_r;
+    const neck = result.neck;
+    const restNeck = restJoints.neck;
+    const restShoulder = isLeft ? restJoints.shoulder_l : restJoints.shoulder_r;
+    const clavicleLen = Math.hypot(restShoulder.x - restNeck.x, restShoulder.y - restNeck.y);
+
+    const angle = Math.atan2(target.y - neck.y, target.x - neck.x);
+    const newShoulder = {
+      x: neck.x + Math.cos(angle) * clavicleLen,
+      y: neck.y + Math.sin(angle) * clavicleLen
+    };
+    const dx = newShoulder.x - shoulder.x;
+    const dy = newShoulder.y - shoulder.y;
+
+    if (isLeft) {
+      result.shoulder_l = newShoulder;
+      result.elbow_l = { x: result.elbow_l.x + dx, y: result.elbow_l.y + dy };
+      result.wrist_l = { x: result.wrist_l.x + dx, y: result.wrist_l.y + dy };
+    } else {
+      result.shoulder_r = newShoulder;
+      result.elbow_r = { x: result.elbow_r.x + dx, y: result.elbow_r.y + dy };
+      result.wrist_r = { x: result.wrist_r.x + dx, y: result.wrist_r.y + dy };
+    }
+    return result;
+  }
+
+  // 7. Hips (Translate leg chain preserving bone lengths)
+  if (jointId === 'hip_l' || jointId === 'hip_r') {
+    const isLeft = jointId === 'hip_l';
+    const hip = isLeft ? result.hip_l : result.hip_r;
+    const dx = target.x - hip.x;
+    const dy = target.y - hip.y;
+
+    if (isLeft) {
+      result.hip_l = { x: target.x, y: target.y };
+      result.knee_l = { x: result.knee_l.x + dx, y: result.knee_l.y + dy };
+      result.ankle_l = { x: result.ankle_l.x + dx, y: result.ankle_l.y + dy };
+    } else {
+      result.hip_r = { x: target.x, y: target.y };
+      result.knee_r = { x: result.knee_r.x + dx, y: result.knee_r.y + dy };
+      result.ankle_r = { x: result.ankle_r.x + dx, y: result.ankle_r.y + dy };
+    }
+    return result;
+  }
+
+  // 8. Neck (Upper body translation carrying head and both arms rigidly)
+  if (jointId === 'neck') {
+    const dx = target.x - result.neck.x;
+    const dy = target.y - result.neck.y;
+
+    result.neck = { x: target.x, y: target.y };
+    result.head = { x: result.head.x + dx, y: result.head.y + dy };
+    result.shoulder_l = { x: result.shoulder_l.x + dx, y: result.shoulder_l.y + dy };
+    result.elbow_l = { x: result.elbow_l.x + dx, y: result.elbow_l.y + dy };
+    result.wrist_l = { x: result.wrist_l.x + dx, y: result.wrist_l.y + dy };
+    result.shoulder_r = { x: result.shoulder_r.x + dx, y: result.shoulder_r.y + dy };
+    result.elbow_r = { x: result.elbow_r.x + dx, y: result.elbow_r.y + dy };
+    result.wrist_r = { x: result.wrist_r.x + dx, y: result.wrist_r.y + dy };
+    return result;
+  }
+
+  return result;
+}
+
 /**
  * Copies joints from front view to target view, performing proper anatomical symmetry reflection.
  */

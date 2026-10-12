@@ -1,14 +1,17 @@
 import {
   AnatomicalJointDef,
   AnatomicalJointId,
+  BonePartAttachment,
   JointToolMode,
   StudioView
 } from '../types';
 import {
   ANATOMICAL_JOINTS,
   BONE_CONNECTIONS,
+  DEFAULT_ENVELOPES,
   getDefaultJointPositions,
-  solveTwoBoneIK
+  pathCapsule,
+  poseJointPreservingBones
 } from './AnatomicalRig';
 
 export interface RigStudioCanvasEvents {
@@ -26,6 +29,7 @@ export class RigStudioCanvas {
   private toolMode: JointToolMode = 'select';
   private symmetryEnabled = true;
   private showBonesEnabled = true;
+  private showEnvelopesEnabled = true;
 
   private sourceImage: HTMLImageElement | null = null;
   private imageName = '';
@@ -35,6 +39,12 @@ export class RigStudioCanvas {
   private restJoints: Record<AnatomicalJointId, { x: number; y: number }>;
   // Posed joints during Preview Mode
   private previewJoints: Record<AnatomicalJointId, { x: number; y: number }>;
+
+  // Envelopes per bone
+  private envelopes: Record<AnatomicalJointId, number> = { ...DEFAULT_ENVELOPES };
+
+  // Attached parts per bone
+  private parts: Record<string, BonePartAttachment> = {};
 
   private selectedJointId: AnatomicalJointId | null = null;
   private hoveredJointId: AnatomicalJointId | null = null;
@@ -97,7 +107,57 @@ export class RigStudioCanvas {
     this.render();
   }
 
-  public setView(view: StudioView, joints?: Record<AnatomicalJointId, { x: number; y: number }>): void {
+  public setShowEnvelopes(enabled: boolean): void {
+    this.showEnvelopesEnabled = enabled;
+    this.render();
+  }
+
+  public isShowEnvelopes(): boolean {
+    return this.showEnvelopesEnabled;
+  }
+
+  public setEnvelopeRadius(jointId: AnatomicalJointId, radius: number): void {
+    this.envelopes[jointId] = radius;
+    this.render();
+  }
+
+  public getEnvelopeRadius(jointId: AnatomicalJointId): number {
+    return this.envelopes[jointId] || DEFAULT_ENVELOPES[jointId] || 20;
+  }
+
+  public getEnvelopes(): Record<AnatomicalJointId, number> {
+    return { ...this.envelopes };
+  }
+
+  public setEnvelopes(envs: Record<string, number>): void {
+    this.envelopes = { ...DEFAULT_ENVELOPES, ...envs };
+    this.render();
+  }
+
+  public setPart(boneId: AnatomicalJointId, part: BonePartAttachment | null): void {
+    if (part) {
+      this.parts[boneId] = part;
+    } else {
+      delete this.parts[boneId];
+    }
+    this.render();
+  }
+
+  public getParts(): Record<string, BonePartAttachment> {
+    return { ...this.parts };
+  }
+
+  public setParts(partsMap: Record<string, BonePartAttachment>): void {
+    this.parts = { ...partsMap };
+    this.render();
+  }
+
+  public setView(
+    view: StudioView,
+    joints?: Record<AnatomicalJointId, { x: number; y: number }>,
+    envelopes?: Record<string, number>,
+    partsMap?: Record<string, BonePartAttachment>
+  ): void {
     this.currentView = view;
     if (joints) {
       this.restJoints = { ...joints };
@@ -105,6 +165,14 @@ export class RigStudioCanvas {
       this.restJoints = getDefaultJointPositions(view, this.imageBounds.width, this.imageBounds.height);
     }
     this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+    if (envelopes) {
+      this.envelopes = { ...DEFAULT_ENVELOPES, ...envelopes };
+    }
+    if (partsMap) {
+      this.parts = { ...partsMap };
+    } else {
+      this.parts = {};
+    }
     this.selectedJointId = null;
     this.render();
   }
@@ -113,14 +181,12 @@ export class RigStudioCanvas {
     this.sourceImage = img;
     this.imageName = name;
     if (img && img.width && img.height) {
-      // Determine display bounds matching character proportions
       const aspect = img.width / img.height;
       const targetHeight = 380;
       this.imageBounds = {
         width: Math.round(targetHeight * aspect),
         height: targetHeight
       };
-      // Scale and fit default joints if not previously custom-placed
       this.restJoints = getDefaultJointPositions(this.currentView, this.imageBounds.width, this.imageBounds.height);
       this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
     }
@@ -143,6 +209,10 @@ export class RigStudioCanvas {
     if (this.events.onJointSelected) {
       this.events.onJointSelected(id);
     }
+  }
+
+  public getSelectedJoint(): AnatomicalJointId | null {
+    return this.selectedJointId;
   }
 
   public resetPose(): void {
@@ -278,7 +348,7 @@ export class RigStudioCanvas {
 
       if (this.isDraggingJoint && this.draggedJointId) {
         if (this.toolMode === 'preview') {
-          // Preview posing mode with inverse kinematics & limb manipulation
+          // Preview posing mode with bone length preservation for all nodes
           this.poseJointInPreview(this.draggedJointId, world.x, world.y);
         } else {
           // Standard setup mode (places / moves joint pins with symmetry)
@@ -339,11 +409,9 @@ export class RigStudioCanvas {
     if (!jointDef) return;
 
     if (jointDef.isCenter) {
-      // Central joints stay on symmetry axis X = 0
       this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
     } else {
       this.restJoints[jointId] = { x: Math.round(wx), y: Math.round(wy) };
-      // Symmetry mirroring
       if (this.symmetryEnabled && jointDef.symmetricWith) {
         const symId = jointDef.symmetricWith;
         this.restJoints[symId] = { x: -Math.round(wx), y: Math.round(wy) };
@@ -353,45 +421,11 @@ export class RigStudioCanvas {
     this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
   }
 
+  /**
+   * Poses a joint during Preview Mode while strictly preserving bone lengths across all nodes.
+   */
   private poseJointInPreview(jointId: AnatomicalJointId, wx: number, wy: number): void {
-    const target = { x: wx, y: wy };
-
-    // Limb 2-bone IK solving for wrists and ankles
-    if (jointId === 'wrist_l') {
-      const root = this.previewJoints.shoulder_l;
-      const mid = this.previewJoints.elbow_l;
-      const ik = solveTwoBoneIK(root, mid, this.previewJoints.wrist_l, target, true);
-      this.previewJoints.elbow_l = ik.mid;
-      this.previewJoints.wrist_l = ik.end;
-      return;
-    }
-    if (jointId === 'wrist_r') {
-      const root = this.previewJoints.shoulder_r;
-      const mid = this.previewJoints.elbow_r;
-      const ik = solveTwoBoneIK(root, mid, this.previewJoints.wrist_r, target, false);
-      this.previewJoints.elbow_r = ik.mid;
-      this.previewJoints.wrist_r = ik.end;
-      return;
-    }
-    if (jointId === 'ankle_l') {
-      const root = this.previewJoints.hip_l;
-      const mid = this.previewJoints.knee_l;
-      const ik = solveTwoBoneIK(root, mid, this.previewJoints.ankle_l, target, false);
-      this.previewJoints.knee_l = ik.mid;
-      this.previewJoints.ankle_l = ik.end;
-      return;
-    }
-    if (jointId === 'ankle_r') {
-      const root = this.previewJoints.hip_r;
-      const mid = this.previewJoints.knee_r;
-      const ik = solveTwoBoneIK(root, mid, this.previewJoints.ankle_r, target, true);
-      this.previewJoints.knee_r = ik.mid;
-      this.previewJoints.ankle_r = ik.end;
-      return;
-    }
-
-    // Direct movement for other joints
-    this.previewJoints[jointId] = { x: Math.round(wx), y: Math.round(wy) };
+    this.previewJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.previewJoints);
   }
 
   public render(): void {
@@ -409,19 +443,24 @@ export class RigStudioCanvas {
     this.ctx.scale(this.zoom, this.zoom);
 
     // 2. Draw Empty State Mannequin or Character Artwork
-    if (!this.sourceImage) {
+    if (!this.sourceImage && Object.keys(this.parts).length === 0) {
       this.drawEmptyMannequin();
     } else {
       this.drawCharacterArtwork();
     }
 
-    // 3. Draw Bones
-    if (this.sourceImage && this.showBonesEnabled) {
+    // 3. Draw Envelopes
+    if ((this.sourceImage || Object.keys(this.parts).length > 0) && this.showEnvelopesEnabled) {
+      this.drawEnvelopes();
+    }
+
+    // 4. Draw Bones
+    if ((this.sourceImage || Object.keys(this.parts).length > 0) && this.showBonesEnabled) {
       this.drawBones();
     }
 
-    // 4. Draw Joint Pins
-    if (this.sourceImage) {
+    // 5. Draw Joint Pins
+    if (this.sourceImage || Object.keys(this.parts).length > 0) {
       this.drawJointPins();
     }
 
@@ -432,11 +471,9 @@ export class RigStudioCanvas {
     const gridSize = 24 * this.zoom;
     const majorGridSize = gridSize * 5;
 
-    // Background color
     this.ctx.fillStyle = '#0f172a';
     this.ctx.fillRect(0, 0, w, h);
 
-    // Minor lines
     this.ctx.beginPath();
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
     this.ctx.lineWidth = 1;
@@ -454,7 +491,6 @@ export class RigStudioCanvas {
     }
     this.ctx.stroke();
 
-    // Major lines
     this.ctx.beginPath();
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     this.ctx.lineWidth = 1;
@@ -472,7 +508,6 @@ export class RigStudioCanvas {
     }
     this.ctx.stroke();
 
-    // Center Origin Ground Line (X-axis at y=panY)
     this.ctx.beginPath();
     this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
     this.ctx.lineWidth = 1.5;
@@ -483,7 +518,6 @@ export class RigStudioCanvas {
 
   private drawEmptyMannequin(): void {
     this.ctx.save();
-    // Faint standing humanoid silhouette
     this.ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
     this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
     this.ctx.lineWidth = 1.5 / this.zoom;
@@ -514,7 +548,6 @@ export class RigStudioCanvas {
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Empty state text
     this.ctx.fillStyle = '#64748b';
     this.ctx.font = '600 13px Inter, sans-serif';
     this.ctx.textAlign = 'center';
@@ -525,8 +558,6 @@ export class RigStudioCanvas {
   }
 
   private drawCharacterArtwork(): void {
-    if (!this.sourceImage) return;
-
     const bw = this.imageBounds.width;
     const bh = this.imageBounds.height;
     const imgX = -bw / 2;
@@ -534,18 +565,92 @@ export class RigStudioCanvas {
 
     // In Preview Mode: Draw faint ghost of original rest pose
     if (this.toolMode === 'preview') {
-      this.ctx.save();
-      this.ctx.globalAlpha = 0.22;
-      this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
-      this.ctx.restore();
+      if (this.sourceImage) {
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.22;
+        this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+        this.ctx.restore();
+      }
 
-      // Draw posed character artwork with limb deformation
+      // Draw posed character artwork with limb deformation and attached parts
       this.drawPosedArtwork(bw, bh);
     } else {
-      // Normal setup mode: crisp rest artwork
-      this.ctx.save();
-      this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
-      this.ctx.restore();
+      // Setup mode: render rest artwork
+      if (this.sourceImage) {
+        this.ctx.save();
+        this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+        this.ctx.restore();
+      }
+      // Draw attached parts over rest pose if any
+      this.drawAttachedPartsRest();
+    }
+  }
+
+  private drawAttachedPartsRest(): void {
+    const rj = this.restJoints;
+    for (const [boneId, part] of Object.entries(this.parts)) {
+      if (!part) continue;
+      const bKey = boneId as AnatomicalJointId;
+      const seg = this.getBoneSegmentJoints(bKey, rj);
+      if (seg) {
+        this.drawAttachedPart(part, seg.p1, seg.p2);
+      }
+    }
+  }
+
+  private getBoneSegmentJoints(
+    boneId: AnatomicalJointId,
+    joints: Record<AnatomicalJointId, { x: number; y: number }>
+  ): { p1: { x: number; y: number }; p2: { x: number; y: number } } | null {
+    switch (boneId) {
+      case 'head':
+        return { p1: joints.neck, p2: joints.head };
+      case 'neck': {
+        const hipMid = { x: (joints.hip_l.x + joints.hip_r.x) / 2, y: (joints.hip_l.y + joints.hip_r.y) / 2 };
+        return { p1: hipMid, p2: joints.neck };
+      }
+      case 'shoulder_l':
+        return { p1: joints.shoulder_l, p2: joints.elbow_l };
+      case 'elbow_l':
+        return { p1: joints.elbow_l, p2: joints.wrist_l };
+      case 'wrist_l': {
+        const dx = joints.wrist_l.x - joints.elbow_l.x;
+        const dy = joints.wrist_l.y - joints.elbow_l.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { p1: joints.wrist_l, p2: { x: joints.wrist_l.x + (dx / len) * 24, y: joints.wrist_l.y + (dy / len) * 24 } };
+      }
+      case 'shoulder_r':
+        return { p1: joints.shoulder_r, p2: joints.elbow_r };
+      case 'elbow_r':
+        return { p1: joints.elbow_r, p2: joints.wrist_r };
+      case 'wrist_r': {
+        const dx = joints.wrist_r.x - joints.elbow_r.x;
+        const dy = joints.wrist_r.y - joints.elbow_r.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { p1: joints.wrist_r, p2: { x: joints.wrist_r.x + (dx / len) * 24, y: joints.wrist_r.y + (dy / len) * 24 } };
+      }
+      case 'hip_l':
+        return { p1: joints.hip_l, p2: joints.knee_l };
+      case 'knee_l':
+        return { p1: joints.knee_l, p2: joints.ankle_l };
+      case 'ankle_l': {
+        const dx = joints.ankle_l.x - joints.knee_l.x;
+        const dy = joints.ankle_l.y - joints.knee_l.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { p1: joints.ankle_l, p2: { x: joints.ankle_l.x + (dx / len) * 24, y: joints.ankle_l.y + (dy / len) * 24 } };
+      }
+      case 'hip_r':
+        return { p1: joints.hip_r, p2: joints.knee_r };
+      case 'knee_r':
+        return { p1: joints.knee_r, p2: joints.ankle_r };
+      case 'ankle_r': {
+        const dx = joints.ankle_r.x - joints.knee_r.x;
+        const dy = joints.ankle_r.y - joints.knee_r.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { p1: joints.ankle_r, p2: { x: joints.ankle_r.x + (dx / len) * 24, y: joints.ankle_r.y + (dy / len) * 24 } };
+      }
+      default:
+        return null;
     }
   }
 
@@ -553,42 +658,146 @@ export class RigStudioCanvas {
    * Articulates character artwork limbs according to the posed preview joints.
    */
   private drawPosedArtwork(bw: number, bh: number): void {
-    if (!this.sourceImage) return;
-
     const img = this.sourceImage;
     const pj = this.previewJoints;
     const rj = this.restJoints;
 
     this.ctx.save();
 
-    // Torso / Head
-    const torsoDy = pj.neck.y - rj.neck.y;
-    const torsoDx = pj.neck.x - rj.neck.x;
-    this.ctx.save();
-    this.ctx.translate(torsoDx, torsoDy);
-    this.ctx.drawImage(
-      img,
-      0, 0, img.width, img.height * 0.65,
-      -bw / 2, -bh, bw, bh * 0.65
-    );
+    // 1. Torso
+    if (this.parts.neck) {
+      const seg = this.getBoneSegmentJoints('neck', pj);
+      if (seg) this.drawAttachedPart(this.parts.neck, seg.p1, seg.p2);
+    } else if (img) {
+      const torsoDy = pj.neck.y - rj.neck.y;
+      const torsoDx = pj.neck.x - rj.neck.x;
+      this.ctx.save();
+      this.ctx.translate(torsoDx, torsoDy);
+      // Torso capsule clipping
+      const hipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
+      pathCapsule(this.ctx, hipMid.x, hipMid.y, rj.neck.x, rj.neck.y, this.getEnvelopeRadius('neck'));
+      this.ctx.clip();
+      this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+      this.ctx.restore();
+    }
+
+    // 2. Head (Moving and Tilting around Neck)
+    if (this.parts.head) {
+      const seg = this.getBoneSegmentJoints('head', pj);
+      if (seg) this.drawAttachedPart(this.parts.head, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
+    }
+
+    // 3. Left Arm
+    if (this.parts.shoulder_l) {
+      const seg = this.getBoneSegmentJoints('shoulder_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.shoulder_l, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
+    }
+
+    if (this.parts.elbow_l) {
+      const seg = this.getBoneSegmentJoints('elbow_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.elbow_l, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
+    }
+
+    if (this.parts.wrist_l) {
+      const seg = this.getBoneSegmentJoints('wrist_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.wrist_l, seg.p1, seg.p2);
+    }
+
+    // 4. Right Arm
+    if (this.parts.shoulder_r) {
+      const seg = this.getBoneSegmentJoints('shoulder_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.shoulder_r, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, this.getEnvelopeRadius('shoulder_r'));
+    }
+
+    if (this.parts.elbow_r) {
+      const seg = this.getBoneSegmentJoints('elbow_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.elbow_r, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, this.getEnvelopeRadius('elbow_r'));
+    }
+
+    if (this.parts.wrist_r) {
+      const seg = this.getBoneSegmentJoints('wrist_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.wrist_r, seg.p1, seg.p2);
+    }
+
+    // 5. Left Leg
+    if (this.parts.hip_l) {
+      const seg = this.getBoneSegmentJoints('hip_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.hip_l, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
+    }
+
+    if (this.parts.knee_l) {
+      const seg = this.getBoneSegmentJoints('knee_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.knee_l, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
+    }
+
+    if (this.parts.ankle_l) {
+      const seg = this.getBoneSegmentJoints('ankle_l', pj);
+      if (seg) this.drawAttachedPart(this.parts.ankle_l, seg.p1, seg.p2);
+    }
+
+    // 6. Right Leg
+    if (this.parts.hip_r) {
+      const seg = this.getBoneSegmentJoints('hip_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.hip_r, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, this.getEnvelopeRadius('hip_r'));
+    }
+
+    if (this.parts.knee_r) {
+      const seg = this.getBoneSegmentJoints('knee_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.knee_r, seg.p1, seg.p2);
+    } else if (img) {
+      this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, this.getEnvelopeRadius('knee_r'));
+    }
+
+    if (this.parts.ankle_r) {
+      const seg = this.getBoneSegmentJoints('ankle_r', pj);
+      if (seg) this.drawAttachedPart(this.parts.ankle_r, seg.p1, seg.p2);
+    }
+
     this.ctx.restore();
+  }
 
-    // Left Arm (upper arm, elbow to wrist)
-    this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, bw * 0.35);
-    this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, bw * 0.3);
+  private drawAttachedPart(
+    part: BonePartAttachment,
+    pointA: { x: number; y: number },
+    pointB: { x: number; y: number }
+  ): void {
+    const dx = pointB.x - pointA.x;
+    const dy = pointB.y - pointA.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const angle = Math.atan2(dy, dx);
 
-    // Right Arm (upper arm, elbow to wrist)
-    this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, bw * 0.35);
-    this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, bw * 0.3);
+    const img = part.image;
+    if (!img.width || !img.height) return;
 
-    // Left Leg (thigh and calf/foot)
-    this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, bw * 0.35);
-    this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, bw * 0.35);
+    this.ctx.save();
+    this.ctx.translate(pointA.x, pointA.y);
+    this.ctx.rotate(angle);
 
-    // Right Leg (thigh and calf/foot)
-    this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, bw * 0.35);
-    this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, bw * 0.35);
+    const scale = part.scale || 1.0;
+    const aspect = img.height / img.width;
+    const targetW = len * scale;
+    const targetH = targetW * aspect;
 
+    const offX = part.offsetX || 0;
+    const offY = part.offsetY || -targetH / 2;
+
+    this.ctx.drawImage(img, offX, offY, targetW, targetH);
     this.ctx.restore();
   }
 
@@ -598,7 +807,7 @@ export class RigStudioCanvas {
     restB: { x: number; y: number },
     posedA: { x: number; y: number },
     posedB: { x: number; y: number },
-    segmentWidth: number
+    radius: number
   ): void {
     const bw = this.imageBounds.width;
     const bh = this.imageBounds.height;
@@ -617,16 +826,44 @@ export class RigStudioCanvas {
     this.ctx.scale(1, scale);
     this.ctx.translate(-restA.x, -restA.y);
 
-    // Clip to limb bounding cylinder
-    this.ctx.beginPath();
-    const cx = (restA.x + restB.x) / 2;
-    const cy = (restA.y + restB.y) / 2;
-    const rad = Math.max(restLen / 2 + 10, segmentWidth / 2);
-    this.ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    // Accurate capsule clipping matching bone envelope
+    pathCapsule(this.ctx, restA.x, restA.y, restB.x, restB.y, radius);
     this.ctx.clip();
 
     this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
     this.ctx.restore();
+  }
+
+  private drawEnvelopes(): void {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+
+    for (const joint of ANATOMICAL_JOINTS) {
+      const seg = this.getBoneSegmentJoints(joint.id, joints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(joint.id);
+      const isSelected = this.selectedJointId === joint.id;
+
+      this.ctx.save();
+      pathCapsule(this.ctx, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y, radius);
+
+      if (isSelected) {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#38bdf8';
+        this.ctx.lineWidth = 1.5 / this.zoom;
+        this.ctx.stroke();
+      } else {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.06)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.setLineDash([4 / this.zoom, 3 / this.zoom]);
+        this.ctx.stroke();
+      }
+
+      this.ctx.restore();
+    }
   }
 
   private drawBones(): void {
@@ -649,8 +886,8 @@ export class RigStudioCanvas {
       this.ctx.rotate(angle);
 
       // Stylized tapered bone link
-      const baseW = 4.5 / this.zoom;
-      const tipW = 2.0 / this.zoom;
+      const baseW = 4.0 / this.zoom;
+      const tipW = 1.8 / this.zoom;
 
       this.ctx.beginPath();
       this.ctx.moveTo(0, -baseW);
@@ -659,8 +896,7 @@ export class RigStudioCanvas {
       this.ctx.lineTo(0, baseW);
       this.ctx.closePath();
 
-      // Semi-transparent bone fill with crisp outline
-      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
       this.ctx.fill();
 
       this.ctx.strokeStyle = '#38bdf8';

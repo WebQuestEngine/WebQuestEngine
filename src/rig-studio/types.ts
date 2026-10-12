@@ -177,6 +177,18 @@ export interface AnatomicalJointDef {
   isCenter?: boolean;
 }
 
+export interface BonePartAttachment {
+  boneId: AnatomicalJointId;
+  image: HTMLImageElement;
+  imageUrl: string;
+  fileName: string;
+  fileSize?: string;
+  scale?: number;
+  rotation?: number;
+  offsetX?: number;
+  offsetY?: number;
+}
+
 export interface ViewArtworkData {
   viewId: StudioView;
   label: string;
@@ -185,6 +197,8 @@ export interface ViewArtworkData {
   fileName: string;
   fileSize: string;
   joints: Record<string, { x: number; y: number }>;
+  envelopes: Record<string, number>;
+  parts: Record<string, BonePartAttachment>;
   visible: boolean;
 }
 

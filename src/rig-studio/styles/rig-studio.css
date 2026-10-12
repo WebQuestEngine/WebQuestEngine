@@ -599,3 +599,111 @@ body.rig-studio-body {
   padding: 12px 4px;
   text-align: center;
 }
+
+/* Bone Details & Part Attachment Card */
+.bone-details-card {
+  background: #182234;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bone-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #fff;
+}
+
+.envelope-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.envelope-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--studio-text-muted);
+}
+
+.envelope-range-input {
+  width: 100%;
+  accent-color: var(--studio-primary);
+  cursor: pointer;
+}
+
+.bone-part-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.bone-part-preview-box {
+  width: 100%;
+  min-height: 50px;
+  max-height: 80px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.bone-part-preview-img {
+  max-width: 100%;
+  max-height: 70px;
+  object-fit: contain;
+}
+
+.btn-attach-part {
+  background: #1e293b;
+  border: 1px dashed rgba(56, 189, 248, 0.5);
+  color: #38bdf8;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-attach-part:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+}
+
+.btn-danger-part {
+  background: #2a151b;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-danger-part:hover {
+  background: #3f1a23;
+  color: #fca5a5;
+}
