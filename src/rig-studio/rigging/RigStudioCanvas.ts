@@ -232,8 +232,8 @@ export class RigStudioCanvas {
     partsMap?: Record<string, BonePartAttachment>
   ): void {
     this.currentView = view;
-    if (joints) {
-      this.restJoints = { ...joints };
+    if (joints && Object.keys(joints).length > 0) {
+      this.restJoints = JSON.parse(JSON.stringify(joints));
     } else {
       this.restJoints = getDefaultJointPositions(view, this.imageBounds.width, this.imageBounds.height);
     }
@@ -250,7 +250,7 @@ export class RigStudioCanvas {
     this.render();
   }
 
-  public setSourceImage(img: HTMLImageElement | null, name = ''): void {
+  public setSourceImage(img: HTMLImageElement | null, name = '', resetJoints = false): void {
     this.sourceImage = img;
     this.imageName = name;
     if (img && img.width && img.height) {
@@ -260,8 +260,10 @@ export class RigStudioCanvas {
         width: Math.round(targetHeight * aspect),
         height: targetHeight
       };
-      this.restJoints = getDefaultJointPositions(this.currentView, this.imageBounds.width, this.imageBounds.height);
-      this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+      if (resetJoints || !this.restJoints || Object.keys(this.restJoints).length === 0) {
+        this.restJoints = getDefaultJointPositions(this.currentView, this.imageBounds.width, this.imageBounds.height);
+        this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+      }
     }
     this.render();
   }
@@ -514,13 +516,45 @@ export class RigStudioCanvas {
     const jointDef = ANATOMICAL_JOINTS.find(j => j.id === jointId);
     if (!jointDef) return;
 
+    const oldPos = this.restJoints[jointId];
+    const dx = Math.round(wx) - (oldPos ? oldPos.x : Math.round(wx));
+    const dy = Math.round(wy) - (oldPos ? oldPos.y : Math.round(wy));
+
     if (jointDef.isCenter) {
       this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
+      if (jointId === 'chest') {
+        if (this.restJoints.neck) this.restJoints.neck = { x: 0, y: this.restJoints.neck.y + dy };
+        if (this.restJoints.head) this.restJoints.head = { x: 0, y: this.restJoints.head.y + dy };
+      } else if (jointId === 'neck') {
+        if (this.restJoints.head) this.restJoints.head = { x: 0, y: this.restJoints.head.y + dy };
+      }
     } else {
       this.restJoints[jointId] = { x: Math.round(wx), y: Math.round(wy) };
+
+      // Carry child edge tips when dragging wrist or ankle
+      if (jointId === 'wrist_l' && this.restJoints.hand_l) {
+        this.restJoints.hand_l = { x: this.restJoints.hand_l.x + dx, y: this.restJoints.hand_l.y + dy };
+      } else if (jointId === 'wrist_r' && this.restJoints.hand_r) {
+        this.restJoints.hand_r = { x: this.restJoints.hand_r.x + dx, y: this.restJoints.hand_r.y + dy };
+      } else if (jointId === 'ankle_l' && this.restJoints.foot_l) {
+        this.restJoints.foot_l = { x: this.restJoints.foot_l.x + dx, y: this.restJoints.foot_l.y + dy };
+      } else if (jointId === 'ankle_r' && this.restJoints.foot_r) {
+        this.restJoints.foot_r = { x: this.restJoints.foot_r.x + dx, y: this.restJoints.foot_r.y + dy };
+      }
+
       if (this.symmetryEnabled && jointDef.symmetricWith) {
         const symId = jointDef.symmetricWith;
         this.restJoints[symId] = { x: -Math.round(wx), y: Math.round(wy) };
+
+        if (jointId === 'wrist_l' && this.restJoints.hand_r && this.restJoints.hand_l) {
+          this.restJoints.hand_r = { x: -this.restJoints.hand_l.x, y: this.restJoints.hand_l.y };
+        } else if (jointId === 'wrist_r' && this.restJoints.hand_l && this.restJoints.hand_r) {
+          this.restJoints.hand_l = { x: -this.restJoints.hand_r.x, y: this.restJoints.hand_r.y };
+        } else if (jointId === 'ankle_l' && this.restJoints.foot_r && this.restJoints.foot_l) {
+          this.restJoints.foot_r = { x: -this.restJoints.foot_l.x, y: this.restJoints.foot_l.y };
+        } else if (jointId === 'ankle_r' && this.restJoints.foot_l && this.restJoints.foot_r) {
+          this.restJoints.foot_l = { x: -this.restJoints.foot_r.x, y: this.restJoints.foot_r.y };
+        }
       }
     }
 
@@ -567,7 +601,9 @@ export class RigStudioCanvas {
 
     // 5. Draw Joint Pins
     if (this.sourceImage || Object.keys(this.parts).length > 0) {
-      this.drawJointPins();
+      if (this.showBonesEnabled || this.toolMode !== 'preview') {
+        this.drawJointPins();
+      }
     }
 
     this.ctx.restore();
@@ -705,8 +741,13 @@ export class RigStudioCanvas {
       case 'head':
         return { p1: joints.neck, p2: joints.head };
       case 'neck': {
+        const p1 = joints.chest || { x: 0, y: joints.neck.y + 28 };
+        return { p1, p2: joints.neck };
+      }
+      case 'chest': {
         const hipMid = { x: (joints.hip_l.x + joints.hip_r.x) / 2, y: (joints.hip_l.y + joints.hip_r.y) / 2 };
-        return { p1: hipMid, p2: joints.neck };
+        const p2 = joints.chest || { x: 0, y: joints.neck.y + 28 };
+        return { p1: hipMid, p2 };
       }
       case 'shoulder_l':
         return { p1: joints.shoulder_l, p2: joints.elbow_l };
@@ -716,10 +757,8 @@ export class RigStudioCanvas {
         const dx = joints.wrist_l.x - joints.elbow_l.x;
         const dy = joints.wrist_l.y - joints.elbow_l.y;
         const len = Math.hypot(dx, dy) || 1;
-        return {
-          p1: joints.wrist_l,
-          p2: { x: joints.wrist_l.x + (dx / len) * 28, y: joints.wrist_l.y + (dy / len) * 28 }
-        };
+        const p2 = joints.hand_l || { x: joints.wrist_l.x + (dx / len) * 28, y: joints.wrist_l.y + (dy / len) * 28 };
+        return { p1: joints.wrist_l, p2 };
       }
       case 'shoulder_r':
         return { p1: joints.shoulder_r, p2: joints.elbow_r };
@@ -729,30 +768,24 @@ export class RigStudioCanvas {
         const dx = joints.wrist_r.x - joints.elbow_r.x;
         const dy = joints.wrist_r.y - joints.elbow_r.y;
         const len = Math.hypot(dx, dy) || 1;
-        return {
-          p1: joints.wrist_r,
-          p2: { x: joints.wrist_r.x + (dx / len) * 28, y: joints.wrist_r.y + (dy / len) * 28 }
-        };
+        const p2 = joints.hand_r || { x: joints.wrist_r.x + (dx / len) * 28, y: joints.wrist_r.y + (dy / len) * 28 };
+        return { p1: joints.wrist_r, p2 };
       }
       case 'hip_l':
         return { p1: joints.hip_l, p2: joints.knee_l };
       case 'knee_l':
         return { p1: joints.knee_l, p2: joints.ankle_l };
       case 'ankle_l': {
-        return {
-          p1: joints.ankle_l,
-          p2: { x: joints.ankle_l.x + 4, y: joints.ankle_l.y + 36 }
-        };
+        const p2 = joints.foot_l || { x: joints.ankle_l.x + 4, y: joints.ankle_l.y + 36 };
+        return { p1: joints.ankle_l, p2 };
       }
       case 'hip_r':
         return { p1: joints.hip_r, p2: joints.knee_r };
       case 'knee_r':
         return { p1: joints.knee_r, p2: joints.ankle_r };
       case 'ankle_r': {
-        return {
-          p1: joints.ankle_r,
-          p2: { x: joints.ankle_r.x - 4, y: joints.ankle_r.y + 36 }
-        };
+        const p2 = joints.foot_r || { x: joints.ankle_r.x - 4, y: joints.ankle_r.y + 36 };
+        return { p1: joints.ankle_r, p2 };
       }
       default:
         return null;
@@ -780,7 +813,9 @@ export class RigStudioCanvas {
           fileName: this.dragHoverPart.name,
           scale: 1.0,
           offsetX: 0,
-          offsetY: 0
+          offsetY: 0,
+          pivotX: this.dragHoverPart.pivotX,
+          pivotY: this.dragHoverPart.pivotY
         };
       }
       return this.parts[boneId] || null;
@@ -852,16 +887,26 @@ export class RigStudioCanvas {
       }
     }
 
-    // Layer 3: Torso (Spine between hip midpoint and neck)
-    const partTorso = getPart('neck');
+    // Layer 3: Torso (Spine between hip midpoint and chest/neck)
+    const partTorso = getPart('chest') || getPart('neck');
     if (partTorso) {
-      const seg = this.getBoneSegmentJoints('neck', pj);
-      const rSeg = this.getBoneSegmentJoints('neck', rj);
+      const seg = this.getBoneSegmentJoints('chest', pj) || this.getBoneSegmentJoints('neck', pj);
+      const rSeg = this.getBoneSegmentJoints('chest', rj) || this.getBoneSegmentJoints('neck', rj);
       if (seg && rSeg) this.drawAttachedPart(partTorso, seg.p1, seg.p2, rSeg.p1);
     } else if (img) {
       const restHipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
       const posedHipMid = { x: (pj.hip_l.x + pj.hip_r.x) / 2, y: (pj.hip_l.y + pj.hip_r.y) / 2 };
-      this.drawLimbSegment(img, restHipMid, rj.neck, posedHipMid, pj.neck, this.getEnvelopeRadius('neck') * 1.35);
+      const chestPosed = pj.chest || pj.neck;
+      const chestRest = rj.chest || rj.neck;
+      this.drawLimbSegment(img, restHipMid, chestRest, posedHipMid, chestPosed, this.getEnvelopeRadius('chest'));
+    }
+
+    // Layer 3b: Neck (if dedicated neck part attached)
+    const partNeck = getPart('neck');
+    if (partNeck && partNeck !== partTorso) {
+      const seg = this.getBoneSegmentJoints('neck', pj);
+      const rSeg = this.getBoneSegmentJoints('neck', rj);
+      if (seg && rSeg) this.drawAttachedPart(partNeck, seg.p1, seg.p2, rSeg.p1);
     }
 
     // Layer 4: Near Leg (Left Thigh, Calf, Boot)
@@ -971,9 +1016,11 @@ export class RigStudioCanvas {
       const boneDef = ANATOMICAL_BONES.find(b => b.id === part.boneId);
       const isSpine = boneDef?.category === 'spine';
 
-      // Character scale factor from original spritesheet resolution (e.g. 1536) to canvas character height (380)
-      const refHeight = this.sourceImage?.naturalHeight || 1536;
-      const charScale = bh / refHeight;
+      // Character scale factor:
+      // High-res character texture is ~740px tall inside spritesheet.
+      // On canvas, character skeleton is bh (380px) tall.
+      // Scaling by bh / 740 ≈ 0.5135 makes part lengths match bone lengths seamlessly!
+      const charScale = bh / 740;
 
       const scale = (part.scale ?? 1.0) * charScale;
       const targetW = img.width * scale;
@@ -981,25 +1028,25 @@ export class RigStudioCanvas {
 
       this.ctx.translate(pointA.x, pointA.y);
 
+      // Determine normalized pivot anchor [0..1]
+      const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
+      const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (part.boneId === 'head' ? 0.78 : 0.5) : 0.15);
+
       if (isSpine) {
-        // Spine parts (Head, Torso): upright sprites with bottom-center anchor at joint pointA
-        // Bone vector points upwards (approx -90 deg). rotAngle = posedAngle + Math.PI / 2
-        const rotAngle = posedAngle + Math.PI / 2 + (part.rotation || 0);
+        // Spine parts (Head, Torso): upright sprites tracking spine angle
+        const rotAngle = (posedAngle + Math.PI / 2) + (part.rotation || 0);
         this.ctx.rotate(rotAngle);
 
-        const offX = (part.offsetX ?? 0) - targetW / 2;
-        const offY = (part.offsetY ?? 0) - targetH;
+        const offX = (part.offsetX ?? 0) - targetW * anchorX;
+        const offY = (part.offsetY ?? 0) - targetH * anchorY;
         this.ctx.drawImage(img, offX, offY, targetW, targetH);
       } else {
-        // Limb parts (Arms, Legs): sprites are drawn pointing vertically down along +Y axis.
-        // We orient the sprite's +Y axis along the bone vector (posedAngle).
-        // rotAngle = posedAngle - Math.PI / 2
-        const rotAngle = posedAngle - Math.PI / 2 + (part.rotation || 0);
+        // Limb parts (Arms, Legs): sprites are drawn vertically down along +Y axis
+        const rotAngle = (posedAngle - Math.PI / 2) + (part.rotation || 0);
         this.ctx.rotate(rotAngle);
 
-        // Proximal joint pointA connects to top-center of limb sprite (targetW / 2, 0)
-        const offX = (part.offsetX ?? 0) - targetW / 2;
-        const offY = (part.offsetY ?? 0);
+        const offX = (part.offsetX ?? 0) - targetW * anchorX;
+        const offY = (part.offsetY ?? 0) - targetH * anchorY;
         this.ctx.drawImage(img, offX, offY, targetW, targetH);
       }
     }
@@ -1027,8 +1074,9 @@ export class RigStudioCanvas {
     this.ctx.rotate(rotDelta);
     this.ctx.translate(-restA.x, -restA.y);
 
-    // Accurate capsule clipping matching bone envelope
-    pathCapsule(this.ctx, restA.x, restA.y, restB.x, restB.y, radius);
+    // Accurate generous capsule clipping enclosing the anatomical limb
+    const effectiveRadius = Math.max(radius, 25);
+    pathCapsule(this.ctx, restA.x, restA.y, restB.x, restB.y, effectiveRadius);
     this.ctx.clip();
 
     this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
@@ -1218,18 +1266,6 @@ export class RigStudioCanvas {
       this.ctx.fill();
 
       this.ctx.restore();
-    }
-
-    // Draw fingertip and toe tip indicators
-    const tips = [wristLSeg?.p2, wristRSeg?.p2, ankleLSeg?.p2, ankleRSeg?.p2].filter(Boolean) as { x: number; y: number }[];
-    for (const tip of tips) {
-      this.ctx.beginPath();
-      this.ctx.arc(tip.x, tip.y, 2.5 / this.zoom, 0, Math.PI * 2);
-      this.ctx.fillStyle = '#38bdf8';
-      this.ctx.fill();
-      this.ctx.strokeStyle = '#0f172a';
-      this.ctx.lineWidth = 1 / this.zoom;
-      this.ctx.stroke();
     }
   }
 

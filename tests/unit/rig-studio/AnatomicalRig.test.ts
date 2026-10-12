@@ -12,23 +12,28 @@ import {
 } from '../../../src/rig-studio/rigging/AnatomicalRig';
 
 describe('AnatomicalRig', () => {
-  it('defines exactly the 14 anatomical joints from the workflow mockup', () => {
-    expect(ANATOMICAL_JOINTS.length).toBe(14);
+  it('defines the anatomical joints and draggable bone edges', () => {
+    expect(ANATOMICAL_JOINTS.length).toBe(19);
     const ids = ANATOMICAL_JOINTS.map(j => j.id);
     expect(ids).toContain('head');
     expect(ids).toContain('neck');
+    expect(ids).toContain('chest');
     expect(ids).toContain('shoulder_l');
     expect(ids).toContain('shoulder_r');
     expect(ids).toContain('elbow_l');
     expect(ids).toContain('elbow_r');
     expect(ids).toContain('wrist_l');
     expect(ids).toContain('wrist_r');
+    expect(ids).toContain('hand_l');
+    expect(ids).toContain('hand_r');
     expect(ids).toContain('hip_l');
     expect(ids).toContain('hip_r');
     expect(ids).toContain('knee_l');
     expect(ids).toContain('knee_r');
     expect(ids).toContain('ankle_l');
     expect(ids).toContain('ankle_r');
+    expect(ids).toContain('foot_l');
+    expect(ids).toContain('foot_r');
   });
 
   it('configures symmetrical counterpart pairs correctly', () => {
@@ -41,6 +46,9 @@ describe('AnatomicalRig', () => {
     const wristL = ANATOMICAL_JOINTS.find(j => j.id === 'wrist_l');
     expect(wristL?.symmetricWith).toBe('wrist_r');
 
+    const handL = ANATOMICAL_JOINTS.find(j => j.id === 'hand_l');
+    expect(handL?.symmetricWith).toBe('hand_r');
+
     const hipL = ANATOMICAL_JOINTS.find(j => j.id === 'hip_l');
     expect(hipL?.symmetricWith).toBe('hip_r');
 
@@ -49,9 +57,12 @@ describe('AnatomicalRig', () => {
 
     const ankleL = ANATOMICAL_JOINTS.find(j => j.id === 'ankle_l');
     expect(ankleL?.symmetricWith).toBe('ankle_r');
+
+    const footL = ANATOMICAL_JOINTS.find(j => j.id === 'foot_l');
+    expect(footL?.symmetricWith).toBe('foot_r');
   });
 
-  it('provides default envelope radii for all 14 joints', () => {
+  it('provides default envelope radii for all 19 joints', () => {
     for (const joint of ANATOMICAL_JOINTS) {
       expect(DEFAULT_ENVELOPES[joint.id]).toBeGreaterThan(10);
     }
@@ -63,14 +74,17 @@ describe('AnatomicalRig', () => {
     // Center joints must have X = 0
     expect(frontJoints.head.x).toBe(0);
     expect(frontJoints.neck.x).toBe(0);
+    expect(frontJoints.chest.x).toBe(0);
 
     // Left and Right limbs must have opposite X coords
     expect(frontJoints.shoulder_l.x).toBeCloseTo(-frontJoints.shoulder_r.x, 1);
     expect(frontJoints.elbow_l.x).toBeCloseTo(-frontJoints.elbow_r.x, 1);
     expect(frontJoints.wrist_l.x).toBeCloseTo(-frontJoints.wrist_r.x, 1);
+    expect(frontJoints.hand_l.x).toBeCloseTo(-frontJoints.hand_r.x, 1);
     expect(frontJoints.hip_l.x).toBeCloseTo(-frontJoints.hip_r.x, 1);
     expect(frontJoints.knee_l.x).toBeCloseTo(-frontJoints.knee_r.x, 1);
     expect(frontJoints.ankle_l.x).toBeCloseTo(-frontJoints.ankle_r.x, 1);
+    expect(frontJoints.foot_l.x).toBeCloseTo(-frontJoints.foot_r.x, 1);
   });
 
   it('solves 2-bone IK without NaN or exploding distances', () => {
@@ -151,6 +165,7 @@ describe('AnatomicalRig', () => {
     expect(boneNames).toContain('root');
     expect(boneNames).toContain('hip');
     expect(boneNames).toContain('torso');
+    expect(boneNames).toContain('neck');
     expect(boneNames).toContain('head');
     expect(boneNames).toContain('arm_upper_l');
     expect(boneNames).toContain('arm_lower_l');
@@ -158,5 +173,40 @@ describe('AnatomicalRig', () => {
     expect(boneNames).toContain('leg_upper_l');
     expect(boneNames).toContain('leg_lower_l');
     expect(boneNames).toContain('foot_l');
+  });
+
+  it('strictly preserves torso bone length when dragging chest/spine in preview mode', () => {
+    const rest = getDefaultJointPositions('front', 200, 400);
+    const restHipMid = { x: (rest.hip_l.x + rest.hip_r.x) / 2, y: (rest.hip_l.y + rest.hip_r.y) / 2 };
+    const restTorsoLen = Math.hypot(rest.chest.x - restHipMid.x, rest.chest.y - restHipMid.y);
+
+    // Attempt to drag chest 500px away into space
+    const posed = poseJointPreservingBones('chest', 120, -500, rest, rest);
+    const posedHipMid = { x: (posed.hip_l.x + posed.hip_r.x) / 2, y: (posed.hip_l.y + posed.hip_r.y) / 2 };
+    const posedTorsoLen = Math.hypot(posed.chest.x - posedHipMid.x, posed.chest.y - posedHipMid.y);
+
+    expect(posedTorsoLen).toBeCloseTo(restTorsoLen, 1);
+  });
+
+  it('strictly preserves neck bone length when dragging neck in preview mode', () => {
+    const rest = getDefaultJointPositions('front', 200, 400);
+    const restNeckLen = Math.hypot(rest.neck.x - rest.chest.x, rest.neck.y - rest.chest.y);
+
+    const posed = poseJointPreservingBones('neck', 40, -320, rest, rest);
+    const posedNeckLen = Math.hypot(posed.neck.x - posed.chest.x, posed.neck.y - posed.chest.y);
+
+    expect(posedNeckLen).toBeCloseTo(restNeckLen, 1);
+  });
+
+  it('translates entire skeleton in unison when dragging hips, preventing body separation', () => {
+    const rest = getDefaultJointPositions('front', 200, 400);
+    const posed = poseJointPreservingBones('hip_l', rest.hip_l.x + 50, rest.hip_l.y + 30, rest, rest);
+
+    expect(posed.hip_l.x).toBe(rest.hip_l.x + 50);
+    expect(posed.hip_l.y).toBe(rest.hip_l.y + 30);
+    expect(posed.chest.x).toBe(rest.chest.x + 50);
+    expect(posed.chest.y).toBe(rest.chest.y + 30);
+    expect(posed.head.x).toBe(rest.head.x + 50);
+    expect(posed.head.y).toBe(rest.head.y + 30);
   });
 });

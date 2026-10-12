@@ -2,33 +2,43 @@ import { AnatomicalJointDef, AnatomicalJointId, StudioView, SpineDocument, Spine
 
 export const ANATOMICAL_JOINTS: AnatomicalJointDef[] = [
   { id: 'head', name: 'Head', color: '#22c55e', parentId: 'neck', isCenter: true },
-  { id: 'neck', name: 'Neck', color: '#4ade80', isCenter: true },
-  { id: 'shoulder_l', name: 'Shoulder L', color: '#eab308', parentId: 'neck', symmetricWith: 'shoulder_r' },
-  { id: 'shoulder_r', name: 'Shoulder R', color: '#eab308', parentId: 'neck', symmetricWith: 'shoulder_l' },
+  { id: 'neck', name: 'Neck', color: '#4ade80', parentId: 'chest', isCenter: true },
+  { id: 'chest', name: 'Chest', color: '#38bdf8', isCenter: true },
+  { id: 'shoulder_l', name: 'Shoulder L', color: '#eab308', parentId: 'chest', symmetricWith: 'shoulder_r' },
+  { id: 'shoulder_r', name: 'Shoulder R', color: '#eab308', parentId: 'chest', symmetricWith: 'shoulder_l' },
   { id: 'elbow_l', name: 'Elbow L', color: '#f97316', parentId: 'shoulder_l', symmetricWith: 'elbow_r' },
   { id: 'elbow_r', name: 'Elbow R', color: '#f97316', parentId: 'shoulder_r', symmetricWith: 'elbow_l' },
   { id: 'wrist_l', name: 'Wrist L', color: '#a855f7', parentId: 'elbow_l', symmetricWith: 'wrist_r' },
   { id: 'wrist_r', name: 'Wrist R', color: '#a855f7', parentId: 'elbow_r', symmetricWith: 'wrist_l' },
-  { id: 'hip_l', name: 'Hip L', color: '#3b82f6', parentId: 'neck', symmetricWith: 'hip_r' },
-  { id: 'hip_r', name: 'Hip R', color: '#3b82f6', parentId: 'neck', symmetricWith: 'hip_l' },
+  { id: 'hand_l', name: 'Hand Tip L', color: '#c084fc', parentId: 'wrist_l', symmetricWith: 'hand_r' },
+  { id: 'hand_r', name: 'Hand Tip R', color: '#c084fc', parentId: 'wrist_r', symmetricWith: 'hand_l' },
+  { id: 'hip_l', name: 'Hip L', color: '#3b82f6', parentId: 'chest', symmetricWith: 'hip_r' },
+  { id: 'hip_r', name: 'Hip R', color: '#3b82f6', parentId: 'chest', symmetricWith: 'hip_l' },
   { id: 'knee_l', name: 'Knee L', color: '#ef4444', parentId: 'hip_l', symmetricWith: 'knee_r' },
   { id: 'knee_r', name: 'Knee R', color: '#ef4444', parentId: 'hip_r', symmetricWith: 'knee_l' },
   { id: 'ankle_l', name: 'Ankle L', color: '#d97706', parentId: 'knee_l', symmetricWith: 'ankle_r' },
   { id: 'ankle_r', name: 'Ankle R', color: '#d97706', parentId: 'knee_r', symmetricWith: 'ankle_l' },
+  { id: 'foot_l', name: 'Foot Tip L', color: '#f59e0b', parentId: 'ankle_l', symmetricWith: 'foot_r' },
+  { id: 'foot_r', name: 'Foot Tip R', color: '#f59e0b', parentId: 'ankle_r', symmetricWith: 'foot_l' },
 ];
 
 export const BONE_CONNECTIONS: [AnatomicalJointId, AnatomicalJointId][] = [
+  ['chest', 'neck'],
   ['neck', 'head'],
-  ['neck', 'shoulder_l'],
+  ['chest', 'shoulder_l'],
   ['shoulder_l', 'elbow_l'],
   ['elbow_l', 'wrist_l'],
-  ['neck', 'shoulder_r'],
+  ['wrist_l', 'hand_l'],
+  ['chest', 'shoulder_r'],
   ['shoulder_r', 'elbow_r'],
   ['elbow_r', 'wrist_r'],
+  ['wrist_r', 'hand_r'],
   ['hip_l', 'knee_l'],
   ['knee_l', 'ankle_l'],
+  ['ankle_l', 'foot_l'],
   ['hip_r', 'knee_r'],
   ['knee_r', 'ankle_r'],
+  ['ankle_r', 'foot_r'],
   ['hip_l', 'hip_r'], // pelvis bridge
 ];
 
@@ -43,20 +53,21 @@ export interface AnatomicalBoneDef {
 }
 
 export const ANATOMICAL_BONES: AnatomicalBoneDef[] = [
-  { id: 'head', name: 'Head Bone', originJointId: 'neck', targetJointId: 'head', category: 'spine', description: 'Starts from Neck joint, extends to head pivot' },
-  { id: 'neck', name: 'Torso Bone', originJointId: 'hip_mid', targetJointId: 'neck', category: 'spine', description: 'Starts from Hip midpoint, extends to Neck joint' },
+  { id: 'head', name: 'Head Bone', originJointId: 'neck', targetJointId: 'head', category: 'spine', description: 'Starts from Neck joint, extends to head crown' },
+  { id: 'neck', name: 'Neck Bone', originJointId: 'chest', targetJointId: 'neck', category: 'spine', description: 'Starts from Chest joint, extends to Neck / chin pivot' },
+  { id: 'chest', name: 'Torso Bone', originJointId: 'hip_mid', targetJointId: 'chest', category: 'spine', description: 'Starts from Hip midpoint, extends to Chest joint' },
   { id: 'shoulder_l', name: 'Left Upper Arm Bone', originJointId: 'shoulder_l', targetJointId: 'elbow_l', category: 'arm', description: 'Starts from Shoulder L joint, extends to Elbow L joint' },
   { id: 'elbow_l', name: 'Left Forearm Bone', originJointId: 'elbow_l', targetJointId: 'wrist_l', category: 'arm', description: 'Starts from Elbow L joint, extends to Wrist L joint' },
-  { id: 'wrist_l', name: 'Left Hand Bone', originJointId: 'wrist_l', defaultLength: 28, category: 'arm', description: 'Starts from Wrist L joint, wrapped in Hand envelope' },
+  { id: 'wrist_l', name: 'Left Hand Bone', originJointId: 'wrist_l', targetJointId: 'hand_l', defaultLength: 28, category: 'arm', description: 'Starts from Wrist L joint to Hand Tip L' },
   { id: 'shoulder_r', name: 'Right Upper Arm Bone', originJointId: 'shoulder_r', targetJointId: 'elbow_r', category: 'arm', description: 'Starts from Shoulder R joint, extends to Elbow R joint' },
   { id: 'elbow_r', name: 'Right Forearm Bone', originJointId: 'elbow_r', targetJointId: 'wrist_r', category: 'arm', description: 'Starts from Elbow R joint, extends to Wrist R joint' },
-  { id: 'wrist_r', name: 'Right Hand Bone', originJointId: 'wrist_r', defaultLength: 28, category: 'arm', description: 'Starts from Wrist R joint, wrapped in Hand envelope' },
+  { id: 'wrist_r', name: 'Right Hand Bone', originJointId: 'wrist_r', targetJointId: 'hand_r', defaultLength: 28, category: 'arm', description: 'Starts from Wrist R joint to Hand Tip R' },
   { id: 'hip_l', name: 'Left Thigh Bone', originJointId: 'hip_l', targetJointId: 'knee_l', category: 'leg', description: 'Starts from Hip L joint, extends to Knee L joint' },
   { id: 'knee_l', name: 'Left Calf Bone', originJointId: 'knee_l', targetJointId: 'ankle_l', category: 'leg', description: 'Starts from Knee L joint, extends to Ankle L joint' },
-  { id: 'ankle_l', name: 'Left Foot Bone', originJointId: 'ankle_l', defaultLength: 36, category: 'leg', description: 'Starts from Ankle L joint, wrapped in Foot envelope' },
+  { id: 'ankle_l', name: 'Left Foot Bone', originJointId: 'ankle_l', targetJointId: 'foot_l', defaultLength: 36, category: 'leg', description: 'Starts from Ankle L joint to Foot Tip L' },
   { id: 'hip_r', name: 'Right Thigh Bone', originJointId: 'hip_r', targetJointId: 'knee_r', category: 'leg', description: 'Starts from Hip R joint, extends to Knee R joint' },
   { id: 'knee_r', name: 'Right Calf Bone', originJointId: 'knee_r', targetJointId: 'ankle_r', category: 'leg', description: 'Starts from Knee R joint, extends to Ankle R joint' },
-  { id: 'ankle_r', name: 'Right Foot Bone', originJointId: 'ankle_r', defaultLength: 36, category: 'leg', description: 'Starts from Ankle R joint, wrapped in Foot envelope' },
+  { id: 'ankle_r', name: 'Right Foot Bone', originJointId: 'ankle_r', targetJointId: 'foot_r', defaultLength: 36, category: 'leg', description: 'Starts from Ankle R joint to Foot Tip R' },
 ];
 
 /**
@@ -73,20 +84,25 @@ export function getDefaultJointPositions(
 
   // Base reference coords for standard A-pose character (height 380, ground at y=0)
   const baseFront: Record<AnatomicalJointId, { x: number; y: number }> = {
-    head: { x: 0, y: -305 * scale },
-    neck: { x: 0, y: -245 * scale },
+    head: { x: 0, y: -312 * scale },
+    neck: { x: 0, y: -268 * scale },
+    chest: { x: 0, y: -238 * scale },
     shoulder_l: { x: 28 * wScale, y: -238 * scale },
     shoulder_r: { x: -28 * wScale, y: -238 * scale },
     elbow_l: { x: 52 * wScale, y: -188 * scale },
     elbow_r: { x: -52 * wScale, y: -188 * scale },
     wrist_l: { x: 74 * wScale, y: -136 * scale },
     wrist_r: { x: -74 * wScale, y: -136 * scale },
+    hand_l: { x: 86 * wScale, y: -110 * scale },
+    hand_r: { x: -86 * wScale, y: -110 * scale },
     hip_l: { x: 20 * wScale, y: -155 * scale },
     hip_r: { x: -20 * wScale, y: -155 * scale },
     knee_l: { x: 24 * wScale, y: -95 * scale },
     knee_r: { x: -24 * wScale, y: -95 * scale },
     ankle_l: { x: 28 * wScale, y: -35 * scale },
     ankle_r: { x: -28 * wScale, y: -35 * scale },
+    foot_l: { x: 32 * wScale, y: 0 },
+    foot_r: { x: -32 * wScale, y: 0 },
   };
 
   if (view === 'back') {
@@ -107,20 +123,25 @@ export function getDefaultJointPositions(
     const isRight = view === 'right';
     const dir = isRight ? 1 : -1;
     return {
-      head: { x: 4 * dir * wScale, y: -305 * scale },
-      neck: { x: 0, y: -245 * scale },
+      head: { x: 4 * dir * wScale, y: -312 * scale },
+      neck: { x: 2 * dir * wScale, y: -268 * scale },
+      chest: { x: 0, y: -238 * scale },
       shoulder_l: { x: 4 * dir * wScale, y: -238 * scale },
       shoulder_r: { x: -4 * dir * wScale, y: -238 * scale },
       elbow_l: { x: 18 * dir * wScale, y: -188 * scale },
       elbow_r: { x: -16 * dir * wScale, y: -188 * scale },
       wrist_l: { x: 28 * dir * wScale, y: -136 * scale },
       wrist_r: { x: -24 * dir * wScale, y: -136 * scale },
+      hand_l: { x: 34 * dir * wScale, y: -110 * scale },
+      hand_r: { x: -28 * dir * wScale, y: -110 * scale },
       hip_l: { x: 4 * dir * wScale, y: -155 * scale },
       hip_r: { x: -4 * dir * wScale, y: -155 * scale },
       knee_l: { x: 8 * dir * wScale, y: -95 * scale },
       knee_r: { x: -6 * dir * wScale, y: -95 * scale },
       ankle_l: { x: 10 * dir * wScale, y: -35 * scale },
       ankle_r: { x: -8 * dir * wScale, y: -35 * scale },
+      foot_l: { x: 14 * dir * wScale, y: 0 },
+      foot_r: { x: -12 * dir * wScale, y: 0 },
     };
   }
 
@@ -178,20 +199,25 @@ export function solveTwoBoneIK(
 }
 
 export const DEFAULT_ENVELOPES: Record<AnatomicalJointId, number> = {
-  head: 32,
-  neck: 36,
-  shoulder_l: 18,
-  shoulder_r: 18,
-  elbow_l: 16,
-  elbow_r: 16,
-  wrist_l: 18,
-  wrist_r: 18,
-  hip_l: 22,
-  hip_r: 22,
-  knee_l: 18,
-  knee_r: 18,
-  ankle_l: 20,
-  ankle_r: 20,
+  head: 48,
+  neck: 24,
+  chest: 52,
+  shoulder_l: 25,
+  shoulder_r: 25,
+  elbow_l: 22,
+  elbow_r: 22,
+  wrist_l: 22,
+  wrist_r: 22,
+  hand_l: 24,
+  hand_r: 24,
+  hip_l: 26,
+  hip_r: 26,
+  knee_l: 24,
+  knee_r: 24,
+  ankle_l: 24,
+  ankle_r: 24,
+  foot_l: 26,
+  foot_r: 26,
 };
 
 /**
@@ -239,6 +265,12 @@ export function poseJointPreservingBones(
     const ik = solveTwoBoneIK(root, mid, end, target, true);
     result.elbow_l = ik.mid;
     result.wrist_l = ik.end;
+    if (result.hand_l && restJoints.hand_l && restJoints.wrist_l) {
+      result.hand_l = {
+        x: result.wrist_l.x + (restJoints.hand_l.x - restJoints.wrist_l.x),
+        y: result.wrist_l.y + (restJoints.hand_l.y - restJoints.wrist_l.y)
+      };
+    }
     return result;
   }
   if (jointId === 'wrist_r') {
@@ -248,6 +280,12 @@ export function poseJointPreservingBones(
     const ik = solveTwoBoneIK(root, mid, end, target, false);
     result.elbow_r = ik.mid;
     result.wrist_r = ik.end;
+    if (result.hand_r && restJoints.hand_r && restJoints.wrist_r) {
+      result.hand_r = {
+        x: result.wrist_r.x + (restJoints.hand_r.x - restJoints.wrist_r.x),
+        y: result.wrist_r.y + (restJoints.hand_r.y - restJoints.wrist_r.y)
+      };
+    }
     return result;
   }
 
@@ -259,6 +297,12 @@ export function poseJointPreservingBones(
     const ik = solveTwoBoneIK(root, mid, end, target, false);
     result.knee_l = ik.mid;
     result.ankle_l = ik.end;
+    if (result.foot_l && restJoints.foot_l && restJoints.ankle_l) {
+      result.foot_l = {
+        x: result.ankle_l.x + (restJoints.foot_l.x - restJoints.ankle_l.x),
+        y: result.ankle_l.y + (restJoints.foot_l.y - restJoints.ankle_l.y)
+      };
+    }
     return result;
   }
   if (jointId === 'ankle_r') {
@@ -268,6 +312,12 @@ export function poseJointPreservingBones(
     const ik = solveTwoBoneIK(root, mid, end, target, true);
     result.knee_r = ik.mid;
     result.ankle_r = ik.end;
+    if (result.foot_r && restJoints.foot_r && restJoints.ankle_r) {
+      result.foot_r = {
+        x: result.ankle_r.x + (restJoints.foot_r.x - restJoints.ankle_r.x),
+        y: result.ankle_r.y + (restJoints.foot_r.y - restJoints.ankle_r.y)
+      };
+    }
     return result;
   }
 
@@ -356,7 +406,14 @@ export function poseJointPreservingBones(
     const restHead = restJoints.head;
     const headLen = Math.hypot(restHead.x - restNeck.x, restHead.y - restNeck.y);
 
-    const headAngle = Math.atan2(target.y - neck.y, target.x - neck.x);
+    let headAngle = Math.atan2(target.y - neck.y, target.x - neck.x);
+    const restAngle = Math.atan2(restHead.y - restNeck.y, restHead.x - restNeck.x);
+    let angleDiff = headAngle - restAngle;
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    const clampedDiff = Math.max(-1.15, Math.min(1.15, angleDiff));
+    headAngle = restAngle + clampedDiff;
+
     result.head = {
       x: neck.x + Math.cos(headAngle) * headLen,
       y: neck.y + Math.sin(headAngle) * headLen
@@ -364,19 +421,19 @@ export function poseJointPreservingBones(
     return result;
   }
 
-  // 6. Shoulders (Maintain Clavicle distance and translate entire arm chain)
+  // 6. Shoulders (Maintain Clavicle distance and rotate arm chain)
   if (jointId === 'shoulder_l' || jointId === 'shoulder_r') {
     const isLeft = jointId === 'shoulder_l';
     const shoulder = isLeft ? result.shoulder_l : result.shoulder_r;
-    const neck = result.neck;
-    const restNeck = restJoints.neck;
+    const anchor = result.chest || result.neck;
+    const restAnchor = restJoints.chest || restJoints.neck;
     const restShoulder = isLeft ? restJoints.shoulder_l : restJoints.shoulder_r;
-    const clavicleLen = Math.hypot(restShoulder.x - restNeck.x, restShoulder.y - restNeck.y);
+    const clavicleLen = Math.hypot(restShoulder.x - restAnchor.x, restShoulder.y - restAnchor.y);
 
-    const angle = Math.atan2(target.y - neck.y, target.x - neck.x);
+    const angle = Math.atan2(target.y - anchor.y, target.x - anchor.x);
     const newShoulder = {
-      x: neck.x + Math.cos(angle) * clavicleLen,
-      y: neck.y + Math.sin(angle) * clavicleLen
+      x: anchor.x + Math.cos(angle) * clavicleLen,
+      y: anchor.y + Math.sin(angle) * clavicleLen
     };
     const dx = newShoulder.x - shoulder.x;
     const dy = newShoulder.y - shoulder.y;
@@ -385,45 +442,128 @@ export function poseJointPreservingBones(
       result.shoulder_l = newShoulder;
       result.elbow_l = { x: result.elbow_l.x + dx, y: result.elbow_l.y + dy };
       result.wrist_l = { x: result.wrist_l.x + dx, y: result.wrist_l.y + dy };
+      if (result.hand_l) result.hand_l = { x: result.hand_l.x + dx, y: result.hand_l.y + dy };
     } else {
       result.shoulder_r = newShoulder;
       result.elbow_r = { x: result.elbow_r.x + dx, y: result.elbow_r.y + dy };
       result.wrist_r = { x: result.wrist_r.x + dx, y: result.wrist_r.y + dy };
+      if (result.hand_r) result.hand_r = { x: result.hand_r.x + dx, y: result.hand_r.y + dy };
     }
     return result;
   }
 
-  // 7. Hips (Translate entire pelvis and both legs together, preserving rigid pelvis structure)
+  // 7. Hips / Root (Translate entire skeleton in unison, preserving complete anatomical structure)
   if (jointId === 'hip_l' || jointId === 'hip_r') {
     const isLeft = jointId === 'hip_l';
     const hip = isLeft ? result.hip_l : result.hip_r;
     const dx = target.x - hip.x;
     const dy = target.y - hip.y;
 
-    // Both hips move together in lockstep so pelvis width never breaks
-    result.hip_l = { x: result.hip_l.x + dx, y: result.hip_l.y + dy };
-    result.knee_l = { x: result.knee_l.x + dx, y: result.knee_l.y + dy };
-    result.ankle_l = { x: result.ankle_l.x + dx, y: result.ankle_l.y + dy };
-
-    result.hip_r = { x: result.hip_r.x + dx, y: result.hip_r.y + dy };
-    result.knee_r = { x: result.knee_r.x + dx, y: result.knee_r.y + dy };
-    result.ankle_r = { x: result.ankle_r.x + dx, y: result.ankle_r.y + dy };
+    for (const key of Object.keys(result) as AnatomicalJointId[]) {
+      if (result[key]) {
+        result[key] = { x: result[key].x + dx, y: result[key].y + dy };
+      }
+    }
     return result;
   }
 
-  // 8. Neck (Upper body translation carrying head and both arms rigidly)
+  // 8. Neck (Tilts around Chest, preserving Neck Bone length and carrying Head)
   if (jointId === 'neck') {
-    const dx = target.x - result.neck.x;
-    const dy = target.y - result.neck.y;
+    const chest = result.chest || { x: 0, y: result.neck.y + 28 };
+    const restChest = restJoints.chest || { x: 0, y: restJoints.neck.y + 28 };
+    const restNeck = restJoints.neck;
+    const neckLen = Math.hypot(restNeck.x - restChest.x, restNeck.y - restChest.y);
 
-    result.neck = { x: target.x, y: target.y };
+    let neckAngle = Math.atan2(target.y - chest.y, target.x - chest.x);
+    const restAngle = Math.atan2(restNeck.y - restChest.y, restNeck.x - restChest.x);
+    let angleDiff = neckAngle - restAngle;
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    const clampedDiff = Math.max(-0.85, Math.min(0.85, angleDiff));
+    neckAngle = restAngle + clampedDiff;
+
+    const newNeck = {
+      x: chest.x + Math.cos(neckAngle) * neckLen,
+      y: chest.y + Math.sin(neckAngle) * neckLen
+    };
+
+    const dx = newNeck.x - result.neck.x;
+    const dy = newNeck.y - result.neck.y;
+    result.neck = newNeck;
     result.head = { x: result.head.x + dx, y: result.head.y + dy };
-    result.shoulder_l = { x: result.shoulder_l.x + dx, y: result.shoulder_l.y + dy };
-    result.elbow_l = { x: result.elbow_l.x + dx, y: result.elbow_l.y + dy };
-    result.wrist_l = { x: result.wrist_l.x + dx, y: result.wrist_l.y + dy };
-    result.shoulder_r = { x: result.shoulder_r.x + dx, y: result.shoulder_r.y + dy };
-    result.elbow_r = { x: result.elbow_r.x + dx, y: result.elbow_r.y + dy };
-    result.wrist_r = { x: result.wrist_r.x + dx, y: result.wrist_r.y + dy };
+    return result;
+  }
+
+  // Chest / Torso (Tilts around Hip midpoint, strictly preserving Torso Bone length and rotating upper body)
+  if (jointId === 'chest') {
+    const hipMid = { x: (result.hip_l.x + result.hip_r.x) / 2, y: (result.hip_l.y + result.hip_r.y) / 2 };
+    const restHipMid = { x: (restJoints.hip_l.x + restJoints.hip_r.x) / 2, y: (restJoints.hip_l.y + restJoints.hip_r.y) / 2 };
+    const restChest = restJoints.chest || { x: 0, y: restJoints.neck.y + 28 };
+    const torsoLen = Math.hypot(restChest.x - restHipMid.x, restChest.y - restHipMid.y);
+
+    let torsoAngle = Math.atan2(target.y - hipMid.y, target.x - hipMid.x);
+    const restAngle = Math.atan2(restChest.y - restHipMid.y, restChest.x - restHipMid.x);
+    let angleDiff = torsoAngle - restAngle;
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    const clampedDiff = Math.max(-0.75, Math.min(0.75, angleDiff));
+
+    const cos = Math.cos(clampedDiff);
+    const sin = Math.sin(clampedDiff);
+    const rot = (rPt: { x: number; y: number }) => {
+      const rx = rPt.x - restHipMid.x;
+      const ry = rPt.y - restHipMid.y;
+      return {
+        x: hipMid.x + rx * cos - ry * sin,
+        y: hipMid.y + rx * sin + ry * cos
+      };
+    };
+
+    if (result.chest && restJoints.chest) result.chest = rot(restJoints.chest);
+    result.neck = rot(restJoints.neck);
+    result.head = rot(restJoints.head);
+    result.shoulder_l = rot(restJoints.shoulder_l);
+    result.shoulder_r = rot(restJoints.shoulder_r);
+    result.elbow_l = rot(restJoints.elbow_l);
+    result.elbow_r = rot(restJoints.elbow_r);
+    result.wrist_l = rot(restJoints.wrist_l);
+    result.wrist_r = rot(restJoints.wrist_r);
+    if (result.hand_l && restJoints.hand_l) result.hand_l = rot(restJoints.hand_l);
+    if (result.hand_r && restJoints.hand_r) result.hand_r = rot(restJoints.hand_r);
+    return result;
+  }
+
+  // 9. Hand tips (drag hand edge to aim hand and rotate around wrist)
+  if (jointId === 'hand_l' || jointId === 'hand_r') {
+    const isLeft = jointId === 'hand_l';
+    const wrist = isLeft ? result.wrist_l : result.wrist_r;
+    const restWrist = isLeft ? restJoints.wrist_l : restJoints.wrist_r;
+    const restHand = isLeft ? restJoints.hand_l : restJoints.hand_r;
+    const handLen = (restHand && restWrist) ? Math.hypot(restHand.x - restWrist.x, restHand.y - restWrist.y) : 28;
+    const angle = Math.atan2(target.y - wrist.y, target.x - wrist.x);
+    const newHand = {
+      x: wrist.x + Math.cos(angle) * handLen,
+      y: wrist.y + Math.sin(angle) * handLen
+    };
+    if (isLeft) result.hand_l = newHand;
+    else result.hand_r = newHand;
+    return result;
+  }
+
+  // 10. Foot tips (drag foot edge to aim foot and rotate around ankle)
+  if (jointId === 'foot_l' || jointId === 'foot_r') {
+    const isLeft = jointId === 'foot_l';
+    const ankle = isLeft ? result.ankle_l : result.ankle_r;
+    const restAnkle = isLeft ? restJoints.ankle_l : restJoints.ankle_r;
+    const restFoot = isLeft ? restJoints.foot_l : restJoints.foot_r;
+    const footLen = (restFoot && restAnkle) ? Math.hypot(restFoot.x - restAnkle.x, restFoot.y - restAnkle.y) : 35;
+    const angle = Math.atan2(target.y - ankle.y, target.x - ankle.x);
+    const newFoot = {
+      x: ankle.x + Math.cos(angle) * footLen,
+      y: ankle.y + Math.sin(angle) * footLen
+    };
+    if (isLeft) result.foot_l = newFoot;
+    else result.foot_r = newFoot;
     return result;
   }
 
@@ -467,9 +607,14 @@ export function convertJointsToSpineBones(
   joints: Record<AnatomicalJointId, { x: number; y: number }>,
   view: StudioView
 ): SpineBoneData[] {
+  const chestY = joints.chest ? joints.chest.y : joints.neck.y;
+  const neckY = joints.neck.y;
+  const torsoLen = Math.abs(chestY - joints.hip_l.y);
+  const neckLen = Math.abs(neckY - chestY) || 28;
+
   const bones: SpineBoneData[] = [
     { name: 'root', x: 0, y: 0, length: 15, rotation: 0 },
-    // Torso / Neck
+    // Torso / Neck / Head
     {
       name: 'hip',
       parent: 'root',
@@ -483,15 +628,23 @@ export function convertJointsToSpineBones(
       parent: 'hip',
       x: 20,
       y: 0,
-      length: Math.abs(joints.neck.y - joints.hip_l.y),
+      length: torsoLen,
+      rotation: 0
+    },
+    {
+      name: 'neck',
+      parent: 'torso',
+      x: torsoLen,
+      y: 0,
+      length: neckLen,
       rotation: 0
     },
     {
       name: 'head',
-      parent: 'torso',
-      x: Math.abs(joints.head.y - joints.neck.y),
+      parent: 'neck',
+      x: neckLen,
       y: 0,
-      length: 28,
+      length: Math.abs(joints.head.y - neckY) || 28,
       rotation: 0
     },
     // Left Arm

@@ -26,6 +26,8 @@ export interface RigPartItem {
   width: number;
   height: number;
   assignedBoneId?: AnatomicalJointId | null;
+  pivotX?: number;
+  pivotY?: number;
 }
 
 export class RigStudioApp {
@@ -318,6 +320,13 @@ export class RigStudioApp {
   }
 
   public switchView(viewId: StudioView): void {
+    // 1. Save all current view state from canvas before switching
+    if (this.canvas) {
+      this.views[this.activeView].joints = JSON.parse(JSON.stringify(this.canvas.getJoints()));
+      this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
+      this.views[this.activeView].parts = { ...this.canvas.getParts() };
+    }
+
     this.activeView = viewId;
 
     // Update active tab styles
@@ -339,7 +348,7 @@ export class RigStudioApp {
     // Update Canvas with view's joints, envelopes, and attached parts
     if (this.canvas) {
       this.canvas.setView(viewId, viewData.joints, viewData.envelopes, viewData.parts);
-      this.canvas.setSourceImage(viewData.image, viewData.fileName);
+      this.canvas.setSourceImage(viewData.image, viewData.fileName, false);
     }
 
     this.renderLeftSidebar();
@@ -525,19 +534,34 @@ export class RigStudioApp {
     this.renderRightSidebar();
   }
 
-  public attachPartToBone(boneId: AnatomicalJointId, partData: { id?: string; name?: string; imageUrl: string }): void {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+  public attachPartToBone(
+    boneId: AnatomicalJointId,
+    partData: {
+      id?: string;
+      name?: string;
+      imageUrl: string;
+      image?: HTMLImageElement;
+      pivotX?: number;
+      pivotY?: number;
+      scale?: number;
+      offsetX?: number;
+      offsetY?: number;
+      rotation?: number;
+    }
+  ): void {
+    const applyAttachment = (img: HTMLImageElement) => {
       const currentArt = this.views[this.activeView];
       const part: BonePartAttachment = {
         boneId,
         image: img,
         imageUrl: partData.imageUrl,
         fileName: partData.name || `${boneId}_part.png`,
-        scale: 1.0,
-        offsetX: 0,
-        offsetY: 0
+        scale: partData.scale ?? 1.0,
+        offsetX: partData.offsetX ?? 0,
+        offsetY: partData.offsetY ?? 0,
+        rotation: partData.rotation ?? 0,
+        pivotX: partData.pivotX,
+        pivotY: partData.pivotY
       };
 
       currentArt.parts[boneId] = part;
@@ -551,7 +575,43 @@ export class RigStudioApp {
       this.selectedJointId = boneId;
       this.renderRightSidebar();
     };
-    img.src = partData.imageUrl;
+
+    if (partData.image && partData.image.complete && partData.image.naturalWidth > 0) {
+      applyAttachment(partData.image);
+    } else {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => applyAttachment(img);
+      img.src = partData.imageUrl;
+    }
+  }
+
+  public assembleAllRonaldParts(): void {
+    if (this.partsLibrary.length === 0) {
+      this.loadRonaldDemoParts(true);
+      return;
+    }
+
+    const currentArt = this.views[this.activeView];
+    for (const item of this.partsLibrary) {
+      if (item.assignedBoneId) {
+        const part: BonePartAttachment = {
+          boneId: item.assignedBoneId,
+          image: item.image,
+          imageUrl: item.imageUrl,
+          fileName: item.name,
+          scale: 1.0,
+          offsetX: 0,
+          offsetY: 0,
+          rotation: 0,
+          pivotX: item.pivotX,
+          pivotY: item.pivotY
+        };
+        currentArt.parts[item.assignedBoneId] = part;
+        this.canvas?.setPart(item.assignedBoneId, part);
+      }
+    }
+    this.renderRightSidebar();
   }
 
   public handleLibraryFilesUpload(files: FileList | File[]): void {
@@ -676,27 +736,33 @@ export class RigStudioApp {
     this.renderRightSidebar();
   }
 
-  public loadRonaldDemoParts(): void {
+  public loadRonaldDemoParts(autoAssemble = false): void {
     const demoUrl = '/demo/assets/characters/sir_ronald_parts.png';
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const ronaldElements: { name: string; boneId?: AnatomicalJointId; bounds: { x: number; y: number; width: number; height: number } }[] = [
-        { name: 'Head (f_head)', boneId: 'head', bounds: { x: 16, y: 166, width: 211, height: 216 } },
-        { name: 'Torso (f_torso)', boneId: 'neck', bounds: { x: 249, y: 168, width: 252, height: 173 } },
-        { name: 'Hip / Pelvis (f_hip)', bounds: { x: 292, y: 336, width: 168, height: 81 } },
-        { name: 'Left Upper Arm (f_arm_upper_l)', boneId: 'shoulder_l', bounds: { x: 673, y: 197, width: 97, height: 117 } },
-        { name: 'Left Forearm (f_arm_lower_l)', boneId: 'elbow_l', bounds: { x: 706, y: 312, width: 69, height: 66 } },
-        { name: 'Left Hand (f_hand_l)', boneId: 'wrist_l', bounds: { x: 673, y: 354, width: 91, height: 75 } },
-        { name: 'Right Upper Arm (f_arm_upper_r)', boneId: 'shoulder_r', bounds: { x: 529, y: 197, width: 90, height: 117 } },
-        { name: 'Right Forearm (f_arm_lower_r)', boneId: 'elbow_r', bounds: { x: 520, y: 304, width: 69, height: 81 } },
-        { name: 'Right Hand (f_hand_r)', boneId: 'wrist_r', bounds: { x: 533, y: 349, width: 88, height: 80 } },
-        { name: 'Left Thigh (f_leg_upper_l)', boneId: 'hip_l', bounds: { x: 973, y: 158, width: 95, height: 123 } },
-        { name: 'Left Calf (f_leg_lower_l)', boneId: 'knee_l', bounds: { x: 981, y: 278, width: 87, height: 92 } },
-        { name: 'Left Boot (f_foot_l)', boneId: 'ankle_l', bounds: { x: 995, y: 370, width: 94, height: 80 } },
-        { name: 'Right Thigh (f_leg_upper_r)', boneId: 'hip_r', bounds: { x: 829, y: 160, width: 92, height: 128 } },
-        { name: 'Right Calf (f_leg_lower_r)', boneId: 'knee_r', bounds: { x: 828, y: 286, width: 86, height: 99 } },
-        { name: 'Right Boot (f_foot_r)', boneId: 'ankle_r', bounds: { x: 813, y: 382, width: 89, height: 70 } },
+      const ronaldElements: {
+        name: string;
+        boneId?: AnatomicalJointId;
+        bounds: { x: number; y: number; width: number; height: number };
+        pivot: { x: number; y: number };
+      }[] = [
+        { name: 'Head (f_head)', boneId: 'head', bounds: { x: 16, y: 166, width: 211, height: 216 }, pivot: { x: 106, y: 168 } },
+        { name: 'Torso & Waist (Full)', boneId: 'chest', bounds: { x: 249, y: 168, width: 252, height: 249 }, pivot: { x: 126, y: 180 } },
+        { name: 'Torso Chest (f_torso)', bounds: { x: 249, y: 168, width: 252, height: 173 }, pivot: { x: 126, y: 160 } },
+        { name: 'Hip / Belt (f_hip)', bounds: { x: 292, y: 336, width: 168, height: 81 }, pivot: { x: 84, y: 41 } },
+        { name: 'Left Upper Arm (f_arm_upper_l)', boneId: 'shoulder_l', bounds: { x: 673, y: 197, width: 97, height: 117 }, pivot: { x: 31, y: 23 } },
+        { name: 'Left Forearm (f_arm_lower_l)', boneId: 'elbow_l', bounds: { x: 706, y: 312, width: 69, height: 66 }, pivot: { x: 35, y: 14 } },
+        { name: 'Left Hand (f_hand_l)', boneId: 'wrist_l', bounds: { x: 673, y: 354, width: 91, height: 75 }, pivot: { x: 46, y: 20 } },
+        { name: 'Right Upper Arm (f_arm_upper_r)', boneId: 'shoulder_r', bounds: { x: 529, y: 197, width: 90, height: 117 }, pivot: { x: 61, y: 21 } },
+        { name: 'Right Forearm (f_arm_lower_r)', boneId: 'elbow_r', bounds: { x: 520, y: 304, width: 69, height: 81 }, pivot: { x: 31, y: 10 } },
+        { name: 'Right Hand (f_hand_r)', boneId: 'wrist_r', bounds: { x: 533, y: 349, width: 88, height: 80 }, pivot: { x: 32, y: 23 } },
+        { name: 'Left Thigh (f_leg_upper_l)', boneId: 'hip_l', bounds: { x: 973, y: 158, width: 95, height: 123 }, pivot: { x: 44, y: 16 } },
+        { name: 'Left Calf (f_leg_lower_l)', boneId: 'knee_l', bounds: { x: 981, y: 278, width: 87, height: 92 }, pivot: { x: 45, y: 14 } },
+        { name: 'Left Boot (f_foot_l)', boneId: 'ankle_l', bounds: { x: 995, y: 370, width: 94, height: 80 }, pivot: { x: 33, y: 10 } },
+        { name: 'Right Thigh (f_leg_upper_r)', boneId: 'hip_r', bounds: { x: 829, y: 160, width: 92, height: 128 }, pivot: { x: 54, y: 14 } },
+        { name: 'Right Calf (f_leg_lower_r)', boneId: 'knee_r', bounds: { x: 828, y: 286, width: 86, height: 99 }, pivot: { x: 40, y: 12 } },
+        { name: 'Right Boot (f_foot_r)', boneId: 'ankle_r', bounds: { x: 813, y: 382, width: 89, height: 70 }, pivot: { x: 52, y: 11 } },
       ];
 
       for (const elem of ronaldElements) {
@@ -711,6 +777,9 @@ export class RigStudioApp {
         const partImg = new Image();
         partImg.src = dataUrl;
 
+        const pX = elem.pivot.x / elem.bounds.width;
+        const pY = elem.pivot.y / elem.bounds.height;
+
         this.partsLibrary.push({
           id: `ronald_${elem.name.replace(/\W+/g, '_')}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           name: elem.name,
@@ -718,12 +787,18 @@ export class RigStudioApp {
           image: partImg,
           width: elem.bounds.width,
           height: elem.bounds.height,
-          assignedBoneId: null
+          assignedBoneId: elem.boneId || null,
+          pivotX: pX,
+          pivotY: pY
         });
       }
 
-      this.activeRightTab = 'parts';
-      this.renderRightSidebar();
+      if (autoAssemble) {
+        this.assembleAllRonaldParts();
+      } else {
+        this.activeRightTab = 'parts';
+        this.renderRightSidebar();
+      }
     };
     img.src = demoUrl;
   }
@@ -814,19 +889,43 @@ export class RigStudioApp {
 
                     <!-- Attached Part or Drop Target -->
                     ${part ? `
-                      <div style="display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.35); border-radius:4px; padding:4px 6px; border:1px solid rgba(56, 189, 248, 0.2);">
-                        <img src="${part.imageUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:3px; background:rgba(255,255,255,0.05);" />
-                        <div style="flex:1; min-width:0;">
-                          <div style="font-size:0.68rem; color:#e2e8f0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${part.fileName}">
-                            ${part.fileName}
+                      <div style="display:flex; flex-direction:column; gap:4px; background:rgba(0,0,0,0.4); border-radius:4px; padding:5px 7px; border:1px solid rgba(56, 189, 248, 0.25);">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <img src="${part.imageUrl}" style="width:34px; height:34px; object-fit:contain; border-radius:3px; background:rgba(255,255,255,0.05);" />
+                          <div style="flex:1; min-width:0;">
+                            <div style="font-size:0.68rem; color:#e2e8f0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${part.fileName}">
+                              ${part.fileName}
+                            </div>
+                            <div style="font-size:0.58rem; color:#38bdf8;">
+                              Pivot: (${((part.pivotX ?? 0.5) * 100).toFixed(0)}%, ${((part.pivotY ?? 0.5) * 100).toFixed(0)}%)
+                            </div>
                           </div>
-                          <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
-                            <span style="font-size:0.6rem; color:#94a3b8;">Scale:</span>
-                            <input type="range" class="part-scale-slider" data-bone-id="${bone.id}" min="0.5" max="2.0" step="0.05" value="${part.scale || 1.0}" style="width:55px; height:4px;" />
-                            <span class="part-scale-label" data-bone-id="${bone.id}" style="font-size:0.6rem; color:#38bdf8;">${((part.scale || 1.0) * 100).toFixed(0)}%</span>
+                          <button class="btn-danger-part btn-remove-bone-part" data-bone-id="${bone.id}" style="padding:2px 6px; font-size:0.62rem;" title="Remove graphic from this bone">✕ Detach</button>
+                        </div>
+
+                        <!-- Alignment Micro-Adjustment Sliders -->
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:3px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06);">
+                          <div style="display:flex; align-items:center; gap:3px;">
+                            <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Scale:</span>
+                            <input type="range" class="part-scale-slider" data-bone-id="${bone.id}" min="0.5" max="2.0" step="0.02" value="${part.scale || 1.0}" style="flex:1; height:3px;" />
+                            <span class="part-scale-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${((part.scale || 1.0) * 100).toFixed(0)}%</span>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:3px;">
+                            <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Rot:</span>
+                            <input type="range" class="part-rot-slider" data-bone-id="${bone.id}" min="-0.785" max="0.785" step="0.02" value="${part.rotation || 0}" style="flex:1; height:3px;" />
+                            <span class="part-rot-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${Math.round((part.rotation || 0) * 180 / Math.PI)}°</span>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:3px;">
+                            <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Off X:</span>
+                            <input type="range" class="part-offx-slider" data-bone-id="${bone.id}" min="-40" max="40" step="1" value="${part.offsetX || 0}" style="flex:1; height:3px;" />
+                            <span class="part-offx-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${part.offsetX || 0}px</span>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:3px;">
+                            <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Off Y:</span>
+                            <input type="range" class="part-offy-slider" data-bone-id="${bone.id}" min="-40" max="40" step="1" value="${part.offsetY || 0}" style="flex:1; height:3px;" />
+                            <span class="part-offy-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${part.offsetY || 0}px</span>
                           </div>
                         </div>
-                        <button class="btn-danger-part btn-remove-bone-part" data-bone-id="${bone.id}" style="padding:2px 5px; font-size:0.65rem;" title="Remove graphic from this bone">✕</button>
                       </div>
                     ` : `
                       <div class="bone-drop-target-area" data-bone-id="${bone.id}" style="border:1px dashed rgba(56, 189, 248, 0.35); border-radius:4px; padding:5px 6px; text-align:center; font-size:0.65rem; color:#94a3b8; cursor:pointer; background:rgba(56, 189, 248, 0.02); transition:all 0.15s;">
@@ -855,9 +954,14 @@ export class RigStudioApp {
               </button>
             </div>
 
-            <button class="btn-studio btn-studio-primary" id="btn-load-ronald-parts" style="font-size:0.72rem; padding:6px; justify-content:center;" title="Load all pre-cut Ronald parts from demo assets">
-              ⚔️ Load Ronald Demo Parts
-            </button>
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              <button class="btn-studio btn-studio-primary" id="btn-assemble-all-ronald" style="font-size:0.72rem; padding:7px 8px; justify-content:center; background:#059669; border-color:#10b981; font-weight:700;" title="Instantly assemble all Ronald body parts to their skeleton bones with game-quality seamless alignment">
+                ⚡ Assemble Ronald Character
+              </button>
+              <button class="btn-studio" id="btn-load-ronald-parts" style="font-size:0.7rem; padding:5px 6px; justify-content:center;" title="Load all pre-cut Ronald parts from demo assets into library">
+                ⚔️ Reload Ronald Parts Library
+              </button>
+            </div>
 
             ${libCount > 0 ? `
               <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
@@ -1032,7 +1136,7 @@ export class RigStudioApp {
       });
     });
 
-    // Scale slider event
+    // Part alignment sliders
     sidebar.querySelectorAll('.part-scale-slider').forEach(slider => {
       slider.addEventListener('input', (e) => {
         const input = e.target as HTMLInputElement;
@@ -1047,7 +1151,53 @@ export class RigStudioApp {
       });
     });
 
+    sidebar.querySelectorAll('.part-rot-slider').forEach(slider => {
+      slider.addEventListener('input', (e) => {
+        const input = e.target as HTMLInputElement;
+        const bId = input.getAttribute('data-bone-id') as AnatomicalJointId;
+        const val = parseFloat(input.value);
+        if (bId && currentArt.parts[bId]) {
+          currentArt.parts[bId].rotation = val;
+          this.canvas?.setPart(bId, currentArt.parts[bId]);
+          const label = sidebar.querySelector(`.part-rot-label[data-bone-id="${bId}"]`);
+          if (label) label.textContent = `${Math.round(val * 180 / Math.PI)}°`;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.part-offx-slider').forEach(slider => {
+      slider.addEventListener('input', (e) => {
+        const input = e.target as HTMLInputElement;
+        const bId = input.getAttribute('data-bone-id') as AnatomicalJointId;
+        const val = parseInt(input.value, 10);
+        if (bId && currentArt.parts[bId]) {
+          currentArt.parts[bId].offsetX = val;
+          this.canvas?.setPart(bId, currentArt.parts[bId]);
+          const label = sidebar.querySelector(`.part-offx-label[data-bone-id="${bId}"]`);
+          if (label) label.textContent = `${val}px`;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.part-offy-slider').forEach(slider => {
+      slider.addEventListener('input', (e) => {
+        const input = e.target as HTMLInputElement;
+        const bId = input.getAttribute('data-bone-id') as AnatomicalJointId;
+        const val = parseInt(input.value, 10);
+        if (bId && currentArt.parts[bId]) {
+          currentArt.parts[bId].offsetY = val;
+          this.canvas?.setPart(bId, currentArt.parts[bId]);
+          const label = sidebar.querySelector(`.part-offy-label[data-bone-id="${bId}"]`);
+          if (label) label.textContent = `${val}px`;
+        }
+      });
+    });
+
     // Parts Library Actions
+    sidebar.querySelector('#btn-assemble-all-ronald')?.addEventListener('click', () => {
+      this.assembleAllRonaldParts();
+    });
+
     sidebar.querySelector('#btn-import-lib-images')?.addEventListener('click', () => {
       const input = this.container.querySelector('#input-library-files-upload') as HTMLInputElement;
       input?.click();
@@ -1081,7 +1231,9 @@ export class RigStudioApp {
             name: item.name,
             imageUrl: item.imageUrl,
             width: item.width,
-            height: item.height
+            height: item.height,
+            pivotX: item.pivotX,
+            pivotY: item.pivotY
           }));
           e.dataTransfer.effectAllowed = 'copy';
         }
@@ -1270,7 +1422,7 @@ export class RigStudioApp {
     this.loadImageFromUrl('/demo/assets/characters/sir_ronald_back.png', 'character_back.png', 'back', false);
     // Pre-populate Ronald demo parts in Parts Library if empty
     if (this.partsLibrary.length === 0) {
-      this.loadRonaldDemoParts();
+      this.loadRonaldDemoParts(true);
     }
   }
 

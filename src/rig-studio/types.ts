@@ -155,18 +155,23 @@ export type JointToolMode = 'select' | 'add_joint' | 'move' | 'preview';
 export type AnatomicalJointId =
   | 'head'
   | 'neck'
+  | 'chest'
   | 'shoulder_l'
   | 'shoulder_r'
   | 'elbow_l'
   | 'elbow_r'
   | 'wrist_l'
   | 'wrist_r'
+  | 'hand_l'
+  | 'hand_r'
   | 'hip_l'
   | 'hip_r'
   | 'knee_l'
   | 'knee_r'
   | 'ankle_l'
-  | 'ankle_r';
+  | 'ankle_r'
+  | 'foot_l'
+  | 'foot_r';
 
 export interface AnatomicalJointDef {
   id: AnatomicalJointId;
@@ -187,6 +192,8 @@ export interface BonePartAttachment {
   rotation?: number;
   offsetX?: number;
   offsetY?: number;
+  pivotX?: number; // Normalized pivot anchor X [0..1]
+  pivotY?: number; // Normalized pivot anchor Y [0..1]
 }
 
 export interface ViewArtworkData {
