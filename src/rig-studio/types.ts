@@ -20,6 +20,20 @@ export interface VectorOutlineElement {
 }
 
 /**
+ * Saved vector element outlines export document format (.json)
+ */
+export interface SavedElementsDocument {
+  format: 'questforge-elements';
+  version: '1.0';
+  characterName?: string;
+  imageFileName?: string;
+  imageFileSize?: string;
+  imageUrl?: string;
+  elementCount: number;
+  elements: VectorOutlineElement[];
+}
+
+/**
  * Editor-specific metadata stored in skeleton.questforge
  */
 export interface SpineQuestForgeMetadata {

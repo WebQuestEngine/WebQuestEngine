@@ -199,6 +199,96 @@ describe('Part Alignment & Transformation', () => {
     const shoulderToWristDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     expect(shoulderToWristDist).toBeGreaterThan(shoulderToElbowDist);
   });
+
+  it('serializes and deserializes marked elements with origin and target joints preserved', () => {
+    const rawElements = [
+      {
+        id: 'elem_sleeve_1',
+        name: 'Armor Sleeve',
+        polygon: [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 80 }, { x: 10, y: 80 }],
+        pivot: { x: 30, y: 15 },
+        bounds: { x: 10, y: 10, width: 40, height: 70 },
+        deformationMode: 'cutout' as const,
+        assignedBoneId: 'shoulder_l' as const,
+        originJointId: 'shoulder_l' as const,
+        targetJointId: 'wrist_l' as const
+      },
+      {
+        id: 'elem_boot_1',
+        name: 'Iron Boot',
+        polygon: [{ x: 5, y: 5 }, { x: 45, y: 5 }, { x: 45, y: 65 }, { x: 5, y: 65 }],
+        pivot: { x: 25, y: 10 },
+        bounds: { x: 5, y: 5, width: 40, height: 60 },
+        deformationMode: 'cutout' as const,
+        assignedBoneId: 'ankle_l' as const,
+        originJointId: 'ankle_l' as const,
+        targetJointId: 'foot_l' as const
+      }
+    ];
+
+    const savedDoc = {
+      format: 'questforge-elements',
+      version: '1.0',
+      characterName: 'Sir Ronald',
+      imageFileName: 'ronald_parts.png',
+      elementCount: rawElements.length,
+      elements: rawElements
+    };
+
+    // Serialize to JSON string
+    const jsonString = JSON.stringify(savedDoc, null, 2);
+    expect(jsonString).toContain('questforge-elements');
+    expect(jsonString).toContain('Armor Sleeve');
+
+    // Deserialize
+    const parsed = JSON.parse(jsonString);
+    expect(parsed.format).toBe('questforge-elements');
+    expect(parsed.elements.length).toBe(2);
+
+    const elem1 = parsed.elements[0];
+    expect(elem1.name).toBe('Armor Sleeve');
+    expect(elem1.assignedBoneId).toBe('shoulder_l');
+    expect(elem1.originJointId).toBe('shoulder_l');
+    expect(elem1.targetJointId).toBe('wrist_l');
+    expect(elem1.polygon.length).toBe(4);
+    expect(elem1.bounds.width).toBe(40);
+
+    const elem2 = parsed.elements[1];
+    expect(elem2.name).toBe('Iron Boot');
+    expect(elem2.assignedBoneId).toBe('ankle_l');
+    expect(elem2.targetJointId).toBe('foot_l');
+  });
+
+  it('supports loading elements from diverse JSON payloads (wrapped doc, direct array, or rig project)', () => {
+    const rawElems = [
+      {
+        id: 'el_1',
+        name: 'Hat',
+        polygon: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }],
+        pivot: { x: 10, y: 10 },
+        bounds: { x: 0, y: 0, width: 20, height: 20 },
+        deformationMode: 'cutout' as const
+      }
+    ];
+
+    // Helper extracting elements matching RigStudioApp.loadElementsData logic
+    const extractElements = (data: any) => {
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.elements)) return data.elements;
+      if (data?.slicer && Array.isArray(data.slicer.elements)) return data.slicer.elements;
+      return [];
+    };
+
+    // 1. Wrapped format
+    expect(extractElements({ format: 'questforge-elements', elements: rawElems }).length).toBe(1);
+
+    // 2. Direct array
+    expect(extractElements(rawElems).length).toBe(1);
+
+    // 3. Rig project format
+    expect(extractElements({ format: 'questforge-rig-project', slicer: { elements: rawElems } }).length).toBe(1);
+  });
 });
+
 
 

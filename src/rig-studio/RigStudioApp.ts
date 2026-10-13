@@ -7,7 +7,8 @@ import {
   StudioView,
   VectorOutlineElement,
   ViewArtworkData,
-  RigProjectData
+  RigProjectData,
+  SavedElementsDocument
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -59,6 +60,7 @@ export class RigStudioApp {
   private slicerImageUrl: string = '';
   private slicerImageFileName: string = 'spritesheet.png';
   private slicerImageFileSize: string = '';
+  private savedElements: VectorOutlineElement[] = [];
 
   private toolMode: JointToolMode = 'select';
   private symmetryEnabled = true;
@@ -273,6 +275,14 @@ export class RigStudioApp {
               <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
                 <button class="btn-hud-fit" id="btn-slicer-fit">Fit</button>
                 <button class="btn-hud-fit" id="btn-slicer-center">Center</button>
+              </div>
+              <div style="width:1px; height:20px; background:rgba(255,255,255,0.15); margin:0 4px;"></div>
+              <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
+                <button class="btn-studio" id="btn-slicer-save-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#38bdf8;" title="Save marked elements as a .json file">💾 Save Elements</button>
+                <label class="btn-studio" style="font-size:0.68rem; padding:4px 7px; color:#a855f7; cursor:pointer; margin:0;" title="Load marked elements from a .json file">
+                  📂 Load Elements
+                  <input type="file" id="input-load-elements-toolbar" accept=".json" style="display:none;" />
+                </label>
               </div>
             </div>
             <div id="slicer-canvas-host" style="position:absolute; inset:42px 0 0 0; overflow:hidden;"></div>
@@ -561,7 +571,9 @@ export class RigStudioApp {
     if (!host) return;
 
     this.slicer = new VectorElementSlicer(host, {
-      onElementsChange: () => {
+      onElementsChange: (elements) => {
+        this.savedElements = elements;
+        this.persistElementsToStorage();
         this.renderSlicerRightSidebar();
         this.updateSlicerHUD();
       },
@@ -578,6 +590,9 @@ export class RigStudioApp {
         if (this.canvas) {
           this.canvas.setSourceImage(img, this.slicerImageFileName || 'sheet.png', false);
           this.canvas.render();
+        }
+        if (this.savedElements.length > 0 && this.slicer?.getElements().length === 0) {
+          this.slicer.setElements(this.savedElements);
         }
         this.renderSlicerLeftSidebar();
         this.renderSlicerRightSidebar();
@@ -597,6 +612,13 @@ export class RigStudioApp {
       this.slicer.setImage(currentArt.image);
     } else {
       this.loadSlicerImageFromUrl('/demo/assets/characters/sir_ronald_parts.png', 'sir_ronald_parts.png', '420 KB');
+    }
+
+    // Restore saved elements or storage cache
+    if (this.savedElements.length > 0) {
+      this.slicer.setElements(this.savedElements);
+    } else {
+      this.loadElementsFromStorage();
     }
   }
 
@@ -632,6 +654,135 @@ export class RigStudioApp {
     toolbar.querySelector('#btn-slicer-center')?.addEventListener('click', () => {
       this.slicer?.resetView();
     });
+
+    toolbar.querySelector('#btn-slicer-save-elements-toolbar')?.addEventListener('click', () => {
+      this.saveElementsJson();
+    });
+    toolbar.querySelector('#input-load-elements-toolbar')?.addEventListener('change', (e) => {
+      const input = e.target as HTMLInputElement;
+      if (input.files && input.files[0]) {
+        this.handleLoadElementsJson(input.files[0]);
+        input.value = '';
+      }
+    });
+  }
+
+  public saveElementsJson(): void {
+    const elements = this.slicer ? this.slicer.getElements() : this.savedElements;
+    if (elements.length === 0) {
+      alert('No marked elements yet to save. Mark elements first using Magic Wand or Polygon tools.');
+      return;
+    }
+
+    const doc: SavedElementsDocument = {
+      format: 'questforge-elements',
+      version: '1.0',
+      characterName: this.characterName,
+      imageFileName: this.slicerImageFileName || 'character_parts.png',
+      imageFileSize: this.slicerImageFileSize || '',
+      imageUrl: this.slicerImageUrl || '',
+      elementCount: elements.length,
+      elements: elements
+    };
+
+    const jsonStr = JSON.stringify(doc, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.characterName.toLowerCase().replace(/\s+/g, '_')}_elements.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  public handleLoadElementsJson(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+        this.loadElementsData(data);
+      } catch (err: any) {
+        console.error('Failed to parse elements JSON:', err);
+        alert(`Failed to load elements: ${err.message || 'Invalid JSON format'}`);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  public loadElementsData(data: any): void {
+    let elements: VectorOutlineElement[] = [];
+    if (Array.isArray(data)) {
+      elements = data;
+    } else if (data && Array.isArray(data.elements)) {
+      elements = data.elements;
+    } else if (data?.slicer && Array.isArray(data.slicer.elements)) {
+      elements = data.slicer.elements;
+    } else {
+      alert('Invalid elements JSON: No elements array found in file.');
+      return;
+    }
+
+    if (data.characterName && (!this.characterName || this.characterName === 'Character')) {
+      this.characterName = data.characterName;
+      this.updateHeaderTitle();
+    }
+
+    if (data.imageUrl && !this.slicerImage) {
+      this.loadSlicerImageFromUrl(data.imageUrl, data.imageFileName || 'sheet.png', data.imageFileSize || '');
+    }
+
+    this.savedElements = JSON.parse(JSON.stringify(elements));
+    if (this.slicer) {
+      this.slicer.setElements(this.savedElements);
+    }
+    this.persistElementsToStorage();
+    this.renderSlicerRightSidebar();
+    this.updateSlicerHUD();
+  }
+
+  public clearSlicerElements(): void {
+    this.savedElements = [];
+    this.slicer?.clearAllElements();
+    try {
+      const key = `questforge_slicer_elements_${this.characterName || 'default'}`;
+      localStorage.removeItem(key);
+      localStorage.removeItem('questforge_slicer_elements_latest');
+    } catch {}
+    this.renderSlicerRightSidebar();
+    this.updateSlicerHUD();
+  }
+
+  private persistElementsToStorage(): void {
+    try {
+      const dataStr = JSON.stringify(this.savedElements);
+      const key = `questforge_slicer_elements_${this.characterName || 'default'}`;
+      localStorage.setItem(key, dataStr);
+      localStorage.setItem('questforge_slicer_elements_latest', dataStr);
+    } catch (e) {
+      console.warn('Could not save elements to localStorage:', e);
+    }
+  }
+
+  private loadElementsFromStorage(): void {
+    try {
+      const key = `questforge_slicer_elements_${this.characterName || 'default'}`;
+      let cached = localStorage.getItem(key);
+      if (!cached) {
+        cached = localStorage.getItem('questforge_slicer_elements_latest');
+      }
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.savedElements = parsed;
+          if (this.slicer) {
+            this.slicer.setElements(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read elements from localStorage:', e);
+    }
   }
 
   private updateSlicerHUD(): void {
@@ -809,9 +960,18 @@ export class RigStudioApp {
       <div class="sidebar-tabs-header">
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
           <span style="font-weight:700; font-size:0.8rem; color:#f1f5f9;">Marked Elements (${elements.length})</span>
-          <button class="btn-studio" id="btn-slicer-clear-elements" style="font-size:0.64rem; padding:2px 6px; color:#ef4444;" title="Delete all marked elements">
-            🗑️ Clear
-          </button>
+          <div style="display:flex; gap:4px; align-items:center;">
+            <button class="btn-studio" id="btn-slicer-save-elements" style="font-size:0.64rem; padding:2px 6px; color:#38bdf8;" title="Save marked elements as .json file">
+              💾 Save
+            </button>
+            <label class="btn-studio" style="font-size:0.64rem; padding:2px 6px; color:#a855f7; cursor:pointer; margin:0;" title="Load elements from .json file">
+              📂 Load
+              <input type="file" id="input-load-elements-file" accept=".json" style="display:none;" />
+            </label>
+            <button class="btn-studio" id="btn-slicer-clear-elements" style="font-size:0.64rem; padding:2px 6px; color:#ef4444;" title="Delete all marked elements">
+              🗑️ Clear
+            </button>
+          </div>
         </div>
       </div>
 
@@ -911,8 +1071,22 @@ export class RigStudioApp {
       this.applyMarkedElementsToRig();
     });
 
+    sidebar.querySelector('#btn-slicer-save-elements')?.addEventListener('click', () => {
+      this.saveElementsJson();
+    });
+
+    sidebar.querySelector('#input-load-elements-file')?.addEventListener('change', (e) => {
+      const input = e.target as HTMLInputElement;
+      if (input.files && input.files[0]) {
+        this.handleLoadElementsJson(input.files[0]);
+        input.value = '';
+      }
+    });
+
     sidebar.querySelector('#btn-slicer-clear-elements')?.addEventListener('click', () => {
-      this.slicer?.clearAllElements();
+      if (confirm('Clear all marked elements?')) {
+        this.clearSlicerElements();
+      }
     });
 
     // Select element card on click
@@ -1206,6 +1380,8 @@ export class RigStudioApp {
         });
 
         this.slicer.setElements(elements);
+        this.savedElements = elements;
+        this.persistElementsToStorage();
         this.renderSlicerLeftSidebar();
         this.renderSlicerRightSidebar();
         this.updateSlicerHUD();
@@ -2483,6 +2659,8 @@ export class RigStudioApp {
         partsExport[pKey] = {
           id: pVal.id,
           boneId: pVal.boneId,
+          originJointId: pVal.originJointId,
+          targetJointId: pVal.targetJointId,
           fileName: pVal.fileName,
           imageUrl: pVal.imageUrl,
           scale: pVal.scale ?? 1.0,
@@ -2520,11 +2698,12 @@ export class RigStudioApp {
       pivotY: item.pivotY
     }));
 
+    const elementsToExport = this.slicer ? this.slicer.getElements() : this.savedElements;
     const slicerExport = {
       imageUrl: this.slicerImageUrl,
       fileName: this.slicerImageFileName,
       fileSize: this.slicerImageFileSize,
-      elements: this.slicer?.getElements() || []
+      elements: elementsToExport || []
     };
 
     const projectData: RigProjectData = {
@@ -2604,6 +2783,8 @@ export class RigStudioApp {
               targetView.parts[boneId] = {
                 id: partData.id,
                 boneId,
+                originJointId: partData.originJointId,
+                targetJointId: partData.targetJointId,
                 fileName: partData.fileName || `${boneId}.png`,
                 imageUrl: partData.imageUrl,
                 image: partImg,
@@ -2648,13 +2829,17 @@ export class RigStudioApp {
         }
       }
 
-      // 3. Restore Slicer
+      // 3. Restore Slicer Elements & Image
       if (data.slicer) {
+        if (Array.isArray(data.slicer.elements)) {
+          this.savedElements = JSON.parse(JSON.stringify(data.slicer.elements));
+          if (this.slicer) {
+            this.slicer.setElements(this.savedElements);
+          }
+          this.persistElementsToStorage();
+        }
         if (data.slicer.imageUrl) {
           this.loadSlicerImageFromUrl(data.slicer.imageUrl, data.slicer.fileName || 'slicer_sheet.png', data.slicer.fileSize || '');
-        }
-        if (Array.isArray(data.slicer.elements) && this.slicer) {
-          this.slicer.setElements(data.slicer.elements);
         }
       }
 
