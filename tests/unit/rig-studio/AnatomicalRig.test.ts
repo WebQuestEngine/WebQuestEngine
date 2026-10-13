@@ -209,4 +209,50 @@ describe('AnatomicalRig', () => {
     expect(posed.head.x).toBe(rest.head.x + 50);
     expect(posed.head.y).toBe(rest.head.y + 30);
   });
+
+  it('drives entire arm chain via IK when dragging hand tip', () => {
+    const rest = getDefaultJointPositions('front', 200, 400);
+    const origUpperLen = Math.hypot(rest.elbow_l.x - rest.shoulder_l.x, rest.elbow_l.y - rest.shoulder_l.y);
+    const origLowerLen = Math.hypot(rest.wrist_l.x - rest.elbow_l.x, rest.wrist_l.y - rest.elbow_l.y);
+    const origHandLen = Math.hypot(rest.hand_l.x - rest.wrist_l.x, rest.hand_l.y - rest.wrist_l.y);
+
+    // Drag hand edge outwards to the right and down
+    const posed = poseJointPreservingBones('hand_l', 110, -90, rest, rest);
+
+    // Wrist and elbow must move, following the hand
+    expect(posed.wrist_l.x).not.toBe(rest.wrist_l.x);
+    expect(posed.elbow_l.x).not.toBe(rest.elbow_l.x);
+
+    // All 3 bone lengths in the arm chain must be strictly preserved
+    const newUpperLen = Math.hypot(posed.elbow_l.x - posed.shoulder_l.x, posed.elbow_l.y - posed.shoulder_l.y);
+    const newLowerLen = Math.hypot(posed.wrist_l.x - posed.elbow_l.x, posed.wrist_l.y - posed.elbow_l.y);
+    const newHandLen = Math.hypot(posed.hand_l.x - posed.wrist_l.x, posed.hand_l.y - posed.wrist_l.y);
+
+    expect(newUpperLen).toBeCloseTo(origUpperLen, 1);
+    expect(newLowerLen).toBeCloseTo(origLowerLen, 1);
+    expect(newHandLen).toBeCloseTo(origHandLen, 1);
+  });
+
+  it('drives entire leg chain via IK when dragging foot tip', () => {
+    const rest = getDefaultJointPositions('front', 200, 400);
+    const origThighLen = Math.hypot(rest.knee_l.x - rest.hip_l.x, rest.knee_l.y - rest.hip_l.y);
+    const origCalfLen = Math.hypot(rest.ankle_l.x - rest.knee_l.x, rest.ankle_l.y - rest.knee_l.y);
+    const origFootLen = Math.hypot(rest.foot_l.x - rest.ankle_l.x, rest.foot_l.y - rest.ankle_l.y);
+
+    // Drag foot edge out to step forward
+    const posed = poseJointPreservingBones('foot_l', 65, -15, rest, rest);
+
+    // Ankle and knee must move, following the foot
+    expect(posed.ankle_l.x).not.toBe(rest.ankle_l.x);
+    expect(posed.knee_l.x).not.toBe(rest.knee_l.x);
+
+    // All 3 bone lengths in the leg chain must be strictly preserved
+    const newThighLen = Math.hypot(posed.knee_l.x - posed.hip_l.x, posed.knee_l.y - posed.hip_l.y);
+    const newCalfLen = Math.hypot(posed.ankle_l.x - posed.knee_l.x, posed.ankle_l.y - posed.knee_l.y);
+    const newFootLen = Math.hypot(posed.foot_l.x - posed.ankle_l.x, posed.foot_l.y - posed.ankle_l.y);
+
+    expect(newThighLen).toBeCloseTo(origThighLen, 1);
+    expect(newCalfLen).toBeCloseTo(origCalfLen, 1);
+    expect(newFootLen).toBeCloseTo(origFootLen, 1);
+  });
 });

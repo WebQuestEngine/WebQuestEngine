@@ -814,3 +814,106 @@ body.rig-studio-body {
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
 }
 
+/* Studio Mode Switcher (Rig vs Slicer) */
+.studio-mode-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #080d18;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--studio-border);
+}
+
+.studio-mode-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--studio-text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.studio-mode-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.studio-mode-btn.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+/* Slicer Toolbar */
+.slicer-toolbar {
+  height: 42px;
+  background: #0b1120;
+  border-bottom: 1px solid var(--studio-border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+
+.slicer-tool-btn {
+  background: #172133;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--studio-text-muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-tool-btn:hover {
+  color: #ffffff;
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.slicer-tool-btn.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+/* Element Card in Slicer Right Sidebar */
+.slicer-element-card {
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.slicer-element-card:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: #131d35;
+}
+
+.slicer-element-card.selected {
+  border-color: #38bdf8;
+  background: #152238;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+}
+

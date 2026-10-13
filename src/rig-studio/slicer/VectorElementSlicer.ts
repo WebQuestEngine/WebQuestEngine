@@ -1,4 +1,4 @@
-import { VectorOutlineElement } from '../types';
+import { VectorOutlineElement, AnatomicalJointId } from '../types';
 import { MarchingSquares, Point2D } from './MarchingSquares';
 import { PolygonGeometry, EdgeProjection } from './PolygonGeometry';
 
@@ -1038,6 +1038,76 @@ export class VectorElementSlicer {
   public moveElementToBottom(index: number): void {
     if (index < 0 || index >= this.elements.length) return;
     this.moveElement(index, 0);
+  }
+
+  public getImage(): HTMLImageElement | null {
+    return this.image;
+  }
+
+  public removeElement(id: string): void {
+    this.elements = this.elements.filter(el => el.id !== id);
+    if (this.selectedElementId === id) {
+      this.selectedElementId = this.elements[0]?.id || null;
+      this.selectedVertexIndex = null;
+    }
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    if (this.events.onSelectElement) this.events.onSelectElement(this.getSelectedElement());
+  }
+
+  public clearAllElements(): void {
+    this.elements = [];
+    this.selectedElementId = null;
+    this.selectedVertexIndex = null;
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    if (this.events.onSelectElement) this.events.onSelectElement(null);
+  }
+
+  public updateElementAssignedBone(id: string, boneId?: AnatomicalJointId): void {
+    const elem = this.elements.find(el => el.id === id);
+    if (elem) {
+      elem.assignedBoneId = boneId;
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
+  public autoTraceAllElements(alphaThreshold = 25, epsilon = 2.0): VectorOutlineElement[] {
+    if (!this.image || !this.offscreenCtx) return [];
+    const w = this.image.naturalWidth;
+    const h = this.image.naturalHeight;
+    const imageData = this.offscreenCtx.getImageData(0, 0, w, h);
+    const contours = MarchingSquares.traceAllElements(imageData, alphaThreshold, epsilon);
+    const newElements: VectorOutlineElement[] = [];
+
+    for (const contour of contours) {
+      const bounds = this.computePolygonBounds(contour);
+      if (bounds.width < 10 || bounds.height < 10) continue; // Skip tiny specks
+      const id = `elem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const name = `part_${this.elements.length + newElements.length + 1}`;
+      const pivot = {
+        x: Math.round(bounds.width / 2),
+        y: Math.round(bounds.height / 2)
+      };
+      newElements.push({
+        id,
+        name,
+        polygon: contour,
+        pivot,
+        bounds,
+        deformationMode: 'cutout'
+      });
+    }
+
+    if (newElements.length > 0) {
+      this.elements.push(...newElements);
+      this.selectedElementId = newElements[0].id;
+      this.selectedVertexIndex = null;
+      this.render();
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+      if (this.events.onSelectElement) this.events.onSelectElement(newElements[0]);
+    }
+    return newElements;
   }
 }
 

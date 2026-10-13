@@ -520,6 +520,16 @@ export class RigStudioCanvas {
     const dx = Math.round(wx) - (oldPos ? oldPos.x : Math.round(wx));
     const dy = Math.round(wy) - (oldPos ? oldPos.y : Math.round(wy));
 
+    if (jointId === 'hand_l' || jointId === 'hand_r' || jointId === 'foot_l' || jointId === 'foot_r') {
+      this.restJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.restJoints);
+      if (this.symmetryEnabled && jointDef.symmetricWith) {
+        const symId = jointDef.symmetricWith;
+        this.restJoints = poseJointPreservingBones(symId, -wx, wy, this.restJoints, this.restJoints);
+      }
+      this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+      return;
+    }
+
     if (jointDef.isCenter) {
       this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
       if (jointId === 'chest') {

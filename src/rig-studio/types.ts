@@ -10,6 +10,7 @@ export interface VectorOutlineElement {
   pivot: { x: number; y: number };     // Local normalized [0..1] or pixel offset relative to bounds
   bounds: { x: number; y: number; width: number; height: number };
   deformationMode: 'cutout' | 'mesh';
+  assignedBoneId?: AnatomicalJointId;
   meshOptions?: {
     triangles: number[];          // Vertex index triplets for Earcut triangulation
     bendBones?: [string, string]; // [parentBone, childBone] for dual-joint bending
@@ -183,6 +184,7 @@ export interface AnatomicalJointDef {
 }
 
 export interface BonePartAttachment {
+  id?: string;
   boneId: AnatomicalJointId;
   image: HTMLImageElement;
   imageUrl: string;
@@ -194,6 +196,10 @@ export interface BonePartAttachment {
   offsetY?: number;
   pivotX?: number; // Normalized pivot anchor X [0..1]
   pivotY?: number; // Normalized pivot anchor Y [0..1]
+  width?: number;
+  height?: number;
+  visible?: boolean;
+  opacity?: number;
 }
 
 export interface ViewArtworkData {

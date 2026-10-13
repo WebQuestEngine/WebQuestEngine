@@ -72,4 +72,30 @@ describe('MarchingSquares Contour Auto-Tracer', () => {
     const contour = MarchingSquares.traceContour(imgData, 5, 5, 25);
     expect(contour).toBeNull();
   });
+
+  it('scans and auto-traces all disconnected islands via traceAllElements', () => {
+    const width = 40;
+    const height = 40;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // Island 1: 8x8 box at (4,4)
+    for (let y = 4; y < 12; y++) {
+      for (let x = 4; x < 12; x++) {
+        data[(y * width + x) * 4 + 3] = 255;
+      }
+    }
+
+    // Island 2: 8x8 box at (24,24)
+    for (let y = 24; y < 32; y++) {
+      for (let x = 24; x < 32; x++) {
+        data[(y * width + x) * 4 + 3] = 255;
+      }
+    }
+
+    const imgData = { width, height, data } as ImageData;
+    const contours = MarchingSquares.traceAllElements(imgData, 25, 1.0);
+    expect(contours.length).toBe(2);
+    expect(contours[0].length).toBeGreaterThanOrEqual(4);
+    expect(contours[1].length).toBeGreaterThanOrEqual(4);
+  });
 });

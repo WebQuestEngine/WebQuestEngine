@@ -5,6 +5,7 @@ import {
   JointToolMode,
   SpineDocument,
   StudioView,
+  VectorOutlineElement,
   ViewArtworkData
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
@@ -17,6 +18,7 @@ import {
   getDefaultJointPositions
 } from './rigging/AnatomicalRig';
 import { RigStudioCanvas } from './rigging/RigStudioCanvas';
+import { VectorElementSlicer, SlicerToolMode } from './slicer/VectorElementSlicer';
 
 export interface RigPartItem {
   id: string;
@@ -35,9 +37,18 @@ export class RigStudioApp {
   private bridge: RigStudioBridge;
 
   private characterName = 'Character';
+  private activeStudioMode: 'rig' | 'slicer' = 'rig';
   private activeView: StudioView = 'front';
   private activeRightTab: 'bones' | 'parts' | 'layers' = 'bones';
   private partsLibrary: RigPartItem[] = [];
+
+  // Slicer State
+  private slicer: VectorElementSlicer | null = null;
+  private slicerToolMode: SlicerToolMode = 'select';
+  private slicerImage: HTMLImageElement | null = null;
+  private slicerImageUrl: string = '';
+  private slicerImageFileName: string = 'spritesheet.png';
+  private slicerImageFileSize: string = '';
 
   private toolMode: JointToolMode = 'select';
   private symmetryEnabled = true;
@@ -144,6 +155,15 @@ export class RigStudioApp {
           <button class="studio-view-btn" data-view="right">Right Side</button>
         </nav>
 
+        <div class="studio-mode-switcher">
+          <button class="studio-mode-btn ${this.activeStudioMode === 'rig' ? 'active' : ''}" data-mode="rig" title="Setup skeleton joints and pose bones">
+            🦴 Rig & Bones
+          </button>
+          <button class="studio-mode-btn ${this.activeStudioMode === 'slicer' ? 'active' : ''}" data-mode="slicer" title="Load image, mark elements and assign them to bones">
+            ✂️ Slicer & Element Marking
+          </button>
+        </div>
+
         <div class="studio-header-actions">
           <button class="btn-studio btn-load-demo" title="Load sample demo character artwork">
             🎨 Demo Artwork
@@ -177,6 +197,8 @@ export class RigStudioApp {
         <input type="file" id="input-library-files-upload" multiple accept="image/*" style="display:none;" />
         <!-- Hidden input for multi-part spritesheet auto-slicing -->
         <input type="file" id="input-spritesheet-upload" accept="image/*" style="display:none;" />
+        <!-- Hidden input for loading image into slicer -->
+        <input type="file" id="input-slicer-image-upload" accept="image/*" style="display:none;" />
 
         <!-- Left Panel: Import & Joint Tools -->
         <aside class="studio-left-sidebar" id="left-sidebar">
@@ -184,12 +206,47 @@ export class RigStudioApp {
         </aside>
 
         <!-- Center Workspace Canvas -->
-        <section class="studio-workspace" id="center-workspace">
-          <div class="workspace-hud">
-            <span>View: <b id="hud-active-view" style="color:#38bdf8;">FRONT</b></span>
-            <span>Tool: <b id="hud-active-tool">SELECT</b></span>
-            <button class="btn-hud-fit" id="btn-fit-view">Fit</button>
-            <button class="btn-hud-fit" id="btn-reset-view">Center</button>
+        <section class="studio-workspace" id="center-workspace" style="position:relative; overflow:hidden;">
+          <!-- Viewport 1: Skeleton Rig Canvas -->
+          <div id="rig-viewport-container" style="position:absolute; inset:0; display:block;">
+            <div class="workspace-hud">
+              <span>View: <b id="hud-active-view" style="color:#38bdf8;">FRONT</b></span>
+              <span>Tool: <b id="hud-active-tool">SELECT</b></span>
+              <button class="btn-hud-fit" id="btn-fit-view">Fit</button>
+              <button class="btn-hud-fit" id="btn-reset-view">Center</button>
+            </div>
+          </div>
+
+          <!-- Viewport 2: Element Slicer Canvas -->
+          <div id="slicer-viewport-container" style="position:absolute; inset:0; display:none; flex-direction:column;">
+            <div class="slicer-toolbar" id="slicer-toolbar">
+              <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
+                <button class="slicer-tool-btn active" data-tool="select" title="Select Element / Drag Nodes (Del to delete)">↖️ Select</button>
+                <button class="slicer-tool-btn" data-tool="magic" title="Magic Wand: Click opaque element to auto-trace contour">✨ Magic Contour</button>
+                <button class="slicer-tool-btn" data-tool="polygon" title="Polygon: Click points around element, click first node to close">📐 Polygon</button>
+                <button class="slicer-tool-btn" data-tool="split" title="Knife Split: Drag a cut line across an element">✂️ Split / Knife</button>
+                <button class="slicer-tool-btn" data-tool="add_node" title="Add node on polygon edge">➕ Add Node</button>
+                <button class="slicer-tool-btn" data-tool="delete_node" title="Delete clicked node">➖ Del Node</button>
+                <button class="slicer-tool-btn" data-tool="pivot" title="Set rotation pivot anchor">🎯 Pivot</button>
+                <button class="slicer-tool-btn" data-tool="pan" title="Pan workspace">✋ Pan</button>
+              </div>
+              <div style="width:1px; height:20px; background:rgba(255,255,255,0.15); margin:0 4px;"></div>
+              <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
+                <button class="btn-studio btn-simplify-poly" style="font-size:0.68rem; padding:4px 6px;" title="Douglas-Peucker reduction">📉 Simplify</button>
+                <button class="btn-studio btn-smooth-poly" style="font-size:0.68rem; padding:4px 6px;" title="Chaikin smooth corners">🌀 Smooth</button>
+                <button class="btn-studio btn-subdivide-poly" style="font-size:0.68rem; padding:4px 6px;" title="Subdivide edges with midpoints">➗ Subdivide</button>
+              </div>
+              <div style="width:1px; height:20px; background:rgba(255,255,255,0.15); margin:0 4px;"></div>
+              <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
+                <button class="btn-hud-fit" id="btn-slicer-fit">Fit</button>
+                <button class="btn-hud-fit" id="btn-slicer-center">Center</button>
+              </div>
+            </div>
+            <div id="slicer-canvas-host" style="position:absolute; inset:42px 0 0 0; overflow:hidden;"></div>
+            <div class="workspace-hud" id="slicer-hud" style="bottom:12px; left:12px;">
+              <span>Marked Elements: <b id="hud-slicer-count" style="color:#10b981;">0</b></span>
+              <span>Tool: <b id="hud-slicer-tool" style="color:#38bdf8;">SELECT</b></span>
+            </div>
           </div>
         </section>
 
@@ -200,9 +257,9 @@ export class RigStudioApp {
       </main>
     `;
 
-    // Initialize Canvas in center workspace
-    const workspaceEl = this.container.querySelector('#center-workspace') as HTMLElement;
-    this.canvas = new RigStudioCanvas(workspaceEl, {
+    // Initialize Canvas in skeleton viewport container
+    const rigViewportEl = this.container.querySelector('#rig-viewport-container') as HTMLElement;
+    this.canvas = new RigStudioCanvas(rigViewportEl, {
       onJointSelected: (jointId) => {
         this.selectedJointId = jointId;
         this.renderRightSidebar();
@@ -227,6 +284,16 @@ export class RigStudioApp {
   }
 
   private bindDOMEvents(): void {
+    // Studio Mode Switcher (Rig vs Slicer)
+    this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.getAttribute('data-mode') as 'rig' | 'slicer';
+        if (mode && mode !== this.activeStudioMode) {
+          this.switchStudioMode(mode);
+        }
+      });
+    });
+
     // View Switcher Buttons (Front, Back, Left Side, Right Side)
     this.container.querySelectorAll('.studio-view-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -235,6 +302,15 @@ export class RigStudioApp {
           this.switchView(viewId);
         }
       });
+    });
+
+    // Slicer Image Upload via file input
+    const slicerFileInput = this.container.querySelector('#input-slicer-image-upload') as HTMLInputElement;
+    slicerFileInput?.addEventListener('change', () => {
+      if (slicerFileInput.files && slicerFileInput.files[0]) {
+        this.handleSlicerImageUpload(slicerFileInput.files[0]);
+        slicerFileInput.value = '';
+      }
     });
 
     // File Upload via file input
@@ -355,9 +431,502 @@ export class RigStudioApp {
     this.renderRightSidebar();
   }
 
+  public switchStudioMode(mode: 'rig' | 'slicer'): void {
+    this.activeStudioMode = mode;
+
+    this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+    });
+
+    const rigViewport = this.container.querySelector('#rig-viewport-container') as HTMLElement;
+    const slicerViewport = this.container.querySelector('#slicer-viewport-container') as HTMLElement;
+
+    if (rigViewport) rigViewport.style.display = mode === 'rig' ? 'block' : 'none';
+    if (slicerViewport) slicerViewport.style.display = mode === 'slicer' ? 'flex' : 'none';
+
+    if (mode === 'slicer') {
+      this.initSlicerIfNeeded();
+      this.renderSlicerLeftSidebar();
+      this.renderSlicerRightSidebar();
+      this.slicer?.resizeCanvas();
+    } else {
+      this.renderLeftSidebar();
+      this.renderRightSidebar();
+      this.canvas?.resizeCanvas();
+      this.canvas?.render();
+    }
+  }
+
+  private initSlicerIfNeeded(): void {
+    if (this.slicer) return;
+
+    const host = this.container.querySelector('#slicer-canvas-host') as HTMLElement;
+    if (!host) return;
+
+    this.slicer = new VectorElementSlicer(host, {
+      onElementsChange: () => {
+        this.renderSlicerRightSidebar();
+        this.updateSlicerHUD();
+      },
+      onSelectElement: () => {
+        this.renderSlicerRightSidebar();
+        this.updateSlicerHUD();
+      },
+      onTextureLoaded: (img) => {
+        this.slicerImage = img;
+        this.renderSlicerLeftSidebar();
+        this.renderSlicerRightSidebar();
+        this.updateSlicerHUD();
+      }
+    });
+
+    this.bindSlicerToolbarEvents();
+
+    // Initial load: current view image or Ronald parts demo
+    const currentArt = this.views[this.activeView];
+    if (currentArt.image) {
+      this.slicerImage = currentArt.image;
+      this.slicerImageUrl = currentArt.imageUrl;
+      this.slicerImageFileName = currentArt.fileName;
+      this.slicerImageFileSize = currentArt.fileSize;
+      this.slicer.setImage(currentArt.image);
+    } else {
+      this.loadSlicerImageFromUrl('/demo/assets/characters/sir_ronald_parts.png', 'sir_ronald_parts.png', '420 KB');
+    }
+  }
+
+  private bindSlicerToolbarEvents(): void {
+    const toolbar = this.container.querySelector('#slicer-toolbar');
+    if (!toolbar) return;
+
+    toolbar.querySelectorAll('.slicer-tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tool = btn.getAttribute('data-tool') as SlicerToolMode;
+        if (!tool || !this.slicer) return;
+        this.slicerToolMode = tool;
+        this.slicer.setToolMode(tool);
+        toolbar.querySelectorAll('.slicer-tool-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.updateSlicerHUD();
+      });
+    });
+
+    toolbar.querySelector('.btn-simplify-poly')?.addEventListener('click', () => {
+      this.slicer?.simplifySelectedElement(2.5);
+    });
+    toolbar.querySelector('.btn-smooth-poly')?.addEventListener('click', () => {
+      this.slicer?.smoothSelectedElement(1);
+    });
+    toolbar.querySelector('.btn-subdivide-poly')?.addEventListener('click', () => {
+      this.slicer?.subdivideSelectedElement();
+    });
+
+    toolbar.querySelector('#btn-slicer-fit')?.addEventListener('click', () => {
+      this.slicer?.resetView();
+    });
+    toolbar.querySelector('#btn-slicer-center')?.addEventListener('click', () => {
+      this.slicer?.resetView();
+    });
+  }
+
+  private updateSlicerHUD(): void {
+    const countEl = this.container.querySelector('#hud-slicer-count');
+    const toolEl = this.container.querySelector('#hud-slicer-tool');
+    if (countEl) countEl.textContent = `${this.slicer?.getElements().length || 0}`;
+    if (toolEl) toolEl.textContent = this.slicerToolMode.toUpperCase();
+  }
+
+  private loadSlicerImageFromUrl(url: string, fileName: string, fileSize = ''): void {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      this.slicerImage = img;
+      this.slicerImageUrl = url;
+      this.slicerImageFileName = fileName;
+      this.slicerImageFileSize = fileSize;
+      if (this.slicer) {
+        this.slicer.setImage(img);
+        this.slicer.resetView();
+      }
+      this.renderSlicerLeftSidebar();
+      this.renderSlicerRightSidebar();
+      this.updateSlicerHUD();
+    };
+    img.src = url;
+  }
+
+  private handleSlicerImageUpload(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`;
+      this.loadSlicerImageFromUrl(dataUrl, file.name, sizeStr);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  private renderSlicerLeftSidebar(): void {
+    const sidebar = this.container.querySelector('#left-sidebar') as HTMLElement;
+    if (!sidebar) return;
+
+    const hasImage = !!this.slicerImage;
+    sidebar.innerHTML = `
+      <!-- Slicer Image Source Section -->
+      <div>
+        <div class="panel-section-title">Image Source</div>
+
+        ${!hasImage ? `
+          <div class="import-dropzone" id="slicer-dropzone" style="cursor:pointer;">
+            <div class="dropzone-icon">🖼️</div>
+            <div class="dropzone-text">Click to load image / spritesheet</div>
+            <button class="btn-browse" id="btn-browse-slicer-file">Browse Files...</button>
+          </div>
+        ` : `
+          <div class="imported-card">
+            <div class="imported-thumb-wrapper">
+              <img src="${this.slicerImageUrl}" class="imported-thumb-img" alt="${this.slicerImageFileName}" />
+            </div>
+            <div class="imported-meta">
+              <div class="imported-info">
+                <span class="imported-filename" title="${this.slicerImageFileName}">${this.slicerImageFileName}</span>
+                <span class="imported-filesize">${this.slicerImage ? `${this.slicerImage.naturalWidth}×${this.slicerImage.naturalHeight}` : ''}</span>
+              </div>
+              <div class="imported-check-badge">✓</div>
+            </div>
+          </div>
+        `}
+
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+          <button class="btn-studio" id="btn-slicer-load-file" style="font-size:0.7rem; justify-content:center;">
+            📁 Load Image from Disk...
+          </button>
+          ${this.views[this.activeView].image ? `
+            <button class="btn-studio" id="btn-slicer-load-active-view" style="font-size:0.7rem; justify-content:center; color:#38bdf8;">
+              🖼️ Use Active View Artwork
+            </button>
+          ` : ''}
+          <button class="btn-studio" id="btn-slicer-load-ronald" style="font-size:0.7rem; justify-content:center; color:#10b981;">
+            ⚔️ Load Ronald Spritesheet Demo
+          </button>
+        </div>
+      </div>
+
+      <!-- Slicing Shortcuts Section -->
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="panel-section-title">Contour Tracing Tools</div>
+        <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
+          • <b>Magic Wand:</b> Click any part on canvas to auto-trace outline.<br/>
+          • <b>Polygon:</b> Click points around element to trace manual cutout.<br/>
+          • <b>Knife / Split:</b> Drag line across element to cut in two.
+        </div>
+
+        <button class="btn-studio btn-studio-primary" id="btn-slicer-auto-trace" style="font-size:0.72rem; padding:7px; justify-content:center; background:#0284c7; border-color:#38bdf8; font-weight:700;" title="Scan image and automatically trace contours of all separate body parts">
+          ✨ Auto-Trace All Elements
+        </button>
+
+        <button class="btn-studio" id="btn-slicer-load-precut-ronald" style="font-size:0.7rem; justify-content:center; color:#e2e8f0;" title="Load all pre-marked Ronald body parts with bone assignments">
+          ⚔️ Load Ronald Pre-Marked Parts
+        </button>
+      </div>
+    `;
+
+    // Bind Left Sidebar Events
+    sidebar.querySelector('#btn-browse-slicer-file')?.addEventListener('click', () => {
+      (this.container.querySelector('#input-slicer-image-upload') as HTMLInputElement)?.click();
+    });
+    sidebar.querySelector('#slicer-dropzone')?.addEventListener('click', () => {
+      (this.container.querySelector('#input-slicer-image-upload') as HTMLInputElement)?.click();
+    });
+    sidebar.querySelector('#btn-slicer-load-file')?.addEventListener('click', () => {
+      (this.container.querySelector('#input-slicer-image-upload') as HTMLInputElement)?.click();
+    });
+    sidebar.querySelector('#btn-slicer-load-active-view')?.addEventListener('click', () => {
+      const art = this.views[this.activeView];
+      if (art.image) {
+        this.loadSlicerImageFromUrl(art.imageUrl, art.fileName, art.fileSize);
+      }
+    });
+    sidebar.querySelector('#btn-slicer-load-ronald')?.addEventListener('click', () => {
+      this.loadSlicerImageFromUrl('/demo/assets/characters/sir_ronald_parts.png', 'sir_ronald_parts.png', '420 KB');
+    });
+    sidebar.querySelector('#btn-slicer-auto-trace')?.addEventListener('click', () => {
+      this.slicer?.autoTraceAllElements();
+    });
+    sidebar.querySelector('#btn-slicer-load-precut-ronald')?.addEventListener('click', () => {
+      this.loadRonaldPreMarkedElementsInSlicer();
+    });
+  }
+
+  private renderSlicerRightSidebar(): void {
+    const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement;
+    if (!sidebar || !this.slicer) return;
+
+    const elements = this.slicer.getElements();
+    const selectedElem = this.slicer.getSelectedElement();
+
+    sidebar.innerHTML = `
+      <div class="sidebar-tabs-header">
+        <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
+          <span style="font-weight:700; font-size:0.8rem; color:#f1f5f9;">Marked Elements (${elements.length})</span>
+          <button class="btn-studio" id="btn-slicer-clear-elements" style="font-size:0.64rem; padding:2px 6px; color:#ef4444;" title="Delete all marked elements">
+            🗑️ Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-content" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+        <!-- Primary Apply Button -->
+        <button class="btn-studio btn-studio-primary" id="btn-apply-marked-to-rig" style="font-size:0.75rem; padding:8px 8px; justify-content:center; background:#059669; border-color:#10b981; font-weight:700;" title="Cut all marked elements, attach assigned elements to skeleton bones, and view rigged character">
+          ⚡ Apply Marked Elements to Skeleton Rig
+        </button>
+
+        <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
+          Assign each marked element to a bone below. When applied, graphics are extracted and attached to the character's skeleton.
+        </div>
+
+        ${elements.length > 0 ? `
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            ${elements.map((el) => {
+              const isSelected = selectedElem?.id === el.id;
+              const thumbUrl = this.slicer?.generateThumbnail(el) || '';
+
+              return `
+                <div class="slicer-element-card ${isSelected ? 'selected' : ''}" data-elem-id="${el.id}">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <!-- Thumbnail -->
+                    <div style="width:36px; height:36px; background:#020617; border:1px solid rgba(255,255,255,0.08); border-radius:4px; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden;">
+                      ${thumbUrl ? `
+                        <img src="${thumbUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" alt="${el.name}" />
+                      ` : `
+                        <span style="font-size:0.75rem;">🎨</span>
+                      `}
+                    </div>
+
+                    <!-- Element Name & Info -->
+                    <div style="flex:1; min-width:0;">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+                        <input type="text" class="input-slicer-elem-name" data-elem-id="${el.id}" value="${el.name}" style="background:transparent; border:none; border-bottom:1px dashed rgba(255,255,255,0.2); color:#f8fafc; font-size:0.72rem; font-weight:600; width:100%; padding:1px 0;" />
+                        <button class="btn-studio btn-delete-slicer-elem" data-elem-id="${el.id}" style="padding:1px 5px; font-size:0.65rem; color:#ef4444;" title="Delete Element">✕</button>
+                      </div>
+                      <div style="font-size:0.6rem; color:#64748b; margin-top:2px;">
+                        ${Math.round(el.bounds.width)}×${Math.round(el.bounds.height)}px • ${el.polygon.length} pts
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Bone Assignment Dropdown -->
+                  <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.3); border-radius:4px; padding:3px 6px;">
+                    <span style="font-size:0.64rem; color:#38bdf8; font-weight:600; white-space:nowrap;">🦴 Bone:</span>
+                    <select class="select-slicer-elem-bone" data-elem-id="${el.id}" style="flex:1; font-size:0.65rem; background:#0b1120; border:1px solid ${el.assignedBoneId ? '#10b981' : 'rgba(255,255,255,0.15)'}; color:#f1f5f9; border-radius:3px; padding:2px 4px;">
+                      <option value="">-- None (Parts Library only) --</option>
+                      ${ANATOMICAL_BONES.map(b => `
+                        <option value="${b.id}" ${el.assignedBoneId === b.id ? 'selected' : ''}>
+                          ${b.name} (${b.category})
+                        </option>
+                      `).join('')}
+                    </select>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : `
+          <div style="background:#0f172a; border:1px dashed rgba(148, 163, 184, 0.2); border-radius:6px; padding:24px 12px; text-align:center; color:#64748b; font-size:0.72rem; line-height:1.4;">
+            No elements marked yet.<br/>
+            Click <b>Magic Contour</b> or <b>Polygon</b> on the toolbar, or click <b>Auto-Trace All Elements</b> on the left!
+          </div>
+        `}
+      </div>
+    `;
+
+    // Bind Right Sidebar Events
+    sidebar.querySelector('#btn-apply-marked-to-rig')?.addEventListener('click', () => {
+      this.applyMarkedElementsToRig();
+    });
+
+    sidebar.querySelector('#btn-slicer-clear-elements')?.addEventListener('click', () => {
+      this.slicer?.clearAllElements();
+    });
+
+    // Select element card on click
+    sidebar.querySelectorAll('.slicer-element-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON') return;
+        const id = card.getAttribute('data-elem-id');
+        if (id) {
+          this.slicer?.selectElement(id);
+        }
+      });
+    });
+
+    // Delete element
+    sidebar.querySelectorAll('.btn-delete-slicer-elem').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-elem-id');
+        if (id) {
+          this.slicer?.removeElement(id);
+        }
+      });
+    });
+
+    // Inline element rename
+    sidebar.querySelectorAll('.input-slicer-elem-name').forEach(input => {
+      input.addEventListener('change', () => {
+        const elemInput = input as HTMLInputElement;
+        const id = elemInput.getAttribute('data-elem-id');
+        if (id && elemInput.value) {
+          this.slicer?.renameElement(id, elemInput.value);
+        }
+      });
+    });
+
+    // Bone assignment change
+    sidebar.querySelectorAll('.select-slicer-elem-bone').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const select = sel as HTMLSelectElement;
+        const id = select.getAttribute('data-elem-id');
+        const boneId = (select.value || undefined) as AnatomicalJointId | undefined;
+        if (id) {
+          this.slicer?.updateElementAssignedBone(id, boneId);
+        }
+      });
+    });
+  }
+
+  public applyMarkedElementsToRig(): void {
+    if (!this.slicer) return;
+    const elements = this.slicer.getElements();
+    if (elements.length === 0) {
+      alert('No elements marked yet! Use Magic Wand or Polygon to mark elements first.');
+      return;
+    }
+
+    const currentArt = this.views[this.activeView];
+
+    for (const elem of elements) {
+      const thumbUrl = this.slicer.generateThumbnail(elem);
+      if (!thumbUrl) continue;
+
+      const img = new Image();
+      img.src = thumbUrl;
+
+      const pivotX = elem.bounds.width > 0 ? elem.pivot.x / elem.bounds.width : 0.5;
+      const pivotY = elem.bounds.height > 0 ? elem.pivot.y / elem.bounds.height : 0.5;
+
+      const partItem: RigPartItem = {
+        id: elem.id,
+        name: elem.name,
+        imageUrl: thumbUrl,
+        image: img,
+        width: Math.round(elem.bounds.width),
+        height: Math.round(elem.bounds.height),
+        assignedBoneId: elem.assignedBoneId || null,
+        pivotX,
+        pivotY
+      };
+
+      const existingIdx = this.partsLibrary.findIndex(p => p.id === elem.id);
+      if (existingIdx >= 0) {
+        this.partsLibrary[existingIdx] = partItem;
+      } else {
+        this.partsLibrary.push(partItem);
+      }
+
+      if (elem.assignedBoneId) {
+        const boneAttachment: BonePartAttachment = {
+          id: elem.id,
+          boneId: elem.assignedBoneId,
+          fileName: elem.name + '.png',
+          imageUrl: thumbUrl,
+          image: img,
+          width: Math.round(elem.bounds.width),
+          height: Math.round(elem.bounds.height),
+          pivotX,
+          pivotY,
+          visible: true,
+          opacity: 1
+        };
+
+        currentArt.parts[elem.assignedBoneId] = boneAttachment;
+        this.canvas?.setPart(elem.assignedBoneId, boneAttachment);
+      }
+    }
+
+    this.switchStudioMode('rig');
+  }
+
+  private loadRonaldPreMarkedElementsInSlicer(): void {
+    const demoUrl = '/demo/assets/characters/sir_ronald_parts.png';
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      this.slicerImage = img;
+      this.slicerImageUrl = demoUrl;
+      this.slicerImageFileName = 'sir_ronald_parts.png';
+      this.slicerImageFileSize = '420 KB';
+      if (this.slicer) {
+        this.slicer.setImage(img);
+        this.slicer.resetView();
+
+        const ronaldParts: {
+          name: string;
+          boneId?: AnatomicalJointId;
+          bounds: { x: number; y: number; width: number; height: number };
+          pivot: { x: number; y: number };
+        }[] = [
+          { name: 'Head (f_head)', boneId: 'head', bounds: { x: 16, y: 166, width: 211, height: 216 }, pivot: { x: 106, y: 168 } },
+          { name: 'Torso & Waist (f_torso)', boneId: 'chest', bounds: { x: 249, y: 168, width: 252, height: 249 }, pivot: { x: 126, y: 180 } },
+          { name: 'Left Upper Arm (f_arm_upper_l)', boneId: 'shoulder_l', bounds: { x: 673, y: 197, width: 97, height: 117 }, pivot: { x: 31, y: 23 } },
+          { name: 'Left Forearm (f_arm_lower_l)', boneId: 'elbow_l', bounds: { x: 706, y: 312, width: 69, height: 66 }, pivot: { x: 35, y: 14 } },
+          { name: 'Left Hand (f_hand_l)', boneId: 'wrist_l', bounds: { x: 673, y: 354, width: 91, height: 75 }, pivot: { x: 46, y: 20 } },
+          { name: 'Right Upper Arm (f_arm_upper_r)', boneId: 'shoulder_r', bounds: { x: 529, y: 197, width: 90, height: 117 }, pivot: { x: 61, y: 21 } },
+          { name: 'Right Forearm (f_arm_lower_r)', boneId: 'elbow_r', bounds: { x: 520, y: 304, width: 69, height: 81 }, pivot: { x: 31, y: 10 } },
+          { name: 'Right Hand (f_hand_r)', boneId: 'wrist_r', bounds: { x: 533, y: 349, width: 88, height: 80 }, pivot: { x: 32, y: 23 } },
+          { name: 'Left Thigh (f_leg_upper_l)', boneId: 'hip_l', bounds: { x: 973, y: 158, width: 95, height: 123 }, pivot: { x: 44, y: 16 } },
+          { name: 'Left Calf (f_leg_lower_l)', boneId: 'knee_l', bounds: { x: 981, y: 278, width: 87, height: 92 }, pivot: { x: 45, y: 14 } },
+          { name: 'Left Boot (f_foot_l)', boneId: 'ankle_l', bounds: { x: 995, y: 370, width: 94, height: 80 }, pivot: { x: 33, y: 10 } },
+          { name: 'Right Thigh (f_leg_upper_r)', boneId: 'hip_r', bounds: { x: 829, y: 160, width: 92, height: 128 }, pivot: { x: 54, y: 14 } },
+          { name: 'Right Calf (f_leg_lower_r)', boneId: 'knee_r', bounds: { x: 828, y: 286, width: 86, height: 99 }, pivot: { x: 40, y: 12 } },
+          { name: 'Right Boot (f_foot_r)', boneId: 'ankle_r', bounds: { x: 813, y: 382, width: 89, height: 70 }, pivot: { x: 52, y: 11 } },
+        ];
+
+        const elements: VectorOutlineElement[] = ronaldParts.map((p, i) => {
+          const b = p.bounds;
+          return {
+            id: `ronald_slicer_elem_${i + 1}`,
+            name: p.name,
+            assignedBoneId: p.boneId,
+            polygon: [
+              { x: b.x, y: b.y },
+              { x: b.x + b.width, y: b.y },
+              { x: b.x + b.width, y: b.y + b.height },
+              { x: b.x, y: b.y + b.height }
+            ],
+            bounds: b,
+            pivot: p.pivot,
+            deformationMode: 'cutout'
+          };
+        });
+
+        this.slicer.setElements(elements);
+        this.renderSlicerLeftSidebar();
+        this.renderSlicerRightSidebar();
+        this.updateSlicerHUD();
+      }
+    };
+    img.src = demoUrl;
+  }
+
   private renderLeftSidebar(): void {
     const sidebar = this.container.querySelector('#left-sidebar') as HTMLElement;
     if (!sidebar) return;
+
+    if (this.activeStudioMode === 'slicer') {
+      this.renderSlicerLeftSidebar();
+      return;
+    }
 
     const currentArt = this.views[this.activeView];
     const hasImage = !!currentArt.image || Object.keys(currentArt.parts).length > 0;
@@ -807,6 +1376,11 @@ export class RigStudioApp {
     const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement;
     if (!sidebar) return;
 
+    if (this.activeStudioMode === 'slicer') {
+      this.renderSlicerRightSidebar();
+      return;
+    }
+
     const currentArt = this.views[this.activeView];
     const attachedCount = Object.keys(currentArt.parts).length;
     const libCount = this.partsLibrary.length;
@@ -943,6 +1517,11 @@ export class RigStudioApp {
             <div style="font-size:0.72rem; color:#94a3b8; line-height:1.35; padding:2px 0;">
               Import individual PNG graphics or auto-slice spritesheets. Drag and drop graphics directly onto bones on the canvas or into bone slots!
             </div>
+
+            <!-- Launch Slicer Button -->
+            <button class="btn-studio btn-studio-primary" id="btn-open-slicer" style="font-size:0.75rem; padding:8px 8px; justify-content:center; background:#0284c7; border-color:#38bdf8; font-weight:700;" title="Open Element Slicer to load image, mark elements and assign them to bones">
+              ✂️ Open Element Slicer & Mark Elements on Image...
+            </button>
 
             <!-- Toolbar Actions -->
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
@@ -1194,6 +1773,10 @@ export class RigStudioApp {
     });
 
     // Parts Library Actions
+    sidebar.querySelector('#btn-open-slicer')?.addEventListener('click', () => {
+      this.switchStudioMode('slicer');
+    });
+
     sidebar.querySelector('#btn-assemble-all-ronald')?.addEventListener('click', () => {
       this.assembleAllRonaldParts();
     });

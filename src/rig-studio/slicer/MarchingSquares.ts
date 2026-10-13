@@ -44,8 +44,53 @@ export class MarchingSquares {
       if (!found) return null;
     }
 
-    // Step 1: Flood fill to find all connected pixels belonging to this element
     const visited = new Uint8Array(width * height);
+    return this.traceIsland(imageData, visited, startX, startY, alphaThreshold, epsilon);
+  }
+
+  /**
+   * Automatically scans an image and traces contours for all separate opaque elements.
+   */
+  public static traceAllElements(
+    imageData: ImageData,
+    alphaThreshold = 25,
+    epsilon = 2.0,
+    minPixels = 36
+  ): Point2D[][] {
+    const { width, height, data } = imageData;
+    const visited = new Uint8Array(width * height);
+    const results: Point2D[][] = [];
+
+    // Step through pixel grid with small step size
+    for (let y = 2; y < height - 2; y += 4) {
+      for (let x = 2; x < width - 2; x += 4) {
+        const idx = y * width + x;
+        if (visited[idx] === 0 && data[idx * 4 + 3] > alphaThreshold) {
+          const contour = this.traceIsland(imageData, visited, x, y, alphaThreshold, epsilon);
+          if (contour && contour.length >= 3) {
+            results.push(contour);
+          }
+        }
+      }
+    }
+    return results;
+  }
+
+  private static traceIsland(
+    imageData: ImageData,
+    visited: Uint8Array,
+    startX: number,
+    startY: number,
+    alphaThreshold: number,
+    epsilon: number
+  ): Point2D[] | null {
+    const { width, height, data } = imageData;
+    const getAlpha = (x: number, y: number): number => {
+      if (x < 0 || x >= width || y < 0 || y >= height) return 0;
+      return data[(y * width + x) * 4 + 3];
+    };
+
+    // Step 1: Flood fill to find all connected pixels belonging to this element
     const queue: [number, number][] = [[startX, startY]];
     visited[startY * width + startX] = 1;
 

@@ -533,37 +533,81 @@ export function poseJointPreservingBones(
     return result;
   }
 
-  // 9. Hand tips (drag hand edge to aim hand and rotate around wrist)
+  // 9. Hand tips (drag hand edge to aim hand and drive entire arm chain via IK)
   if (jointId === 'hand_l' || jointId === 'hand_r') {
     const isLeft = jointId === 'hand_l';
+    const shoulder = isLeft ? result.shoulder_l : result.shoulder_r;
+    const elbow = isLeft ? result.elbow_l : result.elbow_r;
     const wrist = isLeft ? result.wrist_l : result.wrist_r;
     const restWrist = isLeft ? restJoints.wrist_l : restJoints.wrist_r;
     const restHand = isLeft ? restJoints.hand_l : restJoints.hand_r;
     const handLen = (restHand && restWrist) ? Math.hypot(restHand.x - restWrist.x, restHand.y - restWrist.y) : 28;
-    const angle = Math.atan2(target.y - wrist.y, target.x - wrist.x);
-    const newHand = {
-      x: wrist.x + Math.cos(angle) * handLen,
-      y: wrist.y + Math.sin(angle) * handLen
+
+    // Vector from shoulder to target
+    const armAngle = Math.atan2(target.y - shoulder.y, target.x - shoulder.x);
+    const wristTarget = {
+      x: target.x - Math.cos(armAngle) * handLen,
+      y: target.y - Math.sin(armAngle) * handLen
     };
-    if (isLeft) result.hand_l = newHand;
-    else result.hand_r = newHand;
+
+    // Solve 2-bone IK on shoulder -> elbow -> wrist
+    const ik = solveTwoBoneIK(shoulder, elbow, wrist, wristTarget, isLeft);
+    if (isLeft) {
+      result.elbow_l = ik.mid;
+      result.wrist_l = ik.end;
+      const aimAngle = Math.atan2(target.y - ik.end.y, target.x - ik.end.x);
+      result.hand_l = {
+        x: ik.end.x + Math.cos(aimAngle) * handLen,
+        y: ik.end.y + Math.sin(aimAngle) * handLen
+      };
+    } else {
+      result.elbow_r = ik.mid;
+      result.wrist_r = ik.end;
+      const aimAngle = Math.atan2(target.y - ik.end.y, target.x - ik.end.x);
+      result.hand_r = {
+        x: ik.end.x + Math.cos(aimAngle) * handLen,
+        y: ik.end.y + Math.sin(aimAngle) * handLen
+      };
+    }
     return result;
   }
 
-  // 10. Foot tips (drag foot edge to aim foot and rotate around ankle)
+  // 10. Foot tips (drag foot edge to aim foot and drive entire leg chain via IK)
   if (jointId === 'foot_l' || jointId === 'foot_r') {
     const isLeft = jointId === 'foot_l';
+    const hip = isLeft ? result.hip_l : result.hip_r;
+    const knee = isLeft ? result.knee_l : result.knee_r;
     const ankle = isLeft ? result.ankle_l : result.ankle_r;
     const restAnkle = isLeft ? restJoints.ankle_l : restJoints.ankle_r;
     const restFoot = isLeft ? restJoints.foot_l : restJoints.foot_r;
     const footLen = (restFoot && restAnkle) ? Math.hypot(restFoot.x - restAnkle.x, restFoot.y - restAnkle.y) : 35;
-    const angle = Math.atan2(target.y - ankle.y, target.x - ankle.x);
-    const newFoot = {
-      x: ankle.x + Math.cos(angle) * footLen,
-      y: ankle.y + Math.sin(angle) * footLen
+
+    // Vector from hip to target
+    const legAngle = Math.atan2(target.y - hip.y, target.x - hip.x);
+    const ankleTarget = {
+      x: target.x - Math.cos(legAngle) * footLen,
+      y: target.y - Math.sin(legAngle) * footLen
     };
-    if (isLeft) result.foot_l = newFoot;
-    else result.foot_r = newFoot;
+
+    // Solve 2-bone IK on hip -> knee -> ankle
+    const ik = solveTwoBoneIK(hip, knee, ankle, ankleTarget, !isLeft);
+    if (isLeft) {
+      result.knee_l = ik.mid;
+      result.ankle_l = ik.end;
+      const aimAngle = Math.atan2(target.y - ik.end.y, target.x - ik.end.x);
+      result.foot_l = {
+        x: ik.end.x + Math.cos(aimAngle) * footLen,
+        y: ik.end.y + Math.sin(aimAngle) * footLen
+      };
+    } else {
+      result.knee_r = ik.mid;
+      result.ankle_r = ik.end;
+      const aimAngle = Math.atan2(target.y - ik.end.y, target.x - ik.end.x);
+      result.foot_r = {
+        x: ik.end.x + Math.cos(aimAngle) * footLen,
+        y: ik.end.y + Math.sin(aimAngle) * footLen
+      };
+    }
     return result;
   }
 
