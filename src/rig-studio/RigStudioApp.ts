@@ -14,6 +14,7 @@ import { RigStudioBridge } from './RigStudioBridge';
 import {
   ANATOMICAL_BONES,
   ANATOMICAL_JOINTS,
+  DEFAULT_BONE_DRAW_ORDER,
   DEFAULT_ENVELOPES,
   convertJointsToSpineBones,
   copyJointsFromFront,
@@ -40,6 +41,7 @@ interface StudioHistoryState {
   joints: Record<string, { x: number; y: number }>;
   envelopes: Record<string, number>;
   parts: Record<string, BonePartAttachment>;
+  boneOrder?: AnatomicalJointId[];
   selectedJointId: AnatomicalJointId | null;
 }
 
@@ -200,8 +202,8 @@ export class RigStudioApp {
             📁 Import Image
             <input type="file" id="input-graphic-upload" accept="image/*" style="display:none;" />
           </label>
-          <button class="btn-studio btn-save-rig-json" title="Save complete character rig project with graphics (.json)">
-            💾 Save Rig (.json)
+          <button class="btn-studio btn-save-rig-json" title="Export complete character rig project with graphics (.json)">
+            ⬇ Export (.json)
           </button>
           <button class="btn-studio btn-export-spine" title="Export rig as Spine JSON">
             🦴 Export Spine
@@ -212,7 +214,7 @@ export class RigStudioApp {
             </button>
             <button class="btn-studio btn-close-modal">✕</button>
           ` : `
-            <button class="btn-studio btn-studio-primary btn-save-local">
+            <button class="btn-studio btn-studio-primary btn-save-local" title="Quick Save rig project in-place (Ctrl+S / No dialog)">
               💾 Save Rig
             </button>
           `}
@@ -278,7 +280,8 @@ export class RigStudioApp {
               </div>
               <div style="width:1px; height:20px; background:rgba(255,255,255,0.15); margin:0 4px;"></div>
               <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
-                <button class="btn-studio" id="btn-slicer-save-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#38bdf8;" title="Save marked elements as a .json file">💾 Save Elements</button>
+                <button class="btn-studio" id="btn-slicer-save-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#38bdf8;" title="Save marked elements in-place (instant, no dialog)">💾 Save Elements</button>
+                <button class="btn-studio" id="btn-slicer-export-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#67e8f9;" title="Export marked elements to a .json file on disk">⬇ Export (.json)</button>
                 <label class="btn-studio" style="font-size:0.68rem; padding:4px 7px; color:#a855f7; cursor:pointer; margin:0;" title="Load marked elements from a .json file">
                   📂 Load Elements
                   <input type="file" id="input-load-elements-toolbar" accept=".json" style="display:none;" />
@@ -345,9 +348,60 @@ export class RigStudioApp {
       this.redo();
     });
 
-    // Global Undo / Redo Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z / Cmd equivalents)
+    // Global Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z, Ctrl+S / Cmd equivalents)
     window.addEventListener('keydown', (e) => {
       const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+      // Quick Save (Ctrl+S / Cmd+S) without browser dialog
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        if (this.activeStudioMode === 'slicer') {
+          this.saveElementsLocal();
+        } else {
+          this.saveRigLocal();
+        }
+        return;
+      }
+
+      // Reorder Elements (Ctrl+Up / Ctrl+Down) in Slicer Mode
+      if ((e.ctrlKey || e.metaKey) && this.activeStudioMode === 'slicer') {
+        const selected = this.slicer?.getSelectedElement();
+        if (selected && (e.key === 'ArrowUp' || e.key === 'Up')) {
+          e.preventDefault();
+          this.slicer?.moveElementUp(selected.id);
+          return;
+        }
+        if (selected && (e.key === 'ArrowDown' || e.key === 'Down')) {
+          e.preventDefault();
+          this.slicer?.moveElementDown(selected.id);
+          return;
+        }
+      }
+
+      // Reorder Layers in Rig & Bones Mode (Inkscape shortcuts: PageUp / PageDown / Home / End, or Ctrl+[ / Ctrl+])
+      if (this.activeStudioMode === 'rig' && this.selectedJointId && !isInput) {
+        if (e.key === 'Home' || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === ']' || e.key === '}'))) {
+          e.preventDefault();
+          this.moveSelectedBoneToTop();
+          return;
+        }
+        if (e.key === 'End' || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '[' || e.key === '{'))) {
+          e.preventDefault();
+          this.moveSelectedBoneToBottom();
+          return;
+        }
+        if (e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '}'))) {
+          e.preventDefault();
+          this.moveSelectedBoneUp();
+          return;
+        }
+        if (e.key === 'PageDown' || ((e.ctrlKey || e.metaKey) && (e.key === '[' || e.key === '{'))) {
+          e.preventDefault();
+          this.moveSelectedBoneDown();
+          return;
+        }
+      }
+
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         if (isInput && (e.target as HTMLInputElement).type === 'text') return;
         e.preventDefault();
@@ -464,15 +518,16 @@ export class RigStudioApp {
       this.exportSpineJson();
     });
 
-    // Save Local or Apply to Host
+    // Save Local (No dialog) or Apply to Host
     const saveBtn = this.container.querySelector('.btn-save-local');
     saveBtn?.addEventListener('click', () => {
-      this.saveRigProjectJson();
+      this.saveRigLocal();
     });
 
     const applyBtn = this.container.querySelector('.btn-apply-host');
     applyBtn?.addEventListener('click', () => {
       this.saveRigToHost();
+      this.showToast('✓ Rig applied to character!', 'success');
     });
 
     const closeBtn = this.container.querySelector('.btn-close-modal');
@@ -495,6 +550,7 @@ export class RigStudioApp {
       this.views[this.activeView].joints = JSON.parse(JSON.stringify(this.canvas.getJoints()));
       this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
       this.views[this.activeView].parts = { ...this.canvas.getParts() };
+      this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
     }
 
     this.activeView = viewId;
@@ -515,9 +571,9 @@ export class RigStudioApp {
       this.loadImageFromUrl(demoBackUrl, 'character_back.png', 'back', false);
     }
 
-    // Update Canvas with view's joints, envelopes, and attached parts
+    // Update Canvas with view's joints, envelopes, attached parts, and layer order
     if (this.canvas) {
-      this.canvas.setView(viewId, viewData.joints, viewData.envelopes, viewData.parts);
+      this.canvas.setView(viewId, viewData.joints, viewData.envelopes, viewData.parts, viewData.boneOrder);
       this.canvas.setSourceImage(viewData.image, viewData.fileName, false);
     }
 
@@ -656,6 +712,9 @@ export class RigStudioApp {
     });
 
     toolbar.querySelector('#btn-slicer-save-elements-toolbar')?.addEventListener('click', () => {
+      this.saveElementsLocal();
+    });
+    toolbar.querySelector('#btn-slicer-export-elements-toolbar')?.addEventListener('click', () => {
       this.saveElementsJson();
     });
     toolbar.querySelector('#input-load-elements-toolbar')?.addEventListener('change', (e) => {
@@ -667,10 +726,51 @@ export class RigStudioApp {
     });
   }
 
+  /**
+   * Displays a non-blocking toast notification.
+   */
+  public showToast(message: string, type: 'success' | 'warning' | 'info' = 'success', durationMs = 2600): void {
+    let container = this.container.querySelector('.studio-toast-container') as HTMLElement;
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'studio-toast-container';
+      this.container.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `studio-toast ${type}`;
+    const icon = type === 'success' ? '✓' : type === 'warning' ? '⚠️' : 'ℹ️';
+    toast.innerHTML = `<span style="font-size:0.9rem;">${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px) scale(0.95)';
+      setTimeout(() => {
+        toast.remove();
+        if (container && container.children.length === 0) {
+          container.remove();
+        }
+      }, 200);
+    }, durationMs);
+  }
+
+  public saveElementsLocal(): void {
+    const elements = this.slicer ? this.slicer.getElements() : this.savedElements;
+    if (elements.length === 0) {
+      this.showToast('No marked elements yet to save. Mark elements first using Magic Wand or Polygon tools.', 'warning');
+      return;
+    }
+
+    this.savedElements = JSON.parse(JSON.stringify(elements));
+    this.persistElementsToStorage();
+    this.showToast(`✓ Saved ${elements.length} element${elements.length > 1 ? 's' : ''}!`, 'success');
+  }
+
   public saveElementsJson(): void {
     const elements = this.slicer ? this.slicer.getElements() : this.savedElements;
     if (elements.length === 0) {
-      alert('No marked elements yet to save. Mark elements first using Magic Wand or Polygon tools.');
+      this.showToast('No marked elements yet to save. Mark elements first using Magic Wand or Polygon tools.', 'warning');
       return;
     }
 
@@ -693,6 +793,7 @@ export class RigStudioApp {
     a.download = `${this.characterName.toLowerCase().replace(/\s+/g, '_')}_elements.json`;
     a.click();
     URL.revokeObjectURL(url);
+    this.showToast(`✓ Exported elements: ${a.download}`, 'success');
   }
 
   public handleLoadElementsJson(file: File): void {
@@ -704,7 +805,7 @@ export class RigStudioApp {
         this.loadElementsData(data);
       } catch (err: any) {
         console.error('Failed to parse elements JSON:', err);
-        alert(`Failed to load elements: ${err.message || 'Invalid JSON format'}`);
+        this.showToast(`Failed to load elements: ${err.message || 'Invalid JSON format'}`, 'warning');
       }
     };
     reader.readAsText(file);
@@ -719,7 +820,7 @@ export class RigStudioApp {
     } else if (data?.slicer && Array.isArray(data.slicer.elements)) {
       elements = data.slicer.elements;
     } else {
-      alert('Invalid elements JSON: No elements array found in file.');
+      this.showToast('Invalid elements JSON: No elements array found in file.', 'warning');
       return;
     }
 
@@ -739,6 +840,7 @@ export class RigStudioApp {
     this.persistElementsToStorage();
     this.renderSlicerRightSidebar();
     this.updateSlicerHUD();
+    this.showToast(`✓ Loaded ${this.savedElements.length} element${this.savedElements.length > 1 ? 's' : ''}!`, 'success');
   }
 
   public clearSlicerElements(): void {
@@ -929,7 +1031,7 @@ export class RigStudioApp {
           this.canvas.setSourceImage(this.slicerImage, this.slicerImageFileName, false);
           this.canvas.render();
         }
-        alert(`Graphic "${this.slicerImageFileName}" set as base artwork for ${this.activeView.toUpperCase()} rig!`);
+        this.showToast(`Graphic "${this.slicerImageFileName}" set as base artwork for ${this.activeView.toUpperCase()} rig!`, 'success');
       }
     });
     sidebar.querySelector('#btn-slicer-load-active-view')?.addEventListener('click', () => {
@@ -961,8 +1063,11 @@ export class RigStudioApp {
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
           <span style="font-weight:700; font-size:0.8rem; color:#f1f5f9;">Marked Elements (${elements.length})</span>
           <div style="display:flex; gap:4px; align-items:center;">
-            <button class="btn-studio" id="btn-slicer-save-elements" style="font-size:0.64rem; padding:2px 6px; color:#38bdf8;" title="Save marked elements as .json file">
+            <button class="btn-studio" id="btn-slicer-save-elements" style="font-size:0.64rem; padding:2px 6px; color:#38bdf8;" title="Quick save marked elements (Ctrl+S / No dialog)">
               💾 Save
+            </button>
+            <button class="btn-studio" id="btn-slicer-export-elements" style="font-size:0.64rem; padding:2px 6px; color:#67e8f9;" title="Export marked elements as .json file">
+              ⬇ Export
             </button>
             <label class="btn-studio" style="font-size:0.64rem; padding:2px 6px; color:#a855f7; cursor:pointer; margin:0;" title="Load elements from .json file">
               📂 Load
@@ -982,18 +1087,30 @@ export class RigStudioApp {
         </button>
 
         <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
-          Assign each marked element to a bone below. When applied, graphics are extracted and attached to the character's skeleton.
+          Assign each marked element to a bone below. Reorder elements using ▲/▼ or drag to set stacking/cut order.
         </div>
 
         ${elements.length > 0 ? `
           <div style="display:flex; flex-direction:column; gap:6px;">
-            ${elements.map((el) => {
+            ${elements.map((el, index) => {
               const isSelected = selectedElem?.id === el.id;
               const thumbUrl = this.slicer?.generateThumbnail(el) || '';
+              const isFirst = index === 0;
+              const isLast = index === elements.length - 1;
 
               return `
-                <div class="slicer-element-card ${isSelected ? 'selected' : ''}" data-elem-id="${el.id}">
-                  <div style="display:flex; align-items:center; gap:8px;">
+                <div class="slicer-element-card ${isSelected ? 'selected' : ''}" data-elem-id="${el.id}" data-elem-index="${index}" draggable="true">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <!-- Order Controls -->
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:2px; flex-shrink:0;">
+                      <button class="btn-elem-order btn-elem-order-up" data-elem-id="${el.id}" ${isFirst ? 'disabled' : ''} title="Move up in order (Ctrl+Up)">▲</button>
+                      <button class="btn-elem-order btn-elem-order-down" data-elem-id="${el.id}" ${isLast ? 'disabled' : ''} title="Move down in order (Ctrl+Down)">▼</button>
+                    </div>
+
+                    <span class="elem-drag-handle" title="Drag to reorder element">⋮⋮</span>
+
+                    <span class="elem-order-badge" title="Element order position">#${index + 1}</span>
+
                     <!-- Thumbnail -->
                     <div style="width:36px; height:36px; background:#020617; border:1px solid rgba(255,255,255,0.08); border-radius:4px; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden;">
                       ${thumbUrl ? `
@@ -1072,6 +1189,10 @@ export class RigStudioApp {
     });
 
     sidebar.querySelector('#btn-slicer-save-elements')?.addEventListener('click', () => {
+      this.saveElementsLocal();
+    });
+
+    sidebar.querySelector('#btn-slicer-export-elements')?.addEventListener('click', () => {
       this.saveElementsJson();
     });
 
@@ -1089,11 +1210,91 @@ export class RigStudioApp {
       }
     });
 
+    // Up / Down order buttons
+    sidebar.querySelectorAll('.btn-elem-order-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-elem-id');
+        if (id) {
+          this.slicer?.moveElementUp(id);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-elem-order-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-elem-id');
+        if (id) {
+          this.slicer?.moveElementDown(id);
+        }
+      });
+    });
+
+    // Drag-and-drop element reordering
+    let draggedElemId: string | null = null;
+    sidebar.querySelectorAll('.slicer-element-card').forEach(card => {
+      const cardEl = card as HTMLElement;
+
+      cardEl.addEventListener('dragstart', (e) => {
+        const id = cardEl.getAttribute('data-elem-id');
+        if (id) {
+          draggedElemId = id;
+          cardEl.classList.add('dragging');
+          e.dataTransfer?.setData('text/plain', id);
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+          }
+        }
+      });
+
+      cardEl.addEventListener('dragend', () => {
+        draggedElemId = null;
+        cardEl.classList.remove('dragging');
+        sidebar.querySelectorAll('.slicer-element-card').forEach(c => c.classList.remove('drag-over'));
+      });
+
+      cardEl.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move';
+        }
+        if (!cardEl.classList.contains('drag-over') && cardEl.getAttribute('data-elem-id') !== draggedElemId) {
+          cardEl.classList.add('drag-over');
+        }
+      });
+
+      cardEl.addEventListener('dragleave', () => {
+        cardEl.classList.remove('drag-over');
+      });
+
+      cardEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        cardEl.classList.remove('drag-over');
+        const targetId = cardEl.getAttribute('data-elem-id');
+        const sourceId = draggedElemId || e.dataTransfer?.getData('text/plain');
+        if (sourceId && targetId && sourceId !== targetId && this.slicer) {
+          const currentElements = this.slicer.getElements();
+          const fromIdx = currentElements.findIndex(el => el.id === sourceId);
+          const toIdx = currentElements.findIndex(el => el.id === targetId);
+          if (fromIdx >= 0 && toIdx >= 0) {
+            this.slicer.reorderElement(fromIdx, toIdx);
+          }
+        }
+      });
+    });
+
     // Select element card on click
     sidebar.querySelectorAll('.slicer-element-card').forEach(card => {
       card.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON') return;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'BUTTON' ||
+          target.closest('button') ||
+          target.classList.contains('elem-drag-handle')
+        ) return;
         const id = card.getAttribute('data-elem-id');
         if (id) {
           this.slicer?.selectElement(id);
@@ -1248,7 +1449,7 @@ export class RigStudioApp {
     if (!this.slicer) return;
     const elements = this.slicer.getElements();
     if (elements.length === 0) {
-      alert('No elements marked yet! Use Magic Wand or Polygon to mark elements first.');
+      this.showToast('No elements marked yet! Use Magic Wand or Polygon to mark elements first.', 'warning');
       return;
     }
 
@@ -1893,6 +2094,8 @@ export class RigStudioApp {
     const currentArt = this.views[this.activeView];
     const attachedCount = Object.keys(currentArt.parts).length;
     const libCount = this.partsLibrary.length;
+    const drawOrder = this.canvas ? this.canvas.getBoneDrawOrder() : (currentArt.boneOrder || DEFAULT_BONE_DRAW_ORDER);
+    const displayLayers = [...drawOrder].reverse();
 
     sidebar.innerHTML = `
       <div class="sidebar-tabs-header">
@@ -1904,7 +2107,7 @@ export class RigStudioApp {
             Parts Library ${libCount > 0 ? `(${libCount})` : ''}
           </button>
           <button class="sidebar-tab-btn ${this.activeRightTab === 'layers' ? 'active' : ''}" data-tab="layers" style="flex:0.8;">
-            Layers
+            Layers (${displayLayers.length})
           </button>
         </div>
       </div>
@@ -1946,17 +2149,25 @@ export class RigStudioApp {
                 const part = currentArt.parts[bone.id];
                 const radius = currentArt.envelopes[bone.id] || this.canvas?.getEnvelopeRadius(bone.id) || 18;
                 const originJoint = ANATOMICAL_JOINTS.find(j => j.id === bone.originJointId);
+                const boneIndex = drawOrder.indexOf(bone.id);
+                const layerRank = boneIndex >= 0 ? boneIndex + 1 : '-';
+                const isTop = boneIndex === drawOrder.length - 1;
+                const isBottom = boneIndex === 0;
 
                 return `
                   <div class="bone-part-slot-card ${isSelected ? 'selected' : ''}" data-bone-id="${bone.id}" style="background:#0f172a; border:1px solid ${isSelected ? '#38bdf8' : 'rgba(56, 189, 248, 0.15)'}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:5px; transition:all 0.15s;">
-                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
                       <div style="display:flex; align-items:center; gap:6px; font-weight:600; font-size:0.75rem; color:#f1f5f9; cursor:pointer;" class="btn-focus-bone" data-bone-id="${bone.id}">
                         <span style="background:${originJoint?.color || '#38bdf8'}; width:8px; height:8px; border-radius:50%; display:inline-block;"></span>
                         <span>${bone.name}</span>
                       </div>
-                      <span style="font-size:0.62rem; color:#94a3b8; font-style:italic;">
-                        ${originJoint ? `Pivots at ${originJoint.name}` : ''}
-                      </span>
+                      <div style="display:flex; align-items:center; gap:2px;">
+                        <span style="font-size:0.6rem; color:#38bdf8; font-family:var(--studio-font-mono); font-weight:700; margin-right:2px;" title="Stacking layer (higher = in front)">#${layerRank}</span>
+                        <button class="btn-align-micro btn-bone-top" data-bone-id="${bone.id}" title="Move to Top (Home)" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>⇈</button>
+                        <button class="btn-align-micro btn-bone-up" data-bone-id="${bone.id}" title="Move Up (Page Up)" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>▲</button>
+                        <button class="btn-align-micro btn-bone-down" data-bone-id="${bone.id}" title="Move Down (Page Down)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>▼</button>
+                        <button class="btn-align-micro btn-bone-bottom" data-bone-id="${bone.id}" title="Move to Bottom (End)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>⇊</button>
+                      </div>
                     </div>
 
                     <div style="font-size:0.62rem; color:#64748b; line-height:1.2;">
@@ -2131,29 +2342,62 @@ export class RigStudioApp {
           </div>
         ` : `
           <!-- Layers Tab -->
-          <div class="layers-list">
-            ${currentArt.image ? `
-              <div class="layer-item-row selected">
-                <button class="layer-eye-btn" title="Toggle visibility">👁</button>
-                <span class="layer-name" title="${currentArt.fileName}">${currentArt.fileName} (Base Body)</span>
-              </div>
-            ` : `
-              <div class="layers-empty-text">No body artwork loaded yet</div>
-            `}
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:0.72rem; color:#94a3b8; line-height:1.35; padding:2px 0;">
+              Layer stacking order (Inkscape-style). Top layer is drawn in front. Drag cards to reorder, or use buttons & keyboard shortcuts (<kbd>PageUp</kbd>/<kbd>PageDown</kbd>/<kbd>Home</kbd>/<kbd>End</kbd>).
+            </div>
 
-            <!-- Attached Parts Layers -->
-            ${Object.entries(currentArt.parts).map(([bId, p]) => {
-              const bDef = ANATOMICAL_BONES.find(b => b.id === bId);
-              return `
-                <div class="layer-item-row" data-part-bone="${bId}" style="border-left:3px solid #38bdf8; cursor:pointer;">
-                  <button class="layer-eye-btn" title="Toggle visibility">👁</button>
-                  <span class="layer-name" title="${p.fileName}">
-                    <b style="color:#38bdf8;">${bDef?.name || bId}:</b> ${p.fileName}
-                  </span>
-                  <button class="btn-danger-part btn-remove-part-layer" data-part-bone="${bId}" style="padding:2px 5px;" title="Remove this part">✕</button>
-                </div>
-              `;
-            }).join('')}
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+              <span style="font-size:0.68rem; font-weight:700; color:#e2e8f0; text-transform:uppercase;">
+                Stack Order (${displayLayers.length} Layers):
+              </span>
+              <button class="btn-studio" id="btn-reset-layer-order" style="font-size:0.62rem; padding:2px 6px;" title="Reset stacking order to standard anatomical hierarchy">
+                ↺ Reset Order
+              </button>
+            </div>
+
+            <!-- Stacking Order List from Top to Bottom -->
+            <div class="layers-drag-list" style="display:flex; flex-direction:column; gap:4px;">
+              ${displayLayers.map((boneId, index) => {
+                const isSelected = this.selectedJointId === boneId;
+                const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+                const originJoint = ANATOMICAL_JOINTS.find(j => j.id === boneDef?.originJointId);
+                const part = currentArt.parts[boneId];
+                const layerRank = displayLayers.length - index;
+                const isTop = index === 0;
+                const isBottom = index === displayLayers.length - 1;
+
+                return `
+                  <div class="layer-item-card ${isSelected ? 'selected' : ''}" data-bone-id="${boneId}" draggable="true">
+                    <span class="elem-drag-handle" title="Drag to reorder layer">⋮⋮</span>
+                    <span style="font-size:0.62rem; font-family:var(--studio-font-mono); font-weight:700; color:${isTop ? '#38bdf8' : isBottom ? '#94a3b8' : '#cbd5e1'}; width:24px;">
+                      #${layerRank}
+                    </span>
+                    ${part ? `
+                      <img src="${part.imageUrl}" style="width:22px; height:22px; object-fit:contain; border-radius:3px; background:rgba(255,255,255,0.06);" />
+                    ` : `
+                      <span style="background:${originJoint?.color || '#38bdf8'}; width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0;"></span>
+                    `}
+                    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:pointer;" class="btn-select-layer-card" data-bone-id="${boneId}">
+                      <div style="font-size:0.7rem; font-weight:600; color:#f1f5f9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        ${boneDef?.name || boneId}
+                      </div>
+                      <div style="font-size:0.6rem; color:${part ? '#38bdf8' : '#64748b'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        ${part ? part.fileName : '(No graphic attached)'}
+                      </div>
+                    </div>
+
+                    <!-- Quick Reorder Micro-Buttons -->
+                    <div style="display:flex; align-items:center; gap:2px;">
+                      <button class="btn-align-micro btn-layer-top" data-bone-id="${boneId}" title="Move to Top (Home / Ctrl+Shift+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>⇈</button>
+                      <button class="btn-align-micro btn-layer-up" data-bone-id="${boneId}" title="Move Up (Page Up / Ctrl+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>▲</button>
+                      <button class="btn-align-micro btn-layer-down" data-bone-id="${boneId}" title="Move Down (Page Down / Ctrl+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>▼</button>
+                      <button class="btn-align-micro btn-layer-bottom" data-bone-id="${boneId}" title="Move to Bottom (End / Ctrl+Shift+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>⇊</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
         `}
       </div>
@@ -2460,14 +2704,125 @@ export class RigStudioApp {
       });
     });
 
-    // Remove Part from Layer row
-    sidebar.querySelectorAll('.btn-remove-part-layer').forEach(btn => {
+    // Layers Tab Quick Actions & Reordering
+    sidebar.querySelector('#btn-reset-layer-order')?.addEventListener('click', () => {
+      this.resetBoneOrder();
+    });
+
+    sidebar.querySelectorAll('.btn-select-layer-card').forEach(el => {
+      el.addEventListener('click', () => {
+        const bId = el.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) {
+          this.selectedJointId = bId;
+          this.canvas?.selectJoint(bId);
+          this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
+        }
+      });
+    });
+
+    // Layer card buttons in Layers tab
+    sidebar.querySelectorAll('.btn-layer-top').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const bId = btn.getAttribute('data-part-bone') as AnatomicalJointId;
-        if (bId) {
-          this.removePartFromBone(bId);
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneToTop(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-layer-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneUp(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-layer-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneDown(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-layer-bottom').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneToBottom(bId);
+      });
+    });
+
+    // Bone cards buttons in Joints & Bones tab
+    sidebar.querySelectorAll('.btn-bone-top').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneToTop(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-bone-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneUp(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-bone-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneDown(bId);
+      });
+    });
+    sidebar.querySelectorAll('.btn-bone-bottom').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.moveBoneToBottom(bId);
+      });
+    });
+
+    // HTML5 Drag and drop reordering in Layers tab
+    sidebar.querySelectorAll('.layer-item-card').forEach(card => {
+      card.addEventListener('dragstart', (evt: Event) => {
+        const e = evt as DragEvent;
+        const bId = card.getAttribute('data-bone-id');
+        if (bId && e.dataTransfer) {
+          card.classList.add('dragging');
+          e.dataTransfer.setData('text/plain', bId);
+          e.dataTransfer.effectAllowed = 'move';
         }
+      });
+
+      card.addEventListener('dragover', (evt: Event) => {
+        const e = evt as DragEvent;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        card.classList.add('drag-over');
+      });
+
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drag-over');
+      });
+
+      card.addEventListener('drop', (evt: Event) => {
+        const e = evt as DragEvent;
+        e.preventDefault();
+        card.classList.remove('drag-over');
+        const sourceBoneId = e.dataTransfer?.getData('text/plain') as AnatomicalJointId;
+        const targetBoneId = card.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (sourceBoneId && targetBoneId && sourceBoneId !== targetBoneId && this.canvas) {
+          const currentOrder = this.canvas.getBoneDrawOrder();
+          const fromIdx = currentOrder.indexOf(sourceBoneId);
+          const toIdx = currentOrder.indexOf(targetBoneId);
+          if (fromIdx >= 0 && toIdx >= 0) {
+            this.reorderBone(fromIdx, toIdx);
+          }
+        }
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        sidebar.querySelectorAll('.layer-item-card').forEach(c => c.classList.remove('drag-over'));
       });
     });
   }
@@ -2645,11 +3000,12 @@ export class RigStudioApp {
     this.loadRonaldPreMarkedElementsInSlicer();
   }
 
-  public saveRigProjectJson(): void {
+  public buildRigProjectData(): RigProjectData {
     if (this.canvas) {
       this.views[this.activeView].joints = JSON.parse(JSON.stringify(this.canvas.getJoints()));
       this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
       this.views[this.activeView].parts = { ...this.canvas.getParts() };
+      this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
     }
 
     const viewsExport: Record<string, any> = {};
@@ -2683,6 +3039,7 @@ export class RigStudioApp {
         fileSize: vData.fileSize,
         joints: vData.joints,
         envelopes: vData.envelopes,
+        boneOrder: vData.boneOrder ? [...vData.boneOrder] : (this.canvas && this.activeView === vKey ? [...this.canvas.getBoneDrawOrder()] : undefined),
         parts: partsExport
       };
     }
@@ -2706,7 +3063,7 @@ export class RigStudioApp {
       elements: elementsToExport || []
     };
 
-    const projectData: RigProjectData = {
+    return {
       format: 'questforge-rig-project',
       version: '1.0',
       characterName: this.characterName,
@@ -2715,7 +3072,27 @@ export class RigStudioApp {
       partsLibrary: partsLibExport,
       slicer: slicerExport
     };
+  }
 
+  public saveRigLocal(): void {
+    const projectData = this.buildRigProjectData();
+    try {
+      const jsonStr = JSON.stringify(projectData);
+      const key = `questforge_rig_project_${this.characterName || 'default'}`;
+      localStorage.setItem(key, jsonStr);
+      localStorage.setItem('questforge_rig_project_latest', jsonStr);
+      if (this.bridge.isEmbeddedMode) {
+        this.saveRigToHost();
+      }
+      this.showToast(`✓ Rig project saved! (${this.characterName})`, 'success');
+    } catch (e: any) {
+      console.error('Failed to save rig project locally:', e);
+      this.showToast(`Error saving rig: ${e.message || 'Storage quota exceeded'}`, 'warning');
+    }
+  }
+
+  public saveRigProjectJson(): void {
+    const projectData = this.buildRigProjectData();
     const jsonStr = JSON.stringify(projectData, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -2724,6 +3101,7 @@ export class RigStudioApp {
     a.download = `${this.characterName.toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
     a.click();
     URL.revokeObjectURL(url);
+    this.showToast(`✓ Exported rig project: ${a.download}`, 'success');
   }
 
   public handleLoadRigJson(file: File): void {
@@ -2735,7 +3113,7 @@ export class RigStudioApp {
         this.loadRigProjectData(data);
       } catch (err: any) {
         console.error('Failed to parse rig JSON:', err);
-        alert(`Failed to load rig project: ${err.message || 'Invalid JSON format'}`);
+        this.showToast(`Failed to load rig project: ${err.message || 'Invalid JSON format'}`, 'warning');
       }
     };
     reader.readAsText(file);
@@ -2755,6 +3133,7 @@ export class RigStudioApp {
           const targetView = this.views[vKey];
           targetView.joints = vData.joints || targetView.joints;
           targetView.envelopes = vData.envelopes || targetView.envelopes;
+          targetView.boneOrder = vData.boneOrder ? [...vData.boneOrder] : targetView.boneOrder;
           targetView.fileName = vData.fileName || targetView.fileName;
           targetView.fileSize = vData.fileSize || targetView.fileSize;
           targetView.imageUrl = vData.imageUrl || targetView.imageUrl;
@@ -2854,10 +3233,10 @@ export class RigStudioApp {
       const hudView = this.container.querySelector('#hud-active-view');
       if (hudView) hudView.textContent = targetActiveView.toUpperCase();
 
-      // 5. Update canvas joints, envelopes, parts
+      // 5. Update canvas joints, envelopes, parts, and layer order
       const activeArt = this.views[this.activeView];
       if (this.canvas) {
-        this.canvas.setView(this.activeView, activeArt.joints, activeArt.envelopes, activeArt.parts);
+        this.canvas.setView(this.activeView, activeArt.joints, activeArt.envelopes, activeArt.parts, activeArt.boneOrder);
         if (activeArt.image) {
           this.canvas.setSourceImage(activeArt.image, activeArt.fileName, false);
         }
@@ -3008,22 +3387,76 @@ export class RigStudioApp {
 
     const currentArt = this.views[this.activeView];
     const part = currentArt.parts[this.selectedJointId];
-    if (!part) {
-      bar.style.display = 'none';
-      return;
-    }
 
     const boneDef = ANATOMICAL_JOINTS.find(b => b.id === this.selectedJointId);
     const boneLabel = boneDef ? boneDef.name : this.selectedJointId;
-    const isLocked = this.canvas?.isLockGraphicPosition() ?? false;
-    const rotDeg = Math.round(((part.rotation || 0) * 180) / Math.PI);
     const canUndo = this.undoStack.length > 0;
 
+    const drawOrder = this.canvas ? this.canvas.getBoneDrawOrder() : (currentArt.boneOrder || DEFAULT_BONE_DRAW_ORDER);
+    const boneIndex = drawOrder.indexOf(this.selectedJointId);
+    const isTop = boneIndex === drawOrder.length - 1;
+    const isBottom = boneIndex === 0;
+    const layerRank = boneIndex >= 0 ? boneIndex + 1 : '-';
+    const totalLayers = drawOrder.length;
+
     bar.style.display = 'flex';
+
+    if (!part) {
+      // Show alignment bar with layer stacking order even when no part graphic is attached yet
+      bar.innerHTML = `
+        <div class="align-hud-info">
+          <span class="align-hud-badge">🎯 ${boneLabel}</span>
+          <span class="align-hud-name" style="font-style:italic;">(No graphic)</span>
+        </div>
+        <div class="align-hud-order-section" title="Inkscape Layer Stacking Order (PageUp/PageDown/Home/End)">
+          <span style="font-size:0.62rem; color:#94a3b8; font-weight:600; margin-right:2px;">Layer ${layerRank}/${totalLayers}:</span>
+          <button class="btn-align-micro" id="hud-btn-order-top" title="Raise to Top (Home / Ctrl+Shift+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>⇈ Top</button>
+          <button class="btn-align-micro" id="hud-btn-order-up" title="Move Up (Page Up / Ctrl+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>▲ Up</button>
+          <button class="btn-align-micro" id="hud-btn-order-down" title="Move Down (Page Down / Ctrl+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>▼ Down</button>
+          <button class="btn-align-micro" id="hud-btn-order-bottom" title="Lower to Bottom (End / Ctrl+Shift+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>⇊ Bottom</button>
+        </div>
+        <div class="align-hud-actions">
+          <button class="btn-align-pill" id="hud-btn-undo" title="Undo change (Ctrl+Z)" ${canUndo ? '' : 'disabled style="opacity:0.4;"'}>↶ Undo</button>
+        </div>
+      `;
+
+      bar.querySelector('#hud-btn-order-top')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveSelectedBoneToTop();
+      });
+      bar.querySelector('#hud-btn-order-up')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveSelectedBoneUp();
+      });
+      bar.querySelector('#hud-btn-order-down')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveSelectedBoneDown();
+      });
+      bar.querySelector('#hud-btn-order-bottom')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.moveSelectedBoneToBottom();
+      });
+      bar.querySelector('#hud-btn-undo')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.undo();
+      });
+      return;
+    }
+
+    const isLocked = this.canvas?.isLockGraphicPosition() ?? false;
+    const rotDeg = Math.round(((part.rotation || 0) * 180) / Math.PI);
+
     bar.innerHTML = `
       <div class="align-hud-info">
         <span class="align-hud-badge">🎯 ${boneLabel}</span>
         <span class="align-hud-name" title="${part.fileName}">${part.fileName}</span>
+      </div>
+      <div class="align-hud-order-section" title="Inkscape Layer Stacking Order (PageUp/PageDown/Home/End)">
+        <span style="font-size:0.62rem; color:#94a3b8; font-weight:600; margin-right:2px;">Layer ${layerRank}/${totalLayers}:</span>
+        <button class="btn-align-micro" id="hud-btn-order-top" title="Raise to Top (Home / Ctrl+Shift+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>⇈ Top</button>
+        <button class="btn-align-micro" id="hud-btn-order-up" title="Move Up (Page Up / Ctrl+])" ${isTop ? 'disabled style="opacity:0.35;"' : ''}>▲ Up</button>
+        <button class="btn-align-micro" id="hud-btn-order-down" title="Move Down (Page Down / Ctrl+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>▼ Down</button>
+        <button class="btn-align-micro" id="hud-btn-order-bottom" title="Lower to Bottom (End / Ctrl+Shift+[)" ${isBottom ? 'disabled style="opacity:0.35;"' : ''}>⇊ Bottom</button>
       </div>
       <div class="align-hud-rot-section">
         <span style="font-size:0.65rem; color:#94a3b8; font-weight:600;">Rot:</span>
@@ -3051,6 +3484,26 @@ export class RigStudioApp {
     const bId = this.selectedJointId;
     const rotSlider = bar.querySelector('.hud-rot-slider') as HTMLInputElement | null;
     const rotInput = bar.querySelector('.hud-rot-input') as HTMLInputElement | null;
+
+    bar.querySelector('#hud-btn-order-top')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneToTop();
+    });
+
+    bar.querySelector('#hud-btn-order-up')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneUp();
+    });
+
+    bar.querySelector('#hud-btn-order-down')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneDown();
+    });
+
+    bar.querySelector('#hud-btn-order-bottom')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneToBottom();
+    });
 
     rotSlider?.addEventListener('mousedown', () => {
       this.recordHistory('Rotate Graphic');
@@ -3139,6 +3592,112 @@ export class RigStudioApp {
     });
   }
 
+  public syncActiveViewBoneOrder(): void {
+    if (this.canvas) {
+      this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
+    }
+  }
+
+  public moveBoneUp(boneId: AnatomicalJointId): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Move Layer Up');
+    const success = this.canvas.moveBoneUp(boneId);
+    if (success) {
+      this.syncActiveViewBoneOrder();
+      this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      this.showToast(`▲ Raised ${boneDef?.name || boneId} (PageUp)`, 'info');
+    }
+    return success;
+  }
+
+  public moveBoneDown(boneId: AnatomicalJointId): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Move Layer Down');
+    const success = this.canvas.moveBoneDown(boneId);
+    if (success) {
+      this.syncActiveViewBoneOrder();
+      this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      this.showToast(`▼ Lowered ${boneDef?.name || boneId} (PageDown)`, 'info');
+    }
+    return success;
+  }
+
+  public moveBoneToTop(boneId: AnatomicalJointId): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Move Layer to Top');
+    const success = this.canvas.moveBoneToTop(boneId);
+    if (success) {
+      this.syncActiveViewBoneOrder();
+      this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      this.showToast(`⇈ Raised ${boneDef?.name || boneId} to Top (Home)`, 'info');
+    }
+    return success;
+  }
+
+  public moveBoneToBottom(boneId: AnatomicalJointId): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Move Layer to Bottom');
+    const success = this.canvas.moveBoneToBottom(boneId);
+    if (success) {
+      this.syncActiveViewBoneOrder();
+      this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      this.showToast(`⇊ Lowered ${boneDef?.name || boneId} to Bottom (End)`, 'info');
+    }
+    return success;
+  }
+
+  public moveSelectedBoneUp(): boolean {
+    if (!this.selectedJointId) return false;
+    return this.moveBoneUp(this.selectedJointId);
+  }
+
+  public moveSelectedBoneDown(): boolean {
+    if (!this.selectedJointId) return false;
+    return this.moveBoneDown(this.selectedJointId);
+  }
+
+  public moveSelectedBoneToTop(): boolean {
+    if (!this.selectedJointId) return false;
+    return this.moveBoneToTop(this.selectedJointId);
+  }
+
+  public moveSelectedBoneToBottom(): boolean {
+    if (!this.selectedJointId) return false;
+    return this.moveBoneToBottom(this.selectedJointId);
+  }
+
+  public reorderBone(fromIndex: number, toIndex: number): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Reorder Layer');
+    const success = this.canvas.reorderBone(fromIndex, toIndex);
+    if (success) {
+      this.syncActiveViewBoneOrder();
+      this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
+      this.showToast('Reordered layer stack', 'info');
+    }
+    return success;
+  }
+
+  public resetBoneOrder(): boolean {
+    if (!this.canvas) return false;
+    this.recordHistory('Reset Layer Order');
+    this.canvas.setBoneDrawOrder([...DEFAULT_BONE_DRAW_ORDER]);
+    this.syncActiveViewBoneOrder();
+    this.renderRightSidebar();
+    this.renderCanvasAlignmentBar();
+    this.showToast('↺ Layer order reset to default', 'info');
+    return true;
+  }
+
   public recordHistory(description: string): void {
     if (this.isPerformingUndoRedo) return;
     const snap = this.createHistorySnapshot(description);
@@ -3168,12 +3727,17 @@ export class RigStudioApp {
       }
     }
 
+    const clonedBoneOrder = this.canvas
+      ? [...this.canvas.getBoneDrawOrder()]
+      : (currentArt.boneOrder ? [...currentArt.boneOrder] : undefined);
+
     return {
       description,
       view: this.activeView,
       joints: clonedJoints,
       envelopes: clonedEnvelopes,
       parts: clonedParts,
+      boneOrder: clonedBoneOrder,
       selectedJointId: this.selectedJointId
     };
   }
@@ -3217,6 +3781,13 @@ export class RigStudioApp {
     currentArt.parts = {};
     for (const [k, v] of Object.entries(state.parts)) {
       currentArt.parts[k as AnatomicalJointId] = { ...v };
+    }
+
+    if (state.boneOrder && state.boneOrder.length > 0) {
+      currentArt.boneOrder = [...state.boneOrder];
+      if (this.canvas) {
+        this.canvas.setBoneDrawOrder(state.boneOrder);
+      }
     }
 
     if (this.canvas) {

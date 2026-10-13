@@ -1047,4 +1047,175 @@ body.rig-studio-body {
   box-shadow: 0 0 6px rgba(56, 189, 248, 0.3);
 }
 
+/* Studio Toast Notification System */
+.studio-toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.studio-toast {
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  backdrop-filter: blur(10px);
+  color: #f8fafc;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 10px rgba(56, 189, 248, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  animation: toast-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.studio-toast.success {
+  border-color: #10b981;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+.studio-toast.warning {
+  border-color: #f59e0b;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(245, 158, 11, 0.25);
+}
+
+.studio-toast.info {
+  border-color: #38bdf8;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Slicer Element Order Controls & Drag styling */
+.elem-order-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: var(--studio-font-mono);
+  border-radius: 4px;
+  letter-spacing: -0.02em;
+}
+
+.btn-elem-order {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  border-radius: 3px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  padding: 0;
+}
+
+.btn-elem-order:hover:not(:disabled) {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-elem-order:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.slicer-element-card.dragging {
+  opacity: 0.45;
+  border-style: dashed;
+  border-color: #38bdf8;
+}
+
+.slicer-element-card.drag-over {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.elem-drag-handle {
+  cursor: grab;
+  color: #64748b;
+  font-size: 0.75rem;
+  user-select: none;
+  display: flex;
+  align-items: center;
+}
+
+.elem-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Rig Layers Tab Card Styles */
+.layer-item-card {
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.layer-item-card:hover {
+  background: #141f36;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.layer-item-card.selected {
+  background: #172540;
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.layer-item-card.dragging {
+  opacity: 0.45;
+  border-style: dashed;
+  border-color: #38bdf8;
+}
+
+.layer-item-card.drag-over {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.align-hud-order-section {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  padding-right: 8px;
+}
+
+
+
 

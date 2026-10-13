@@ -232,6 +232,7 @@ export interface ViewArtworkData {
   joints: Record<string, { x: number; y: number }>;
   envelopes: Record<string, number>;
   parts: Record<string, BonePartAttachment>;
+  boneOrder?: AnatomicalJointId[];
   visible: boolean;
 }
 
@@ -247,6 +248,7 @@ export interface RigProjectData {
     fileSize?: string;
     joints: Record<string, { x: number; y: number }>;
     envelopes: Record<string, number>;
+    boneOrder?: AnatomicalJointId[];
     parts: Record<string, {
       id?: string;
       boneId: AnatomicalJointId;

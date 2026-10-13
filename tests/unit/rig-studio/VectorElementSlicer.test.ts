@@ -102,4 +102,93 @@ describe('VectorElementSlicer - Polygon Editing Tools', () => {
     expect(success).toBe(true);
     expect(slicer.getSelectedElement()?.polygon.length).toBeLessThanOrEqual(5);
   });
+
+  describe('Element Order Management', () => {
+    beforeEach(() => {
+      const elemA: VectorOutlineElement = {
+        id: 'el_A',
+        name: 'Head',
+        polygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+        bounds: { x: 0, y: 0, width: 10, height: 10 },
+        pivot: { x: 5, y: 5 },
+        deformationMode: 'cutout'
+      };
+      const elemB: VectorOutlineElement = {
+        id: 'el_B',
+        name: 'Torso',
+        polygon: [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }],
+        bounds: { x: 10, y: 10, width: 10, height: 10 },
+        pivot: { x: 15, y: 15 },
+        deformationMode: 'cutout'
+      };
+      const elemC: VectorOutlineElement = {
+        id: 'el_C',
+        name: 'Leg',
+        polygon: [{ x: 20, y: 20 }, { x: 30, y: 20 }, { x: 30, y: 30 }],
+        bounds: { x: 20, y: 20, width: 10, height: 10 },
+        pivot: { x: 25, y: 25 },
+        deformationMode: 'cutout'
+      };
+      slicer.setElements([elemA, elemB, elemC]);
+    });
+
+    it('moves an element up one slot', () => {
+      // Initially: ['el_A', 'el_B', 'el_C']
+      slicer.moveElementUp('el_B');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_A', 'el_C']);
+
+      // el_B is now at index 0, moving up again is a no-op
+      slicer.moveElementUp('el_B');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_A', 'el_C']);
+    });
+
+    it('moves an element down one slot', () => {
+      // Initially: ['el_A', 'el_B', 'el_C']
+      slicer.moveElementDown('el_B');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_A', 'el_C', 'el_B']);
+
+      // el_B is now at the end, moving down again is a no-op
+      slicer.moveElementDown('el_B');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_A', 'el_C', 'el_B']);
+    });
+
+    it('moves an element to the front (top-most layer / end of array)', () => {
+      slicer.moveElementToFront('el_A');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_C', 'el_A']);
+    });
+
+    it('moves an element to the back (bottom-most layer / start of array)', () => {
+      slicer.moveElementToBack('el_C');
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_C', 'el_A', 'el_B']);
+    });
+
+    it('reorders arbitrary element indices (drag and drop)', () => {
+      // Reorder from index 0 to 2
+      slicer.reorderElement(0, 2);
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_C', 'el_A']);
+
+      // Invalid indices do nothing
+      slicer.reorderElement(-1, 2);
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_C', 'el_A']);
+      slicer.reorderElement(1, 99);
+      expect(slicer.getElements().map(e => e.id)).toEqual(['el_B', 'el_C', 'el_A']);
+    });
+
+    it('triggers onElementsChange callback during reorder', () => {
+      let notifiedIds: string[] = [];
+      const testContainer = document.createElement('div');
+      const testSlicer = new VectorElementSlicer(testContainer, {
+        onElementsChange: (elems) => {
+          notifiedIds = elems.map(e => e.id);
+        }
+      });
+      testSlicer.setElements([
+        { id: '1', name: '1', polygon: [], bounds: { x:0, y:0, width:1, height:1 }, pivot: { x:0, y:0 }, deformationMode: 'cutout' },
+        { id: '2', name: '2', polygon: [], bounds: { x:0, y:0, width:1, height:1 }, pivot: { x:0, y:0 }, deformationMode: 'cutout' }
+      ]);
+
+      testSlicer.moveElementDown('1');
+      expect(notifiedIds).toEqual(['2', '1']);
+    });
+  });
 });

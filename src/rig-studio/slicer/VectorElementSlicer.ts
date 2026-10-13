@@ -1085,6 +1085,56 @@ export class VectorElementSlicer {
     }
   }
 
+  public moveElementUp(id: string): void {
+    const idx = this.elements.findIndex(el => el.id === id);
+    if (idx > 0) {
+      const item = this.elements.splice(idx, 1)[0];
+      this.elements.splice(idx - 1, 0, item);
+      this.render();
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
+  public moveElementDown(id: string): void {
+    const idx = this.elements.findIndex(el => el.id === id);
+    if (idx >= 0 && idx < this.elements.length - 1) {
+      const item = this.elements.splice(idx, 1)[0];
+      this.elements.splice(idx + 1, 0, item);
+      this.render();
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
+  public moveElementToFront(id: string): void {
+    const idx = this.elements.findIndex(el => el.id === id);
+    if (idx >= 0 && idx < this.elements.length - 1) {
+      const item = this.elements.splice(idx, 1)[0];
+      this.elements.push(item);
+      this.render();
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
+  public moveElementToBack(id: string): void {
+    const idx = this.elements.findIndex(el => el.id === id);
+    if (idx > 0) {
+      const item = this.elements.splice(idx, 1)[0];
+      this.elements.unshift(item);
+      this.render();
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
+  public reorderElement(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 0 || fromIndex >= this.elements.length) return;
+    if (toIndex < 0 || toIndex >= this.elements.length) return;
+    if (fromIndex === toIndex) return;
+    const item = this.elements.splice(fromIndex, 1)[0];
+    this.elements.splice(toIndex, 0, item);
+    this.render();
+    if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+  }
+
   public autoTraceAllElements(alphaThreshold = 25, epsilon = 2.0): VectorOutlineElement[] {
     if (!this.image || !this.offscreenCtx) return [];
     const w = this.image.naturalWidth;

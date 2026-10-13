@@ -10,6 +10,7 @@ import {
   ANATOMICAL_BONES,
   BONE_CONNECTIONS,
   DEFAULT_ENVELOPES,
+  DEFAULT_BONE_DRAW_ORDER,
   getDefaultJointPositions,
   pathCapsule,
   poseJointPreservingBones
@@ -50,6 +51,9 @@ export class RigStudioCanvas {
 
   // Attached parts per bone
   private parts: Record<string, BonePartAttachment> = {};
+
+  // Z-Order / Layer Draw Order for bones and attached graphics (bottom to top)
+  private boneDrawOrder: AnatomicalJointId[] = [...DEFAULT_BONE_DRAW_ORDER];
 
   // Lock graphic position in world space when dragging bone joints
   private lockGraphicPosition = false;
@@ -193,6 +197,95 @@ export class RigStudioCanvas {
       }
     }
     this.render();
+  }
+
+  public getBoneDrawOrder(): AnatomicalJointId[] {
+    return [...this.boneDrawOrder];
+  }
+
+  public setBoneDrawOrder(order: AnatomicalJointId[]): void {
+    if (!order || order.length === 0) return;
+    const validSet = new Set(order);
+    const newOrder = [...order];
+    for (const b of DEFAULT_BONE_DRAW_ORDER) {
+      if (!validSet.has(b)) {
+        newOrder.push(b);
+        validSet.add(b);
+      }
+    }
+    this.boneDrawOrder = newOrder;
+    this.render();
+  }
+
+  /**
+   * Moves a bone one step up (forward / toward top layer in stacking order).
+   */
+  public moveBoneUp(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx >= 0 && idx < this.boneDrawOrder.length - 1) {
+      const temp = this.boneDrawOrder[idx];
+      this.boneDrawOrder[idx] = this.boneDrawOrder[idx + 1];
+      this.boneDrawOrder[idx + 1] = temp;
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Moves a bone one step down (backward / toward bottom layer in stacking order).
+   */
+  public moveBoneDown(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx > 0) {
+      const temp = this.boneDrawOrder[idx];
+      this.boneDrawOrder[idx] = this.boneDrawOrder[idx - 1];
+      this.boneDrawOrder[idx - 1] = temp;
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Raises a bone to the very top (front-most layer, drawn last).
+   */
+  public moveBoneToTop(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx >= 0 && idx < this.boneDrawOrder.length - 1) {
+      this.boneDrawOrder.splice(idx, 1);
+      this.boneDrawOrder.push(boneId);
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Lowers a bone to the very bottom (back-most layer, drawn first).
+   */
+  public moveBoneToBottom(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx > 0) {
+      this.boneDrawOrder.splice(idx, 1);
+      this.boneDrawOrder.unshift(boneId);
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Reorders a bone from an arbitrary index to another index.
+   */
+  public reorderBone(fromIndex: number, toIndex: number): boolean {
+    if (fromIndex < 0 || fromIndex >= this.boneDrawOrder.length) return false;
+    if (toIndex < 0 || toIndex >= this.boneDrawOrder.length) return false;
+    if (fromIndex === toIndex) return false;
+    const item = this.boneDrawOrder.splice(fromIndex, 1)[0];
+    this.boneDrawOrder.splice(toIndex, 0, item);
+    this.render();
+    return true;
   }
 
   public setDragHoverPart(part: any | null): void {
@@ -399,7 +492,8 @@ export class RigStudioCanvas {
     view: StudioView,
     joints?: Record<AnatomicalJointId, { x: number; y: number }>,
     envelopes?: Record<string, number>,
-    partsMap?: Record<string, BonePartAttachment>
+    partsMap?: Record<string, BonePartAttachment>,
+    boneOrder?: AnatomicalJointId[]
   ): void {
     this.currentView = view;
     if (joints && Object.keys(joints).length > 0) {
@@ -420,6 +514,11 @@ export class RigStudioCanvas {
       }
     } else {
       this.parts = {};
+    }
+    if (boneOrder && boneOrder.length > 0) {
+      this.setBoneDrawOrder(boneOrder);
+    } else {
+      this.boneDrawOrder = [...DEFAULT_BONE_DRAW_ORDER];
     }
     this.selectedJointId = null;
     this.render();
@@ -1316,168 +1415,130 @@ export class RigStudioCanvas {
     };
 
     this.ctx.save();
-
-    // Layer 1: Far Arm (Right Upper Arm, Forearm, Hand)
-    const partShR = getPart('shoulder_r');
-    if (partShR) {
-      const seg = this.getBoneSegmentJoints('shoulder_r', pj);
-      const rSeg = this.getBoneSegmentJoints('shoulder_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partShR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, this.getEnvelopeRadius('shoulder_r'));
+    for (const boneId of this.boneDrawOrder) {
+      this.drawBoneSegment(boneId, pj, rj, img, getPart);
     }
-
-    const partElbR = getPart('elbow_r');
-    if (partElbR) {
-      const seg = this.getBoneSegmentJoints('elbow_r', pj);
-      const rSeg = this.getBoneSegmentJoints('elbow_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partElbR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, this.getEnvelopeRadius('elbow_r'));
-    }
-
-    const partWriR = getPart('wrist_r');
-    if (partWriR) {
-      const seg = this.getBoneSegmentJoints('wrist_r', pj);
-      const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partWriR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
-      const pSeg = this.getBoneSegmentJoints('wrist_r', pj);
-      if (rSeg && pSeg) {
-        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_r'));
-      }
-    }
-
-    // Layer 2: Far Leg (Right Thigh, Calf, Boot)
-    const partHipR = getPart('hip_r');
-    if (partHipR) {
-      const seg = this.getBoneSegmentJoints('hip_r', pj);
-      const rSeg = this.getBoneSegmentJoints('hip_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partHipR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, this.getEnvelopeRadius('hip_r'));
-    }
-
-    const partKneR = getPart('knee_r');
-    if (partKneR) {
-      const seg = this.getBoneSegmentJoints('knee_r', pj);
-      const rSeg = this.getBoneSegmentJoints('knee_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partKneR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, this.getEnvelopeRadius('knee_r'));
-    }
-
-    const partAnkR = getPart('ankle_r');
-    if (partAnkR) {
-      const seg = this.getBoneSegmentJoints('ankle_r', pj);
-      const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
-      if (seg && rSeg) this.drawAttachedPart(partAnkR, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
-      const pSeg = this.getBoneSegmentJoints('ankle_r', pj);
-      if (rSeg && pSeg) {
-        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_r'));
-      }
-    }
-
-    // Layer 3: Torso (Spine between hip midpoint and chest/neck)
-    const partTorso = getPart('chest') || getPart('neck');
-    if (partTorso) {
-      const seg = this.getBoneSegmentJoints('chest', pj) || this.getBoneSegmentJoints('neck', pj);
-      const rSeg = this.getBoneSegmentJoints('chest', rj) || this.getBoneSegmentJoints('neck', rj);
-      if (seg && rSeg) this.drawAttachedPart(partTorso, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      const restHipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
-      const posedHipMid = { x: (pj.hip_l.x + pj.hip_r.x) / 2, y: (pj.hip_l.y + pj.hip_r.y) / 2 };
-      const chestPosed = pj.chest || pj.neck;
-      const chestRest = rj.chest || rj.neck;
-      this.drawLimbSegment(img, restHipMid, chestRest, posedHipMid, chestPosed, this.getEnvelopeRadius('chest'));
-    }
-
-    // Layer 3b: Neck (if dedicated neck part attached)
-    const partNeck = getPart('neck');
-    if (partNeck && partNeck !== partTorso) {
-      const seg = this.getBoneSegmentJoints('neck', pj);
-      const rSeg = this.getBoneSegmentJoints('neck', rj);
-      if (seg && rSeg) this.drawAttachedPart(partNeck, seg.p1, seg.p2, rSeg.p1);
-    }
-
-    // Layer 4: Near Leg (Left Thigh, Calf, Boot)
-    const partHipL = getPart('hip_l');
-    if (partHipL) {
-      const seg = this.getBoneSegmentJoints('hip_l', pj);
-      const rSeg = this.getBoneSegmentJoints('hip_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partHipL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
-    }
-
-    const partKneL = getPart('knee_l');
-    if (partKneL) {
-      const seg = this.getBoneSegmentJoints('knee_l', pj);
-      const rSeg = this.getBoneSegmentJoints('knee_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partKneL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
-    }
-
-    const partAnkL = getPart('ankle_l');
-    if (partAnkL) {
-      const seg = this.getBoneSegmentJoints('ankle_l', pj);
-      const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partAnkL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
-      const pSeg = this.getBoneSegmentJoints('ankle_l', pj);
-      if (rSeg && pSeg) {
-        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_l'));
-      }
-    }
-
-    // Layer 5: Head (Pivoting around neck)
-    const partHead = getPart('head');
-    if (partHead) {
-      const seg = this.getBoneSegmentJoints('head', pj);
-      const rSeg = this.getBoneSegmentJoints('head', rj);
-      if (seg && rSeg) this.drawAttachedPart(partHead, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
-    }
-
-    // Layer 6: Near Arm (Left Upper Arm, Forearm, Hand)
-    const partShL = getPart('shoulder_l');
-    if (partShL) {
-      const seg = this.getBoneSegmentJoints('shoulder_l', pj);
-      const rSeg = this.getBoneSegmentJoints('shoulder_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partShL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
-    }
-
-    const partElbL = getPart('elbow_l');
-    if (partElbL) {
-      const seg = this.getBoneSegmentJoints('elbow_l', pj);
-      const rSeg = this.getBoneSegmentJoints('elbow_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partElbL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
-    }
-
-    const partWriL = getPart('wrist_l');
-    if (partWriL) {
-      const seg = this.getBoneSegmentJoints('wrist_l', pj);
-      const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
-      if (seg && rSeg) this.drawAttachedPart(partWriL, seg.p1, seg.p2, rSeg.p1);
-    } else if (img) {
-      const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
-      const pSeg = this.getBoneSegmentJoints('wrist_l', pj);
-      if (rSeg && pSeg) {
-        this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_l'));
-      }
-    }
-
     this.ctx.restore();
+  }
+
+  private drawBoneSegment(
+    boneId: AnatomicalJointId,
+    pj: Record<AnatomicalJointId, { x: number; y: number }>,
+    rj: Record<AnatomicalJointId, { x: number; y: number }>,
+    img: HTMLImageElement | null,
+    getPart: (bId: AnatomicalJointId) => BonePartAttachment | null
+  ): void {
+    const part = getPart(boneId);
+    if (part) {
+      const seg = this.getBoneSegmentJoints(boneId, pj);
+      const rSeg = this.getBoneSegmentJoints(boneId, rj);
+      if (seg && rSeg) {
+        this.drawAttachedPart(part, seg.p1, seg.p2, rSeg.p1);
+      }
+      return;
+    }
+
+    if (!img) return;
+
+    switch (boneId) {
+      case 'shoulder_r':
+        if (rj.shoulder_r && rj.elbow_r && pj.shoulder_r && pj.elbow_r) {
+          this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, this.getEnvelopeRadius('shoulder_r'));
+        }
+        break;
+      case 'elbow_r':
+        if (rj.elbow_r && rj.wrist_r && pj.elbow_r && pj.wrist_r) {
+          this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, this.getEnvelopeRadius('elbow_r'));
+        }
+        break;
+      case 'wrist_r': {
+        const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
+        const pSeg = this.getBoneSegmentJoints('wrist_r', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_r'));
+        }
+        break;
+      }
+      case 'hip_r':
+        if (rj.hip_r && rj.knee_r && pj.hip_r && pj.knee_r) {
+          this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, this.getEnvelopeRadius('hip_r'));
+        }
+        break;
+      case 'knee_r':
+        if (rj.knee_r && rj.ankle_r && pj.knee_r && pj.ankle_r) {
+          this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, this.getEnvelopeRadius('knee_r'));
+        }
+        break;
+      case 'ankle_r': {
+        const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
+        const pSeg = this.getBoneSegmentJoints('ankle_r', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_r'));
+        }
+        break;
+      }
+      case 'chest': {
+        if (rj.hip_l && rj.hip_r && pj.hip_l && pj.hip_r) {
+          const restHipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
+          const posedHipMid = { x: (pj.hip_l.x + pj.hip_r.x) / 2, y: (pj.hip_l.y + pj.hip_r.y) / 2 };
+          const chestPosed = pj.chest || pj.neck;
+          const chestRest = rj.chest || rj.neck;
+          if (chestRest && chestPosed) {
+            this.drawLimbSegment(img, restHipMid, chestRest, posedHipMid, chestPosed, this.getEnvelopeRadius('chest'));
+          }
+        }
+        break;
+      }
+      case 'neck': {
+        const seg = this.getBoneSegmentJoints('neck', pj);
+        const rSeg = this.getBoneSegmentJoints('neck', rj);
+        if (seg && rSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, seg.p1, seg.p2, this.getEnvelopeRadius('neck'));
+        }
+        break;
+      }
+      case 'hip_l':
+        if (rj.hip_l && rj.knee_l && pj.hip_l && pj.knee_l) {
+          this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
+        }
+        break;
+      case 'knee_l':
+        if (rj.knee_l && rj.ankle_l && pj.knee_l && pj.ankle_l) {
+          this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
+        }
+        break;
+      case 'ankle_l': {
+        const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
+        const pSeg = this.getBoneSegmentJoints('ankle_l', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_l'));
+        }
+        break;
+      }
+      case 'head':
+        if (rj.neck && rj.head && pj.neck && pj.head) {
+          this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
+        }
+        break;
+      case 'shoulder_l':
+        if (rj.shoulder_l && rj.elbow_l && pj.shoulder_l && pj.elbow_l) {
+          this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
+        }
+        break;
+      case 'elbow_l':
+        if (rj.elbow_l && rj.wrist_l && pj.elbow_l && pj.wrist_l) {
+          this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
+        }
+        break;
+      case 'wrist_l': {
+        const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
+        const pSeg = this.getBoneSegmentJoints('wrist_l', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_l'));
+        }
+        break;
+      }
+    }
   }
 
   public getPartTransformInfo(
@@ -1594,15 +1655,9 @@ export class RigStudioCanvas {
   }
 
   public getPartAtPoint(wx: number, wy: number): AnatomicalJointId | null {
-    const checkOrder: AnatomicalJointId[] = [
-      'wrist_l', 'elbow_l', 'shoulder_l',
-      'ankle_l', 'knee_l', 'hip_l',
-      'head', 'neck', 'chest',
-      'ankle_r', 'knee_r', 'hip_r',
-      'wrist_r', 'elbow_r', 'shoulder_r'
-    ];
-
-    for (const bId of checkOrder) {
+    // Check in reverse draw order so top-most rendered parts are clicked first
+    for (let i = this.boneDrawOrder.length - 1; i >= 0; i--) {
+      const bId = this.boneDrawOrder[i];
       if (this.parts[bId]) {
         const hit = this.hitTestPartGizmo(bId, wx, wy);
         if (hit) return bId;

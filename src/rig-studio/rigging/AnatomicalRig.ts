@@ -71,6 +71,28 @@ export const ANATOMICAL_BONES: AnatomicalBoneDef[] = [
 ];
 
 /**
+ * Default standard layer stacking order for character bones (rendered from bottom to top).
+ * Far limbs are drawn behind the torso, near limbs and head in front.
+ */
+export const DEFAULT_BONE_DRAW_ORDER: AnatomicalJointId[] = [
+  'shoulder_r',
+  'elbow_r',
+  'wrist_r',
+  'hip_r',
+  'knee_r',
+  'ankle_r',
+  'chest',
+  'neck',
+  'hip_l',
+  'knee_l',
+  'ankle_l',
+  'head',
+  'shoulder_l',
+  'elbow_l',
+  'wrist_l'
+];
+
+/**
  * Returns default anatomical positions scaled and fitted to image bounds.
  * Origin (0,0) is at character ground center (between feet).
  */
