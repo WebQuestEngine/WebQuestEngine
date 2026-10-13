@@ -33,6 +33,15 @@ export interface RigPartItem {
   pivotY?: number;
 }
 
+interface StudioHistoryState {
+  description: string;
+  view: StudioView;
+  joints: Record<string, { x: number; y: number }>;
+  envelopes: Record<string, number>;
+  parts: Record<string, BonePartAttachment>;
+  selectedJointId: AnatomicalJointId | null;
+}
+
 export class RigStudioApp {
   private container: HTMLElement;
   private bridge: RigStudioBridge;
@@ -111,6 +120,12 @@ export class RigStudioApp {
   private selectedJointId: AnatomicalJointId | null = null;
   private canvas: RigStudioCanvas | null = null;
 
+  // Undo / Redo History Stack
+  private undoStack: StudioHistoryState[] = [];
+  private redoStack: StudioHistoryState[] = [];
+  private readonly MAX_HISTORY_STEPS = 50;
+  private isPerformingUndoRedo = false;
+
   constructor(container: HTMLElement) {
     this.container = container;
     this.bridge = new RigStudioBridge();
@@ -166,6 +181,12 @@ export class RigStudioApp {
         </div>
 
         <div class="studio-header-actions">
+          <button class="btn-studio" id="btn-studio-undo" title="Undo last change (Ctrl+Z)" disabled style="opacity:0.4;">
+            ↶ Undo
+          </button>
+          <button class="btn-studio" id="btn-studio-redo" title="Redo last change (Ctrl+Y)" disabled style="opacity:0.4;">
+            ↷ Redo
+          </button>
           <button class="btn-studio btn-load-demo" title="Load sample fully rigged character (Sir Ronald) with all bone graphics attached">
             ⚔️ Load Demo Rig
           </button>
@@ -225,6 +246,8 @@ export class RigStudioApp {
               <button class="btn-hud-fit" id="btn-fit-view">Fit</button>
               <button class="btn-hud-fit" id="btn-reset-view">Center</button>
             </div>
+            <!-- Floating WYSIWYG Alignment Toolbar for Selected Bone Graphic -->
+            <div id="canvas-part-alignment-bar" class="canvas-part-alignment-bar" style="display:none;"></div>
           </div>
 
           <!-- Viewport 2: Element Slicer Canvas -->
@@ -273,9 +296,19 @@ export class RigStudioApp {
       onJointSelected: (jointId) => {
         this.selectedJointId = jointId;
         this.renderRightSidebar();
+        this.renderCanvasAlignmentBar();
+      },
+      onBeforeModification: (desc) => {
+        this.recordHistory(desc);
       },
       onJointsModified: (joints) => {
         this.views[this.activeView].joints = { ...joints };
+        this.updateUndoRedoButtons();
+      },
+      onPartModified: (boneId, part) => {
+        this.views[this.activeView].parts[boneId] = part;
+        this.updatePartInspectorValues(boneId, part);
+        this.updateUndoRedoButtons();
       },
       onPartDroppedOnBone: (boneId, partData) => {
         this.attachPartToBone(boneId, partData);
@@ -294,6 +327,32 @@ export class RigStudioApp {
   }
 
   private bindDOMEvents(): void {
+    // Undo & Redo Header Buttons
+    this.container.querySelector('#btn-studio-undo')?.addEventListener('click', () => {
+      this.undo();
+    });
+    this.container.querySelector('#btn-studio-redo')?.addEventListener('click', () => {
+      this.redo();
+    });
+
+    // Global Undo / Redo Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z / Cmd equivalents)
+    window.addEventListener('keydown', (e) => {
+      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (isInput && (e.target as HTMLInputElement).type === 'text') return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.redo();
+        } else {
+          this.undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        if (isInput && (e.target as HTMLInputElement).type === 'text') return;
+        e.preventDefault();
+        this.redo();
+      }
+    });
+
     // Studio Mode Switcher (Rig vs Slicer)
     this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -454,6 +513,7 @@ export class RigStudioApp {
 
     this.renderLeftSidebar();
     this.renderRightSidebar();
+    this.renderCanvasAlignmentBar();
   }
 
   public switchStudioMode(mode: 'rig' | 'slicer'): void {
@@ -468,6 +528,8 @@ export class RigStudioApp {
 
     if (rigViewport) rigViewport.style.display = mode === 'rig' ? 'block' : 'none';
     if (slicerViewport) slicerViewport.style.display = mode === 'slicer' ? 'flex' : 'none';
+
+    this.renderCanvasAlignmentBar();
 
     if (mode === 'slicer') {
       this.initSlicerIfNeeded();
@@ -805,6 +867,32 @@ export class RigStudioApp {
                       `).join('')}
                     </select>
                   </div>
+
+                  <!-- Bone Origin & Target Joints Dropdowns -->
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; background:rgba(0,0,0,0.22); border-radius:4px; padding:3px 6px;">
+                    <div style="display:flex; align-items:center; gap:4px; min-width:0;">
+                      <span style="font-size:0.62rem; color:#94a3b8; font-weight:600; white-space:nowrap;">Origin:</span>
+                      <select class="select-slicer-elem-origin" data-elem-id="${el.id}" style="flex:1; min-width:0; font-size:0.63rem; background:#0b1120; border:1px solid rgba(255,255,255,0.12); color:#f1f5f9; border-radius:3px; padding:2px 3px;">
+                        <option value="">Default Origin</option>
+                        ${ANATOMICAL_JOINTS.map(j => `
+                          <option value="${j.id}" ${el.originJointId === j.id ? 'selected' : ''}>
+                            ${j.name}
+                          </option>
+                        `).join('')}
+                      </select>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px; min-width:0;">
+                      <span style="font-size:0.62rem; color:#38bdf8; font-weight:600; white-space:nowrap;">Target:</span>
+                      <select class="select-slicer-elem-target" data-elem-id="${el.id}" style="flex:1; min-width:0; font-size:0.63rem; background:#0b1120; border:1px solid rgba(255,255,255,0.12); color:#38bdf8; border-radius:3px; padding:2px 3px;">
+                        <option value="">Default Target</option>
+                        ${ANATOMICAL_JOINTS.map(j => `
+                          <option value="${j.id}" ${el.targetJointId === j.id ? 'selected' : ''}>
+                            ${j.name}
+                          </option>
+                        `).join('')}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               `;
             }).join('')}
@@ -872,6 +960,17 @@ export class RigStudioApp {
           // Sync element thumbnail and bone attachment live
           const elem = this.slicer.getElements().find(el => el.id === id);
           if (elem) {
+            if (boneId) {
+              const bDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+              if (bDef) {
+                if (!elem.originJointId) elem.originJointId = (bDef.originJointId !== 'hip_mid' ? bDef.originJointId : 'chest') as AnatomicalJointId;
+                if (!elem.targetJointId) elem.targetJointId = bDef.targetJointId as AnatomicalJointId;
+                const origSel = sidebar.querySelector(`.select-slicer-elem-origin[data-elem-id="${id}"]`) as HTMLSelectElement | null;
+                const tgtSel = sidebar.querySelector(`.select-slicer-elem-target[data-elem-id="${id}"]`) as HTMLSelectElement | null;
+                if (origSel && elem.originJointId) origSel.value = elem.originJointId;
+                if (tgtSel && elem.targetJointId) tgtSel.value = elem.targetJointId;
+              }
+            }
             const thumbUrl = this.slicer.generateThumbnail(elem);
             if (thumbUrl) {
               const img = new Image();
@@ -902,6 +1001,8 @@ export class RigStudioApp {
                 const boneAttachment: BonePartAttachment = {
                   id: elem.id,
                   boneId,
+                  originJointId: elem.originJointId,
+                  targetJointId: elem.targetJointId,
                   fileName: elem.name + '.png',
                   imageUrl: thumbUrl,
                   image: img,
@@ -922,6 +1023,46 @@ export class RigStudioApp {
                   }
                 }
               }
+            }
+          }
+        }
+      });
+    });
+
+    // Origin joint change
+    sidebar.querySelectorAll('.select-slicer-elem-origin').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const select = sel as HTMLSelectElement;
+        const id = select.getAttribute('data-elem-id');
+        const origId = (select.value || undefined) as AnatomicalJointId | undefined;
+        if (id && this.slicer) {
+          const elem = this.slicer.getElements().find(el => el.id === id);
+          if (elem) {
+            elem.originJointId = origId;
+            const currentArt = this.views[this.activeView];
+            if (elem.assignedBoneId && currentArt.parts[elem.assignedBoneId]) {
+              currentArt.parts[elem.assignedBoneId].originJointId = origId;
+              this.canvas?.setPart(elem.assignedBoneId, currentArt.parts[elem.assignedBoneId]);
+            }
+          }
+        }
+      });
+    });
+
+    // Target joint change
+    sidebar.querySelectorAll('.select-slicer-elem-target').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const select = sel as HTMLSelectElement;
+        const id = select.getAttribute('data-elem-id');
+        const tgtId = (select.value || undefined) as AnatomicalJointId | undefined;
+        if (id && this.slicer) {
+          const elem = this.slicer.getElements().find(el => el.id === id);
+          if (elem) {
+            elem.targetJointId = tgtId;
+            const currentArt = this.views[this.activeView];
+            if (elem.assignedBoneId && currentArt.parts[elem.assignedBoneId]) {
+              currentArt.parts[elem.assignedBoneId].targetJointId = tgtId;
+              this.canvas?.setPart(elem.assignedBoneId, currentArt.parts[elem.assignedBoneId]);
             }
           }
         }
@@ -984,6 +1125,8 @@ export class RigStudioApp {
         const boneAttachment: BonePartAttachment = {
           id: elem.id,
           boneId: elem.assignedBoneId,
+          originJointId: elem.originJointId,
+          targetJointId: elem.targetJointId,
           fileName: elem.name + '.png',
           imageUrl: thumbUrl,
           image: img,
@@ -1163,6 +1306,22 @@ export class RigStudioApp {
                 <span class="switch-slider"></span>
               </label>
             </div>
+
+            <div class="studio-toggle-row">
+              <span class="toggle-label" title="Keep attached graphics pinned in world space when dragging joint pins">Lock Graphics</span>
+              <label class="studio-switch">
+                <input type="checkbox" id="toggle-lock-graphics" ${this.canvas?.isLockGraphicPosition() ? 'checked' : ''} />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="studio-toggle-row">
+              <span class="toggle-label" title="Underlay character image behind parts for alignment reference">Reference Art</span>
+              <label class="studio-switch">
+                <input type="checkbox" id="toggle-show-refart" ${this.canvas?.isShowReferenceArtwork() ? 'checked' : ''} />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
           </div>
 
           <!-- Additional Actions (Step 4 & 5) -->
@@ -1237,6 +1396,17 @@ export class RigStudioApp {
       this.canvas?.setShowGhost(ghostToggle.checked);
     });
 
+    const lockToggle = sidebar.querySelector('#toggle-lock-graphics') as HTMLInputElement;
+    lockToggle?.addEventListener('change', () => {
+      this.canvas?.setLockGraphicPosition(lockToggle.checked);
+      this.renderCanvasAlignmentBar();
+    });
+
+    const refArtToggle = sidebar.querySelector('#toggle-show-refart') as HTMLInputElement;
+    refArtToggle?.addEventListener('change', () => {
+      this.canvas?.setShowReferenceArtwork(refArtToggle.checked);
+    });
+
     // Action buttons
     sidebar.querySelector('#btn-reset-pose')?.addEventListener('click', () => {
       this.canvas?.resetPose();
@@ -1270,6 +1440,7 @@ export class RigStudioApp {
       rotation?: number;
     }
   ): void {
+    this.recordHistory('Attach Part');
     const applyAttachment = (img: HTMLImageElement) => {
       const currentArt = this.views[this.activeView];
       const part: BonePartAttachment = {
@@ -1282,7 +1453,9 @@ export class RigStudioApp {
         offsetY: partData.offsetY ?? 0,
         rotation: partData.rotation ?? 0,
         pivotX: partData.pivotX,
-        pivotY: partData.pivotY
+        pivotY: partData.pivotY,
+        flipX: (partData as any).flipX ?? false,
+        flipY: (partData as any).flipY ?? false
       };
 
       currentArt.parts[boneId] = part;
@@ -1295,6 +1468,7 @@ export class RigStudioApp {
 
       this.selectedJointId = boneId;
       this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
     };
 
     if (partData.image && partData.image.complete && partData.image.naturalWidth > 0) {
@@ -1629,35 +1803,70 @@ export class RigStudioApp {
                             <div style="font-size:0.68rem; color:#e2e8f0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${part.fileName}">
                               ${part.fileName}
                             </div>
-                            <div style="font-size:0.58rem; color:#38bdf8;">
-                              Pivot: (${((part.pivotX ?? 0.5) * 100).toFixed(0)}%, ${((part.pivotY ?? 0.5) * 100).toFixed(0)}%)
+                            <div style="font-size:0.58rem; color:#38bdf8;" class="part-pivot-label" data-bone-id="${bone.id}">
+                              Pivot: (${Math.round((part.pivotX ?? 0.5) * 100)}%, ${Math.round((part.pivotY ?? 0.5) * 100)}%)
                             </div>
                           </div>
                           <button class="btn-danger-part btn-remove-bone-part" data-bone-id="${bone.id}" style="padding:2px 6px; font-size:0.62rem;" title="Remove graphic from this bone">✕ Detach</button>
                         </div>
 
-                        <!-- Alignment Micro-Adjustment Sliders -->
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:3px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06);">
+                        <!-- Bone Origin & Target Overrides -->
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:2px; background:rgba(0,0,0,0.25); border-radius:3px; padding:2px 4px;">
+                          <div style="display:flex; align-items:center; gap:2px;">
+                            <span style="font-size:0.56rem; color:#94a3b8; white-space:nowrap;">Orig:</span>
+                            <select class="bone-part-origin-select" data-bone-id="${bone.id}" style="flex:1; min-width:0; font-size:0.58rem; background:#0b1120; border:1px solid rgba(255,255,255,0.12); color:#f1f5f9; border-radius:2px; padding:1px 2px;">
+                              <option value="">Default (${originJoint?.name || bone.originJointId})</option>
+                              ${ANATOMICAL_JOINTS.map(j => `
+                                <option value="${j.id}" ${(part.originJointId || bone.originJointId) === j.id ? 'selected' : ''}>${j.name}</option>
+                              `).join('')}
+                            </select>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:2px;">
+                            <span style="font-size:0.56rem; color:#38bdf8; white-space:nowrap;">Tgt:</span>
+                            <select class="bone-part-target-select" data-bone-id="${bone.id}" style="flex:1; min-width:0; font-size:0.58rem; background:#0b1120; border:1px solid rgba(255,255,255,0.12); color:#38bdf8; border-radius:2px; padding:1px 2px;">
+                              <option value="">Default (${bone.targetJointId})</option>
+                              ${ANATOMICAL_JOINTS.map(j => `
+                                <option value="${j.id}" ${(part.targetJointId || bone.targetJointId) === j.id ? 'selected' : ''}>${j.name}</option>
+                              `).join('')}
+                            </select>
+                          </div>
+                        </div>
+
+                        <!-- Alignment Quick Actions Bar -->
+                        <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.06);">
+                          <button class="btn-align-micro btn-part-center" data-bone-id="${bone.id}" title="Center graphic along bone">🎯 Center</button>
+                          <button class="btn-align-micro btn-part-snap-pivot" data-bone-id="${bone.id}" title="Snap graphic pivot to origin joint">📍 Snap Pivot</button>
+                          <button class="btn-align-micro btn-part-fliph" data-bone-id="${bone.id}" title="Flip graphic horizontally (H)">↔️ Flip H</button>
+                          <button class="btn-align-micro btn-part-flipv" data-bone-id="${bone.id}" title="Flip graphic vertically (V)">↕️ Flip V</button>
+                          <button class="btn-align-micro btn-part-rot90" data-bone-id="${bone.id}" title="Rotate by 90°">↺ +90°</button>
+                          <button class="btn-align-micro btn-part-reset" data-bone-id="${bone.id}" title="Reset alignment (R)">🔄 Reset</button>
+                        </div>
+
+                        <!-- Alignment Sliders -->
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-top:2px;">
                           <div style="display:flex; align-items:center; gap:3px;">
                             <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Scale:</span>
-                            <input type="range" class="part-scale-slider" data-bone-id="${bone.id}" min="0.5" max="2.0" step="0.02" value="${part.scale || 1.0}" style="flex:1; height:3px;" />
-                            <span class="part-scale-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${((part.scale || 1.0) * 100).toFixed(0)}%</span>
+                            <input type="range" class="part-scale-slider" data-bone-id="${bone.id}" min="0.1" max="3.0" step="0.02" value="${part.scale || 1.0}" style="flex:1; height:3px;" />
+                            <span class="part-scale-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:28px; text-align:right;">${Math.round((part.scale || 1.0) * 100)}%</span>
                           </div>
                           <div style="display:flex; align-items:center; gap:3px;">
                             <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Rot:</span>
-                            <input type="range" class="part-rot-slider" data-bone-id="${bone.id}" min="-0.785" max="0.785" step="0.02" value="${part.rotation || 0}" style="flex:1; height:3px;" />
-                            <span class="part-rot-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${Math.round((part.rotation || 0) * 180 / Math.PI)}°</span>
+                            <input type="range" class="part-rot-slider" data-bone-id="${bone.id}" min="-3.1415" max="3.1415" step="0.02" value="${part.rotation || 0}" style="flex:1; height:3px;" />
+                            <span class="part-rot-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:28px; text-align:right;">${Math.round((part.rotation || 0) * 180 / Math.PI)}°</span>
                           </div>
                           <div style="display:flex; align-items:center; gap:3px;">
                             <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Off X:</span>
-                            <input type="range" class="part-offx-slider" data-bone-id="${bone.id}" min="-40" max="40" step="1" value="${part.offsetX || 0}" style="flex:1; height:3px;" />
-                            <span class="part-offx-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${part.offsetX || 0}px</span>
+                            <input type="range" class="part-offx-slider" data-bone-id="${bone.id}" min="-250" max="250" step="1" value="${Math.round(part.offsetX || 0)}" style="flex:1; height:3px;" />
+                            <span class="part-offx-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:28px; text-align:right;">${Math.round(part.offsetX || 0)}px</span>
                           </div>
                           <div style="display:flex; align-items:center; gap:3px;">
                             <span style="font-size:0.58rem; color:#94a3b8; width:28px;">Off Y:</span>
-                            <input type="range" class="part-offy-slider" data-bone-id="${bone.id}" min="-40" max="40" step="1" value="${part.offsetY || 0}" style="flex:1; height:3px;" />
-                            <span class="part-offy-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:26px; text-align:right;">${part.offsetY || 0}px</span>
+                            <input type="range" class="part-offy-slider" data-bone-id="${bone.id}" min="-250" max="250" step="1" value="${Math.round(part.offsetY || 0)}" style="flex:1; height:3px;" />
+                            <span class="part-offy-label" data-bone-id="${bone.id}" style="font-size:0.58rem; color:#38bdf8; width:28px; text-align:right;">${Math.round(part.offsetY || 0)}px</span>
                           </div>
+                        </div>
+                        <div style="font-size:0.58rem; color:#64748b; font-style:italic;">
+                          💡 Drag graphic, rotate handle, or scale corners directly on canvas!
                         </div>
                       </div>
                     ` : `
@@ -1874,6 +2083,55 @@ export class RigStudioApp {
       });
     });
 
+    // Quick Alignment Buttons in Bone Part Cards
+    sidebar.querySelectorAll('.btn-part-center').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.centerPartOnBone(bId);
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-part-snap-pivot').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.snapPartPivotToJoint(bId);
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-part-fliph').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.flipPartHorizontal(bId);
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-part-flipv').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.flipPartVertical(bId);
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-part-rot90').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.rotatePart90(bId, true);
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-part-reset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bId = btn.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) this.canvas?.resetPartTransform(bId);
+      });
+    });
+
     // Part alignment sliders
     sidebar.querySelectorAll('.part-scale-slider').forEach(slider => {
       slider.addEventListener('input', (e) => {
@@ -1927,6 +2185,32 @@ export class RigStudioApp {
           this.canvas?.setPart(bId, currentArt.parts[bId]);
           const label = sidebar.querySelector(`.part-offy-label[data-bone-id="${bId}"]`);
           if (label) label.textContent = `${val}px`;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.bone-part-origin-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const select = sel as HTMLSelectElement;
+        const bId = select.getAttribute('data-bone-id') as AnatomicalJointId;
+        const origId = (select.value || undefined) as AnatomicalJointId | undefined;
+        if (bId && currentArt.parts[bId]) {
+          this.recordHistory('Change Part Origin Joint');
+          currentArt.parts[bId].originJointId = origId;
+          this.canvas?.setPart(bId, currentArt.parts[bId]);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.bone-part-target-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const select = sel as HTMLSelectElement;
+        const bId = select.getAttribute('data-bone-id') as AnatomicalJointId;
+        const tgtId = (select.value || undefined) as AnatomicalJointId | undefined;
+        if (bId && currentArt.parts[bId]) {
+          this.recordHistory('Change Part Target Joint');
+          currentArt.parts[bId].targetJointId = tgtId;
+          this.canvas?.setPart(bId, currentArt.parts[bId]);
         }
       });
     });
@@ -2208,7 +2492,9 @@ export class RigStudioApp {
           pivotX: pVal.pivotX,
           pivotY: pVal.pivotY,
           width: pVal.width,
-          height: pVal.height
+          height: pVal.height,
+          flipX: pVal.flipX ?? false,
+          flipY: pVal.flipY ?? false
         };
       }
 
@@ -2327,6 +2613,8 @@ export class RigStudioApp {
                 rotation: partData.rotation ?? 0,
                 pivotX: partData.pivotX,
                 pivotY: partData.pivotY,
+                flipX: partData.flipX ?? false,
+                flipY: partData.flipY ?? false,
                 width: partData.width,
                 height: partData.height,
                 visible: true,
@@ -2394,6 +2682,7 @@ export class RigStudioApp {
 
       this.renderLeftSidebar();
       this.renderRightSidebar();
+      this.renderCanvasAlignmentBar();
     } else if (data.bones || data.skeleton) {
       if (data.skeleton?.questforge?.elements && this.slicer) {
         this.slicer.setElements(data.skeleton.questforge.elements);
@@ -2474,6 +2763,315 @@ export class RigStudioApp {
     };
 
     return spineDoc;
+  }
+
+  private updatePartInspectorValues(boneId: AnatomicalJointId, part: BonePartAttachment): void {
+    const sidebar = this.container.querySelector('#studio-right-sidebar');
+    if (sidebar) {
+      const scaleSlider = sidebar.querySelector(`.part-scale-slider[data-bone-id="${boneId}"]`) as HTMLInputElement | null;
+      const scaleLabel = sidebar.querySelector(`.part-scale-label[data-bone-id="${boneId}"]`);
+      if (scaleSlider && part.scale !== undefined) {
+        scaleSlider.value = String(part.scale);
+        if (scaleLabel) scaleLabel.textContent = `${Math.round(part.scale * 100)}%`;
+      }
+
+      const rotSlider = sidebar.querySelector(`.part-rot-slider[data-bone-id="${boneId}"]`) as HTMLInputElement | null;
+      const rotLabel = sidebar.querySelector(`.part-rot-label[data-bone-id="${boneId}"]`);
+      if (rotSlider && part.rotation !== undefined) {
+        rotSlider.value = String(part.rotation);
+        if (rotLabel) rotLabel.textContent = `${Math.round((part.rotation * 180) / Math.PI)}°`;
+      }
+
+      const offxSlider = sidebar.querySelector(`.part-offx-slider[data-bone-id="${boneId}"]`) as HTMLInputElement | null;
+      const offxLabel = sidebar.querySelector(`.part-offx-label[data-bone-id="${boneId}"]`);
+      if (offxSlider && part.offsetX !== undefined) {
+        offxSlider.value = String(Math.round(part.offsetX));
+        if (offxLabel) offxLabel.textContent = `${Math.round(part.offsetX)}px`;
+      }
+
+      const offySlider = sidebar.querySelector(`.part-offy-slider[data-bone-id="${boneId}"]`) as HTMLInputElement | null;
+      const offyLabel = sidebar.querySelector(`.part-offy-label[data-bone-id="${boneId}"]`);
+      if (offySlider && part.offsetY !== undefined) {
+        offySlider.value = String(Math.round(part.offsetY));
+        if (offyLabel) offyLabel.textContent = `${Math.round(part.offsetY)}px`;
+      }
+    }
+
+    // Sync floating alignment bar without interrupting focused input
+    const bar = this.container.querySelector('#canvas-part-alignment-bar');
+    if (bar && this.selectedJointId === boneId && part.rotation !== undefined) {
+      const rotDeg = Math.round((part.rotation * 180) / Math.PI);
+      const hudSlider = bar.querySelector('.hud-rot-slider') as HTMLInputElement | null;
+      const hudInput = bar.querySelector('.hud-rot-input') as HTMLInputElement | null;
+      if (hudSlider && document.activeElement !== hudSlider) {
+        hudSlider.value = String(rotDeg);
+      }
+      if (hudInput && document.activeElement !== hudInput) {
+        hudInput.value = String(rotDeg);
+      }
+    }
+  }
+
+  private renderCanvasAlignmentBar(): void {
+    const bar = this.container.querySelector('#canvas-part-alignment-bar') as HTMLElement | null;
+    if (!bar) return;
+
+    if (this.activeStudioMode !== 'rig' || !this.selectedJointId) {
+      bar.style.display = 'none';
+      return;
+    }
+
+    const currentArt = this.views[this.activeView];
+    const part = currentArt.parts[this.selectedJointId];
+    if (!part) {
+      bar.style.display = 'none';
+      return;
+    }
+
+    const boneDef = ANATOMICAL_JOINTS.find(b => b.id === this.selectedJointId);
+    const boneLabel = boneDef ? boneDef.name : this.selectedJointId;
+    const isLocked = this.canvas?.isLockGraphicPosition() ?? false;
+    const rotDeg = Math.round(((part.rotation || 0) * 180) / Math.PI);
+    const canUndo = this.undoStack.length > 0;
+
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+      <div class="align-hud-info">
+        <span class="align-hud-badge">🎯 ${boneLabel}</span>
+        <span class="align-hud-name" title="${part.fileName}">${part.fileName}</span>
+      </div>
+      <div class="align-hud-rot-section">
+        <span style="font-size:0.65rem; color:#94a3b8; font-weight:600;">Rot:</span>
+        <input type="range" class="hud-rot-slider" min="-180" max="180" step="1" value="${rotDeg}" title="Drag to rotate smoothly (-180° to 180°)" />
+        <div style="display:flex; align-items:center; gap:1px;">
+          <input type="number" class="hud-rot-input" min="-180" max="180" step="1" value="${rotDeg}" title="Type exact degrees (-180° to 180°)" />
+          <span style="font-size:0.62rem; color:#38bdf8; font-weight:700;">°</span>
+        </div>
+        <button class="btn-align-micro" id="hud-btn-rot-m15" title="Rotate -15°">↺ -15°</button>
+        <button class="btn-align-micro" id="hud-btn-rot-p15" title="Rotate +15°">↻ +15°</button>
+        <button class="btn-align-micro" id="hud-btn-rot-90" title="Rotate +90°">↺ 90°</button>
+        <button class="btn-align-micro" id="hud-btn-rot-zero" title="Reset angle to 0°">0°</button>
+      </div>
+      <div class="align-hud-actions">
+        <button class="btn-align-pill" id="hud-btn-center" title="Center graphic along bone length">🎯 Center</button>
+        <button class="btn-align-pill" id="hud-btn-snap-pivot" title="Snap graphic pivot to origin joint pin">📍 Snap Pivot</button>
+        <button class="btn-align-pill" id="hud-btn-fliph" title="Flip graphic horizontally (H)">↔️ Flip H</button>
+        <button class="btn-align-pill" id="hud-btn-flipv" title="Flip graphic vertically (V)">↕️ Flip V</button>
+        <button class="btn-align-pill" id="hud-btn-reset" title="Reset alignment transforms (R)">🔄 Reset</button>
+        <button class="btn-align-pill ${isLocked ? 'active' : ''}" id="hud-btn-toggle-lock" title="Lock Graphic Position" style="${isLocked ? 'background:#0284c7; border-color:#38bdf8;' : ''}">📌 ${isLocked ? 'Locked' : 'Lock Graphic'}</button>
+        <button class="btn-align-pill" id="hud-btn-undo" title="Undo change (Ctrl+Z)" ${canUndo ? '' : 'disabled style="opacity:0.4;"'}>↶ Undo</button>
+      </div>
+    `;
+
+    const bId = this.selectedJointId;
+    const rotSlider = bar.querySelector('.hud-rot-slider') as HTMLInputElement | null;
+    const rotInput = bar.querySelector('.hud-rot-input') as HTMLInputElement | null;
+
+    rotSlider?.addEventListener('mousedown', () => {
+      this.recordHistory('Rotate Graphic');
+    });
+
+    rotSlider?.addEventListener('input', (e) => {
+      const val = parseInt((e.target as HTMLInputElement).value, 10);
+      if (!isNaN(val)) {
+        if (rotInput) rotInput.value = String(val);
+        const rad = (val * Math.PI) / 180;
+        this.canvas?.setPartRotation(bId, rad);
+      }
+    });
+
+    rotInput?.addEventListener('focus', () => {
+      this.recordHistory('Rotate Graphic');
+    });
+
+    rotInput?.addEventListener('input', (e) => {
+      const val = parseInt((e.target as HTMLInputElement).value, 10);
+      if (!isNaN(val)) {
+        if (rotSlider) rotSlider.value = String(val);
+        const rad = (val * Math.PI) / 180;
+        this.canvas?.setPartRotation(bId, rad);
+      }
+    });
+
+    bar.querySelector('#hud-btn-rot-m15')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.rotatePartBy(bId, (-15 * Math.PI) / 180);
+    });
+
+    bar.querySelector('#hud-btn-rot-p15')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.rotatePartBy(bId, (15 * Math.PI) / 180);
+    });
+
+    bar.querySelector('#hud-btn-rot-90')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.rotatePart90(bId, true);
+    });
+
+    bar.querySelector('#hud-btn-rot-zero')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.setPartRotation(bId, 0);
+    });
+
+    bar.querySelector('#hud-btn-center')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.centerPartOnBone(bId);
+    });
+
+    bar.querySelector('#hud-btn-snap-pivot')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.snapPartPivotToJoint(bId);
+    });
+
+    bar.querySelector('#hud-btn-fliph')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.flipPartHorizontal(bId);
+    });
+
+    bar.querySelector('#hud-btn-flipv')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.flipPartVertical(bId);
+    });
+
+    bar.querySelector('#hud-btn-reset')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.canvas?.resetPartTransform(bId);
+    });
+
+    bar.querySelector('#hud-btn-toggle-lock')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const current = this.canvas?.isLockGraphicPosition() ?? false;
+      const next = !current;
+      this.canvas?.setLockGraphicPosition(next);
+      const leftToggle = this.container.querySelector('#toggle-lock-graphics') as HTMLInputElement | null;
+      if (leftToggle) leftToggle.checked = next;
+      this.renderCanvasAlignmentBar();
+    });
+
+    bar.querySelector('#hud-btn-undo')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.undo();
+    });
+  }
+
+  public recordHistory(description: string): void {
+    if (this.isPerformingUndoRedo) return;
+    const snap = this.createHistorySnapshot(description);
+    this.undoStack.push(snap);
+    if (this.undoStack.length > this.MAX_HISTORY_STEPS) {
+      this.undoStack.shift();
+    }
+    this.redoStack = [];
+    this.updateUndoRedoButtons();
+  }
+
+  private createHistorySnapshot(description: string): StudioHistoryState {
+    const currentArt = this.views[this.activeView];
+    const clonedJoints: Record<string, { x: number; y: number }> = this.canvas
+      ? JSON.parse(JSON.stringify(this.canvas.getJoints()))
+      : JSON.parse(JSON.stringify(currentArt.joints));
+
+    const clonedEnvelopes: Record<string, number> = this.canvas
+      ? { ...this.canvas.getEnvelopes() }
+      : { ...currentArt.envelopes };
+
+    const clonedParts: Record<string, BonePartAttachment> = {};
+    const sourceParts = this.canvas ? this.canvas.getParts() : currentArt.parts;
+    for (const [k, v] of Object.entries(sourceParts)) {
+      if (v) {
+        clonedParts[k] = { ...v };
+      }
+    }
+
+    return {
+      description,
+      view: this.activeView,
+      joints: clonedJoints,
+      envelopes: clonedEnvelopes,
+      parts: clonedParts,
+      selectedJointId: this.selectedJointId
+    };
+  }
+
+  public undo(): void {
+    if (this.undoStack.length === 0) return;
+    this.isPerformingUndoRedo = true;
+    try {
+      const currentState = this.createHistorySnapshot('Current State');
+      this.redoStack.push(currentState);
+      const targetState = this.undoStack.pop()!;
+      this.restoreHistoryState(targetState);
+    } finally {
+      this.isPerformingUndoRedo = false;
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  public redo(): void {
+    if (this.redoStack.length === 0) return;
+    this.isPerformingUndoRedo = true;
+    try {
+      const currentState = this.createHistorySnapshot('Current State');
+      this.undoStack.push(currentState);
+      const targetState = this.redoStack.pop()!;
+      this.restoreHistoryState(targetState);
+    } finally {
+      this.isPerformingUndoRedo = false;
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  private restoreHistoryState(state: StudioHistoryState): void {
+    if (this.activeView !== state.view) {
+      this.switchView(state.view);
+    }
+
+    const currentArt = this.views[this.activeView];
+    currentArt.joints = JSON.parse(JSON.stringify(state.joints));
+    currentArt.envelopes = { ...state.envelopes };
+    currentArt.parts = {};
+    for (const [k, v] of Object.entries(state.parts)) {
+      currentArt.parts[k as AnatomicalJointId] = { ...v };
+    }
+
+    if (this.canvas) {
+      this.canvas.setJoints(currentArt.joints);
+      this.canvas.setEnvelopes(currentArt.envelopes);
+      this.canvas.setParts(currentArt.parts);
+      this.canvas.selectJoint(state.selectedJointId);
+      this.canvas.render();
+    }
+
+    this.selectedJointId = state.selectedJointId;
+    this.renderLeftSidebar();
+    this.renderRightSidebar();
+    this.renderCanvasAlignmentBar();
+  }
+
+  private updateUndoRedoButtons(): void {
+    const undoBtn = this.container.querySelector('#btn-studio-undo') as HTMLButtonElement | null;
+    const redoBtn = this.container.querySelector('#btn-studio-redo') as HTMLButtonElement | null;
+    const hudUndoBtn = this.container.querySelector('#hud-btn-undo') as HTMLButtonElement | null;
+
+    const canUndo = this.undoStack.length > 0;
+    const canRedo = this.redoStack.length > 0;
+
+    if (undoBtn) {
+      undoBtn.disabled = !canUndo;
+      undoBtn.style.opacity = canUndo ? '1' : '0.4';
+      undoBtn.title = canUndo ? `Undo: ${this.undoStack[this.undoStack.length - 1].description} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+    }
+
+    if (redoBtn) {
+      redoBtn.disabled = !canRedo;
+      redoBtn.style.opacity = canRedo ? '1' : '0.4';
+      redoBtn.title = canRedo ? `Redo: ${this.redoStack[this.redoStack.length - 1].description} (Ctrl+Y)` : 'Redo (Ctrl+Y)';
+    }
+
+    if (hudUndoBtn) {
+      hudUndoBtn.disabled = !canUndo;
+      hudUndoBtn.style.opacity = canUndo ? '1' : '0.4';
+    }
   }
 
   private updateHeaderTitle(): void {

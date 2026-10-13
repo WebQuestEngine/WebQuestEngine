@@ -1072,6 +1072,19 @@ export class VectorElementSlicer {
     }
   }
 
+  public updateElementEndpoints(
+    id: string,
+    originJointId?: AnatomicalJointId,
+    targetJointId?: AnatomicalJointId
+  ): void {
+    const elem = this.elements.find(el => el.id === id);
+    if (elem) {
+      if (originJointId !== undefined) elem.originJointId = originJointId;
+      if (targetJointId !== undefined) elem.targetJointId = targetJointId;
+      if (this.events.onElementsChange) this.events.onElementsChange(this.elements);
+    }
+  }
+
   public autoTraceAllElements(alphaThreshold = 25, epsilon = 2.0): VectorOutlineElement[] {
     if (!this.image || !this.offscreenCtx) return [];
     const w = this.image.naturalWidth;

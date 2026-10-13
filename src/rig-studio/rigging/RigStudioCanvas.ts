@@ -18,6 +18,8 @@ import {
 export interface RigStudioCanvasEvents {
   onJointSelected?: (jointId: AnatomicalJointId | null) => void;
   onJointsModified?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
+  onPartModified?: (boneId: AnatomicalJointId, part: BonePartAttachment) => void;
+  onBeforeModification?: (description: string) => void;
   onImageDropped?: (file: File) => void;
   onPartDroppedOnBone?: (boneId: AnatomicalJointId, partData: any) => void;
   onFileDroppedOnBone?: (boneId: AnatomicalJointId, file: File) => void;
@@ -48,6 +50,30 @@ export class RigStudioCanvas {
 
   // Attached parts per bone
   private parts: Record<string, BonePartAttachment> = {};
+
+  // Lock graphic position in world space when dragging bone joints
+  private lockGraphicPosition = false;
+
+  // Reference artwork overlay behind parts
+  private showReferenceArtwork = false;
+  private referenceArtworkOpacity = 0.35;
+
+  // On-Canvas WYSIWYG Graphic Transform Gizmo interaction
+  private isTransformingPart = false;
+  private transformAction: 'translate' | 'rotate' | 'scale' | 'pivot' | null = null;
+  private transformHandle: 'body' | 'rotate' | 'pivot' | 'tl' | 'tr' | 'bl' | 'br' | null = null;
+  private hoveredGizmoHandle: 'body' | 'rotate' | 'pivot' | 'tl' | 'tr' | 'bl' | 'br' | null = null;
+  private transformStartWorld = { x: 0, y: 0 };
+  private transformStartAngle = 0;
+  private transformStartDist = 1;
+  private transformStartSnapshot: {
+    offsetX: number;
+    offsetY: number;
+    rotation: number;
+    scale: number;
+    pivotX: number;
+    pivotY: number;
+  } | null = null;
 
   private selectedJointId: AnatomicalJointId | null = null;
   private hoveredJointId: AnatomicalJointId | null = null;
@@ -181,6 +207,141 @@ export class RigStudioCanvas {
 
   public getShowGhost(): boolean {
     return this.showGhostPose;
+  }
+
+  public setLockGraphicPosition(locked: boolean): void {
+    this.lockGraphicPosition = locked;
+  }
+
+  public isLockGraphicPosition(): boolean {
+    return this.lockGraphicPosition;
+  }
+
+  public setShowReferenceArtwork(show: boolean): void {
+    this.showReferenceArtwork = show;
+    this.render();
+  }
+
+  public isShowReferenceArtwork(): boolean {
+    return this.showReferenceArtwork;
+  }
+
+  public setReferenceArtworkOpacity(opacity: number): void {
+    this.referenceArtworkOpacity = Math.max(0, Math.min(1, opacity));
+    this.render();
+  }
+
+  public getReferenceArtworkOpacity(): number {
+    return this.referenceArtworkOpacity;
+  }
+
+  public centerPartOnBone(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    const seg = this.getBoneSegmentJoints(boneId, this.toolMode === 'preview' ? this.previewJoints : this.restJoints);
+    if (!seg) return;
+
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+    const boneLen = Math.hypot(seg.p2.x - seg.p1.x, seg.p2.y - seg.p1.y);
+
+    part.offsetX = 0;
+    if (isSpine) {
+      part.offsetY = 0;
+    } else {
+      part.offsetY = Math.round(boneLen / 2);
+    }
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public snapPartPivotToJoint(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    part.offsetX = 0;
+    part.offsetY = 0;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public alignPartRotationToBone(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Align Angle to Bone');
+    part.rotation = 0;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public setPartRotation(boneId: AnatomicalJointId, angleRad: number): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Rotate Graphic');
+    let normalized = angleRad;
+    while (normalized > Math.PI) normalized -= 2 * Math.PI;
+    while (normalized < -Math.PI) normalized += 2 * Math.PI;
+    part.rotation = normalized;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public rotatePartBy(boneId: AnatomicalJointId, deltaRad: number): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Rotate Graphic');
+    let newRot = (part.rotation || 0) + deltaRad;
+    while (newRot > Math.PI) newRot -= 2 * Math.PI;
+    while (newRot < -Math.PI) newRot += 2 * Math.PI;
+    part.rotation = newRot;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public rotatePart90(boneId: AnatomicalJointId, clockwise = true): void {
+    this.rotatePartBy(boneId, clockwise ? Math.PI / 2 : -Math.PI / 2);
+  }
+
+  public flipPartHorizontal(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Flip Graphic H');
+    part.flipX = !part.flipX;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public flipPartVertical(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Flip Graphic V');
+    part.flipY = !part.flipY;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public resetPartTransform(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Reset Graphic Transforms');
+    part.offsetX = 0;
+    part.offsetY = 0;
+    part.rotation = 0;
+    part.scale = 1.0;
+    part.flipX = false;
+    part.flipY = false;
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+    part.pivotX = 0.5;
+    part.pivotY = isSpine ? (boneId === 'head' ? 0.78 : 0.5) : 0.15;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  private notifyPartModified(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (part && this.events.onPartModified) {
+      this.events.onPartModified(boneId, part);
+    }
   }
 
   /**
@@ -424,7 +585,42 @@ export class RigStudioCanvas {
       const world = this.screenToWorld(e.clientX, e.clientY);
       const activeJoints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
 
-      // Hit test joints
+      // 1. If currently selected bone has an attached part and not in preview mode, test gizmo handles
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const hitHandle = this.hitTestPartGizmo(this.selectedJointId, world.x, world.y);
+        if (hitHandle) {
+          this.events.onBeforeModification?.(`Transform ${hitHandle} Graphic`);
+          const part = this.parts[this.selectedJointId];
+          const info = this.getPartTransformInfo(this.selectedJointId);
+          this.isTransformingPart = true;
+          this.transformHandle = hitHandle;
+          this.transformStartWorld = { ...world };
+          this.transformStartAngle = info ? Math.atan2(world.y - info.pivotWorldY, world.x - info.pivotWorldX) : 0;
+          this.transformStartDist = info ? Math.hypot(world.x - info.pivotWorldX, world.y - info.pivotWorldY) : 1;
+          this.transformStartSnapshot = {
+            offsetX: part.offsetX ?? 0,
+            offsetY: part.offsetY ?? 0,
+            rotation: part.rotation ?? 0,
+            scale: part.scale ?? 1.0,
+            pivotX: part.pivotX ?? (info?.anchorX ?? 0.5),
+            pivotY: part.pivotY ?? (info?.anchorY ?? 0.5)
+          };
+
+          if (hitHandle === 'rotate') {
+            this.transformAction = 'rotate';
+          } else if (hitHandle === 'pivot') {
+            this.transformAction = 'pivot';
+          } else if (hitHandle === 'body') {
+            this.transformAction = 'translate';
+          } else {
+            this.transformAction = 'scale';
+          }
+          this.render();
+          return;
+        }
+      }
+
+      // 2. Hit test joints
       let clickedJointId: AnatomicalJointId | null = null;
       let closestDist = 18 / this.zoom;
 
@@ -440,18 +636,51 @@ export class RigStudioCanvas {
 
       if (clickedJointId) {
         this.selectJoint(clickedJointId);
+        this.events.onBeforeModification?.('Move Joint Pin');
         this.isDraggingJoint = true;
         this.draggedJointId = clickedJointId;
         return;
       }
 
-      // Add Joint Mode: clicking empty space places/moves selected joint or next joint
+      // 3. Add Joint Mode: clicking empty space places/moves selected joint or next joint
       if (this.toolMode === 'add_joint' && this.sourceImage) {
         const targetId = this.selectedJointId || 'head';
         this.moveJointWithSymmetry(targetId, world.x, world.y);
         this.selectJoint(targetId);
         this.isDraggingJoint = true;
         this.draggedJointId = targetId;
+        return;
+      }
+
+      // 4. Hit test attached parts on the canvas (click any part to select its bone and begin translating)
+      if (this.toolMode !== 'preview') {
+        const clickedPartBone = this.getPartAtPoint(world.x, world.y);
+        if (clickedPartBone) {
+          this.selectJoint(clickedPartBone);
+          this.events.onBeforeModification?.('Translate Graphic');
+          const part = this.parts[clickedPartBone];
+          const info = this.getPartTransformInfo(clickedPartBone);
+          this.isTransformingPart = true;
+          this.transformAction = 'translate';
+          this.transformHandle = 'body';
+          this.transformStartWorld = { ...world };
+          this.transformStartSnapshot = {
+            offsetX: part.offsetX ?? 0,
+            offsetY: part.offsetY ?? 0,
+            rotation: part.rotation ?? 0,
+            scale: part.scale ?? 1.0,
+            pivotX: part.pivotX ?? (info?.anchorX ?? 0.5),
+            pivotY: part.pivotY ?? (info?.anchorY ?? 0.5)
+          };
+          this.render();
+          return;
+        }
+      }
+
+      // 5. Hit test bone capsules
+      const clickedBone = this.getBoneAtPoint(world.x, world.y);
+      if (clickedBone) {
+        this.selectJoint(clickedBone);
         return;
       }
 
@@ -470,19 +699,110 @@ export class RigStudioCanvas {
 
       const world = this.screenToWorld(e.clientX, e.clientY);
 
+      // Transforming active graphic (Translate, Rotate, Scale, Pivot)
+      if (this.isTransformingPart && this.selectedJointId && this.parts[this.selectedJointId]) {
+        const part = this.parts[this.selectedJointId];
+        const info = this.getPartTransformInfo(this.selectedJointId);
+        if (info && this.transformStartSnapshot) {
+          const snap = this.transformStartSnapshot;
+
+          if (this.transformAction === 'translate') {
+            const dwX = world.x - this.transformStartWorld.x;
+            const dwY = world.y - this.transformStartWorld.y;
+            part.offsetX = Math.round(snap.offsetX + dwX);
+            part.offsetY = Math.round(snap.offsetY + dwY);
+          } else if (this.transformAction === 'rotate') {
+            const curAng = Math.atan2(world.y - info.pivotWorldY, world.x - info.pivotWorldX);
+            let deltaAng = curAng - this.transformStartAngle;
+            if (e.shiftKey) {
+              const step = Math.PI / 12; // 15 degrees snap
+              deltaAng = Math.round(deltaAng / step) * step;
+            }
+            let newRot = snap.rotation + deltaAng;
+            while (newRot > Math.PI) newRot -= 2 * Math.PI;
+            while (newRot < -Math.PI) newRot += 2 * Math.PI;
+            part.rotation = newRot;
+          } else if (this.transformAction === 'scale') {
+            const curDist = Math.hypot(world.x - info.pivotWorldX, world.y - info.pivotWorldY);
+            const ratio = curDist / (this.transformStartDist || 1);
+            let newScale = Math.max(0.1, Math.min(5.0, snap.scale * ratio));
+            if (e.shiftKey) {
+              newScale = Math.round(newScale * 20) / 20; // 5% snap
+            }
+            part.scale = Math.round(newScale * 100) / 100;
+          } else if (this.transformAction === 'pivot') {
+            const dx = world.x - info.pivotWorldX;
+            const dy = world.y - info.pivotWorldY;
+            const cos = Math.cos(-info.rotAngle);
+            const sin = Math.sin(-info.rotAngle);
+            let lx = dx * cos - dy * sin;
+            let ly = dx * sin + dy * cos;
+            if (info.flipX) lx = -lx;
+            if (info.flipY) ly = -ly;
+
+            let newAnchorX = (lx - info.imgLocalX) / info.targetW;
+            let newAnchorY = (ly - info.imgLocalY) / info.targetH;
+            if (Math.abs(newAnchorX - 0.5) < 0.04) newAnchorX = 0.5;
+            if (Math.abs(newAnchorY - 0.5) < 0.04) newAnchorY = 0.5;
+            newAnchorX = Math.max(0, Math.min(1, newAnchorX));
+            newAnchorY = Math.max(0, Math.min(1, newAnchorY));
+
+            const oldLocalX = -info.targetW * (part.pivotX ?? info.anchorX);
+            const oldLocalY = -info.targetH * (part.pivotY ?? info.anchorY);
+            const newLocalX = -info.targetW * newAnchorX;
+            const newLocalY = -info.targetH * newAnchorY;
+            const deltaX = (oldLocalX - newLocalX) * (info.flipX ? -1 : 1);
+            const deltaY = (oldLocalY - newLocalY) * (info.flipY ? -1 : 1);
+
+            part.offsetX = Math.round((part.offsetX || 0) - deltaX);
+            part.offsetY = Math.round((part.offsetY || 0) - deltaY);
+            part.pivotX = Math.round(newAnchorX * 100) / 100;
+            part.pivotY = Math.round(newAnchorY * 100) / 100;
+          }
+
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        }
+        return;
+      }
+
       if (this.isDraggingJoint && this.draggedJointId) {
         if (this.toolMode === 'preview') {
           // Preview posing mode with bone length preservation for all nodes
           this.poseJointInPreview(this.draggedJointId, world.x, world.y);
         } else {
-          // Standard setup mode (places / moves joint pins with symmetry)
+          // Standard setup mode (places / moves joint pins with symmetry and graphic lock)
           this.moveJointWithSymmetry(this.draggedJointId, world.x, world.y);
         }
         this.render();
         return;
       }
 
-      // Hover detection
+      // Cursor and gizmo handle hover detection
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const gizmoHit = this.hitTestPartGizmo(this.selectedJointId, world.x, world.y);
+        if (this.hoveredGizmoHandle !== gizmoHit) {
+          this.hoveredGizmoHandle = gizmoHit;
+          this.render();
+        }
+        if (gizmoHit === 'rotate') {
+          this.container.style.cursor = 'grab';
+        } else if (gizmoHit === 'pivot') {
+          this.container.style.cursor = 'crosshair';
+        } else if (gizmoHit === 'body') {
+          this.container.style.cursor = 'move';
+        } else {
+          this.container.style.cursor = '';
+        }
+      } else {
+        if (this.hoveredGizmoHandle !== null) {
+          this.hoveredGizmoHandle = null;
+          this.render();
+        }
+        this.container.style.cursor = '';
+      }
+
+      // Hover detection on joints
       const activeJoints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
       let hovered: AnatomicalJointId | null = null;
       const hoverThreshold = 14 / this.zoom;
@@ -504,6 +824,16 @@ export class RigStudioCanvas {
 
     window.addEventListener('mouseup', () => {
       this.isPanning = false;
+
+      if (this.isTransformingPart) {
+        this.isTransformingPart = false;
+        this.transformAction = null;
+        this.transformHandle = null;
+        if (this.selectedJointId && this.parts[this.selectedJointId]) {
+          this.notifyPartModified(this.selectedJointId);
+        }
+      }
+
       if (this.isDraggingJoint) {
         this.isDraggingJoint = false;
         this.draggedJointId = null;
@@ -514,9 +844,73 @@ export class RigStudioCanvas {
     });
 
     window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
       if (e.code === 'Space' && !this.isSpacePressed) {
         this.isSpacePressed = true;
         this.container.style.cursor = 'grab';
+        return;
+      }
+
+      // Keyboard nudges when a bone with attached graphic is selected
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const part = this.parts[this.selectedJointId];
+        const step = e.shiftKey ? 10 : 1;
+
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          part.offsetX = (part.offsetX || 0) - step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          part.offsetX = (part.offsetX || 0) + step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          part.offsetY = (part.offsetY || 0) - step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          part.offsetY = (part.offsetY || 0) + step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '[') {
+          e.preventDefault();
+          const ang = e.shiftKey ? Math.PI / 12 : Math.PI / 180;
+          part.rotation = (part.rotation || 0) - ang;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === ']') {
+          e.preventDefault();
+          const ang = e.shiftKey ? Math.PI / 12 : Math.PI / 180;
+          part.rotation = (part.rotation || 0) + ang;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          const sDelta = e.shiftKey ? 0.05 : 0.01;
+          part.scale = Math.max(0.1, Math.round(((part.scale || 1.0) - sDelta) * 100) / 100);
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          const sDelta = e.shiftKey ? 0.05 : 0.01;
+          part.scale = Math.min(5.0, Math.round(((part.scale || 1.0) + sDelta) * 100) / 100);
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'h' || e.key === 'H') {
+          e.preventDefault();
+          this.flipPartHorizontal(this.selectedJointId);
+        } else if (e.key === 'v' || e.key === 'V') {
+          e.preventDefault();
+          this.flipPartVertical(this.selectedJointId);
+        } else if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          this.resetPartTransform(this.selectedJointId);
+        }
       }
     });
 
@@ -532,6 +926,21 @@ export class RigStudioCanvas {
     const jointDef = ANATOMICAL_JOINTS.find(j => j.id === jointId);
     if (!jointDef) return;
 
+    // Capture world-space transforms before moving joints if graphics are locked in world space
+    const prevWorldParts: Record<string, { pivotWorldX: number; pivotWorldY: number; worldAngle: number }> = {};
+    if (this.lockGraphicPosition && Object.keys(this.parts).length > 0) {
+      for (const bId of Object.keys(this.parts) as AnatomicalJointId[]) {
+        const info = this.getPartTransformInfo(bId, this.restJoints);
+        if (info) {
+          prevWorldParts[bId] = {
+            pivotWorldX: info.pivotWorldX,
+            pivotWorldY: info.pivotWorldY,
+            worldAngle: info.rotAngle
+          };
+        }
+      }
+    }
+
     const oldPos = this.restJoints[jointId];
     const dx = Math.round(wx) - (oldPos ? oldPos.x : Math.round(wx));
     const dy = Math.round(wy) - (oldPos ? oldPos.y : Math.round(wy));
@@ -542,11 +951,7 @@ export class RigStudioCanvas {
         const symId = jointDef.symmetricWith;
         this.restJoints = poseJointPreservingBones(symId, -wx, wy, this.restJoints, this.restJoints);
       }
-      this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
-      return;
-    }
-
-    if (jointDef.isCenter) {
+    } else if (jointDef.isCenter) {
       this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
       if (jointId === 'chest') {
         if (this.restJoints.neck) this.restJoints.neck = { x: 0, y: this.restJoints.neck.y + dy };
@@ -581,6 +986,30 @@ export class RigStudioCanvas {
         } else if (jointId === 'ankle_r' && this.restJoints.foot_l && this.restJoints.foot_r) {
           this.restJoints.foot_l = { x: -this.restJoints.foot_r.x, y: this.restJoints.foot_r.y };
         }
+      }
+    }
+
+    // Maintain graphics in world space if locked
+    if (this.lockGraphicPosition && Object.keys(prevWorldParts).length > 0) {
+      for (const [bId, prev] of Object.entries(prevWorldParts)) {
+        const boneId = bId as AnatomicalJointId;
+        const part = this.parts[boneId];
+        if (!part) continue;
+        const seg = this.getBoneSegmentJoints(boneId, this.restJoints);
+        if (!seg) continue;
+        const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+        const isSpine = boneDef?.category === 'spine';
+        const newPosedAngle = Math.atan2(seg.p2.y - seg.p1.y, seg.p2.x - seg.p1.x);
+        const newBaseAngle = isSpine ? (newPosedAngle + Math.PI / 2) : (newPosedAngle - Math.PI / 2);
+
+        let newRot = prev.worldAngle - newBaseAngle;
+        while (newRot > Math.PI) newRot -= 2 * Math.PI;
+        while (newRot < -Math.PI) newRot += 2 * Math.PI;
+        part.rotation = newRot;
+
+        part.offsetX = Math.round(prev.pivotWorldX - seg.p1.x);
+        part.offsetY = Math.round(prev.pivotWorldY - seg.p1.y);
+        this.notifyPartModified(boneId);
       }
     }
 
@@ -631,6 +1060,11 @@ export class RigStudioCanvas {
       if (this.showBonesEnabled || this.toolMode !== 'preview') {
         this.drawJointPins();
       }
+    }
+
+    // 6. Draw Part Transform Gizmo (WYSIWYG UX for aligning bone and graphic)
+    if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+      this.drawPartTransformGizmo(this.selectedJointId);
     }
 
     this.ctx.restore();
@@ -734,9 +1168,17 @@ export class RigStudioCanvas {
 
     const hasParts = Object.keys(this.parts).length > 0 || (this.dragHoverBoneId && this.dragHoverPart);
 
+    // Reference artwork ghost underlay (helps user align graphics and bones with original artwork)
+    if (this.showReferenceArtwork && this.sourceImage) {
+      this.ctx.save();
+      this.ctx.globalAlpha = this.referenceArtworkOpacity;
+      this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+      this.ctx.restore();
+    }
+
     // In Preview Mode: Draw faint ghost of original rest pose if enabled
     if (this.toolMode === 'preview') {
-      if (this.sourceImage && this.showGhostPose) {
+      if (this.sourceImage && this.showGhostPose && !this.showReferenceArtwork) {
         this.ctx.save();
         this.ctx.globalAlpha = 0.15;
         this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
@@ -764,6 +1206,31 @@ export class RigStudioCanvas {
     boneId: AnatomicalJointId,
     joints: Record<AnatomicalJointId, { x: number; y: number }>
   ): { p1: { x: number; y: number }; p2: { x: number; y: number } } | null {
+    const part = this.parts[boneId];
+    if (part && (part.originJointId || part.targetJointId)) {
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      const resolvePoint = (jId?: string): { x: number; y: number } | null => {
+        if (!jId) return null;
+        if (jId === 'hip_mid') {
+          if (joints.hip_l && joints.hip_r) {
+            return { x: (joints.hip_l.x + joints.hip_r.x) / 2, y: (joints.hip_l.y + joints.hip_r.y) / 2 };
+          }
+        }
+        return joints[jId as AnatomicalJointId] || null;
+      };
+
+      const origId = part.originJointId || (boneDef?.originJointId || boneId);
+      const tgtId = part.targetJointId || boneDef?.targetJointId;
+      const p1 = resolvePoint(origId);
+      let p2 = resolvePoint(tgtId);
+      if (!p2 && boneDef?.defaultLength && p1) {
+        p2 = { x: p1.x, y: p1.y + boneDef.defaultLength };
+      }
+      if (p1 && p2) {
+        return { p1, p2 };
+      }
+    }
+
     switch (boneId) {
       case 'head':
         return { p1: joints.neck, p2: joints.head };
@@ -1013,69 +1480,270 @@ export class RigStudioCanvas {
     this.ctx.restore();
   }
 
+  public getPartTransformInfo(
+    boneId: AnatomicalJointId,
+    joints?: Record<AnatomicalJointId, { x: number; y: number }>
+  ) {
+    const part = this.parts[boneId];
+    if (!part || !part.image || !part.image.width || !part.image.height) return null;
+
+    const j = joints || (this.toolMode === 'preview' ? this.previewJoints : this.restJoints);
+    const seg = this.getBoneSegmentJoints(boneId, j);
+    if (!seg) return null;
+
+    const pointA = seg.p1;
+    const pointB = seg.p2;
+
+    const bh = this.imageBounds.height;
+    const srcNatH = this.sourceImage?.naturalHeight || 740;
+    const charScale = bh / srcNatH;
+
+    const scale = (part.scale ?? 1.0) * charScale;
+    const targetW = part.image.width * scale;
+    const targetH = part.image.height * scale;
+
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+
+    const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
+    const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (boneId === 'head' ? 0.78 : 0.5) : 0.15);
+
+    const posedAngle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
+    const baseAngle = isSpine ? (posedAngle + Math.PI / 2) : (posedAngle - Math.PI / 2);
+    const rotAngle = baseAngle + (part.rotation || 0);
+
+    const offX = part.offsetX ?? 0;
+    const offY = part.offsetY ?? 0;
+
+    const pivotWorldX = pointA.x + offX;
+    const pivotWorldY = pointA.y + offY;
+
+    const imgLocalX = -targetW * anchorX;
+    const imgLocalY = -targetH * anchorY;
+
+    return {
+      part,
+      boneId,
+      pointA,
+      pointB,
+      isSpine,
+      targetW,
+      targetH,
+      charScale,
+      anchorX,
+      anchorY,
+      baseAngle,
+      rotAngle,
+      offX,
+      offY,
+      pivotWorldX,
+      pivotWorldY,
+      imgLocalX,
+      imgLocalY,
+      flipX: !!part.flipX,
+      flipY: !!part.flipY
+    };
+  }
+
+  public hitTestPartGizmo(
+    boneId: AnatomicalJointId,
+    wx: number,
+    wy: number
+  ): 'rotate' | 'pivot' | 'body' | null {
+    const info = this.getPartTransformInfo(boneId);
+    if (!info) return null;
+
+    const dx = wx - info.pivotWorldX;
+    const dy = wy - info.pivotWorldY;
+    const cos = Math.cos(-info.rotAngle);
+    const sin = Math.sin(-info.rotAngle);
+    let lx = dx * cos - dy * sin;
+    let ly = dx * sin + dy * cos;
+
+    // 1. Pivot handle (at 0,0)
+    if (Math.hypot(lx, ly) <= 12 / this.zoom) {
+      return 'pivot';
+    }
+
+    // 2. Rotate handle knob at (0, -rotRadius) or along the rotation guide circle
+    const rotRadius = Math.max(48 / this.zoom, Math.hypot(info.targetW, info.targetH) * 0.45);
+    const distToKnob = Math.hypot(lx - 0, ly - (-rotRadius));
+    if (distToKnob <= 18 / this.zoom) {
+      return 'rotate';
+    }
+
+    const distFromPivot = Math.hypot(lx, ly);
+    if (Math.abs(distFromPivot - rotRadius) <= 7 / this.zoom) {
+      return 'rotate';
+    }
+
+    if (info.flipX) lx = -lx;
+    if (info.flipY) ly = -ly;
+
+    const imgX = info.imgLocalX;
+    const imgY = info.imgLocalY;
+    const targetW = info.targetW;
+    const targetH = info.targetH;
+
+    // 3. Inside graphic body (for moving/translating)
+    if (lx >= imgX && lx <= imgX + targetW && ly >= imgY && ly <= imgY + targetH) {
+      return 'body';
+    }
+
+    return null;
+  }
+
+  public getPartAtPoint(wx: number, wy: number): AnatomicalJointId | null {
+    const checkOrder: AnatomicalJointId[] = [
+      'wrist_l', 'elbow_l', 'shoulder_l',
+      'ankle_l', 'knee_l', 'hip_l',
+      'head', 'neck', 'chest',
+      'ankle_r', 'knee_r', 'hip_r',
+      'wrist_r', 'elbow_r', 'shoulder_r'
+    ];
+
+    for (const bId of checkOrder) {
+      if (this.parts[bId]) {
+        const hit = this.hitTestPartGizmo(bId, wx, wy);
+        if (hit) return bId;
+      }
+    }
+    return null;
+  }
+
   private drawAttachedPart(
     part: BonePartAttachment,
     pointA: { x: number; y: number },
     pointB: { x: number; y: number },
-    restJoint?: { x: number; y: number }
+    _restJoint?: { x: number; y: number }
   ): void {
     const img = part.image;
     if (!img.width || !img.height) return;
 
-    const bw = this.imageBounds.width;
     const bh = this.imageBounds.height;
-    const isFullCanvas = (img.width === bw && img.height === bh);
-
     const posedAngle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
 
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === part.boneId);
+    const isSpine = boneDef?.category === 'spine';
+
+    const srcNatH = this.sourceImage?.naturalHeight || 740;
+    const charScale = bh / srcNatH;
+
+    const scale = (part.scale ?? 1.0) * charScale;
+    const targetW = img.width * scale;
+    const targetH = img.height * scale;
+
+    const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
+    const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (part.boneId === 'head' ? 0.78 : 0.5) : 0.15);
+
+    const baseAngle = isSpine ? (posedAngle + Math.PI / 2) : (posedAngle - Math.PI / 2);
+    const rotAngle = baseAngle + (part.rotation || 0);
+
     this.ctx.save();
+    this.ctx.translate(pointA.x + (part.offsetX ?? 0), pointA.y + (part.offsetY ?? 0));
+    this.ctx.rotate(rotAngle);
 
-    if (isFullCanvas && restJoint) {
-      const restSeg = this.getBoneSegmentJoints(part.boneId, this.restJoints);
-      const restAngle = restSeg ? Math.atan2(restSeg.p2.y - restSeg.p1.y, restSeg.p2.x - restSeg.p1.x) : posedAngle;
-      const rotDelta = posedAngle - restAngle;
-
-      this.ctx.translate(pointA.x, pointA.y);
-      this.ctx.rotate(rotDelta);
-      this.ctx.translate(-restJoint.x, -restJoint.y);
-      this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
-    } else {
-      const boneDef = ANATOMICAL_BONES.find(b => b.id === part.boneId);
-      const isSpine = boneDef?.category === 'spine';
-
-      // Character scale factor:
-      // Uses the natural height of the source graphic sheet so parts scale seamlessly
-      const srcNatH = this.sourceImage?.naturalHeight || 740;
-      const charScale = bh / srcNatH;
-
-      const scale = (part.scale ?? 1.0) * charScale;
-      const targetW = img.width * scale;
-      const targetH = img.height * scale;
-
-      this.ctx.translate(pointA.x, pointA.y);
-
-      // Determine normalized pivot anchor [0..1]
-      const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
-      const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (part.boneId === 'head' ? 0.78 : 0.5) : 0.15);
-
-      if (isSpine) {
-        // Spine parts (Head, Torso): upright sprites tracking spine angle
-        const rotAngle = (posedAngle + Math.PI / 2) + (part.rotation || 0);
-        this.ctx.rotate(rotAngle);
-
-        const offX = (part.offsetX ?? 0) - targetW * anchorX;
-        const offY = (part.offsetY ?? 0) - targetH * anchorY;
-        this.ctx.drawImage(img, offX, offY, targetW, targetH);
-      } else {
-        // Limb parts (Arms, Legs): sprites are drawn vertically down along +Y axis
-        const rotAngle = (posedAngle - Math.PI / 2) + (part.rotation || 0);
-        this.ctx.rotate(rotAngle);
-
-        const offX = (part.offsetX ?? 0) - targetW * anchorX;
-        const offY = (part.offsetY ?? 0) - targetH * anchorY;
-        this.ctx.drawImage(img, offX, offY, targetW, targetH);
-      }
+    if (part.flipX || part.flipY) {
+      this.ctx.scale(part.flipX ? -1 : 1, part.flipY ? -1 : 1);
     }
+
+    this.ctx.drawImage(img, -targetW * anchorX, -targetH * anchorY, targetW, targetH);
+    this.ctx.restore();
+  }
+
+  private drawPartTransformGizmo(boneId: AnatomicalJointId): void {
+    const info = this.getPartTransformInfo(boneId);
+    if (!info) return;
+
+    const { targetW, targetH, rotAngle, offX, offY, pointA } = info;
+
+    this.ctx.save();
+    this.ctx.translate(pointA.x + offX, pointA.y + offY);
+    this.ctx.rotate(rotAngle);
+
+    // Dynamic rotation handle distance based on graphic size
+    const rotRadius = Math.max(48 / this.zoom, Math.hypot(targetW, targetH) * 0.45);
+    const isRotHover = this.hoveredGizmoHandle === 'rotate' || (this.isTransformingPart && this.transformAction === 'rotate');
+
+    // 1. Sleek circular rotation guide ring around the pivot
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, rotRadius, 0, Math.PI * 2);
+    this.ctx.strokeStyle = isRotHover ? 'rgba(56, 189, 248, 0.75)' : 'rgba(56, 189, 248, 0.3)';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+
+    // 2. Stem connecting pivot to the rotation knob
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, 0);
+    this.ctx.lineTo(0, -rotRadius);
+    this.ctx.strokeStyle = '#38bdf8';
+    this.ctx.lineWidth = 2 / this.zoom;
+    this.ctx.stroke();
+
+    // 3. Prominent Rotation Handle Knob
+    const knobR = (isRotHover ? 11 : 9.5) / this.zoom;
+
+    // Glowing halo on hover/drag
+    if (isRotHover) {
+      this.ctx.beginPath();
+      this.ctx.arc(0, -rotRadius, knobR + 4 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+      this.ctx.fill();
+    }
+
+    // Handle knob circle
+    this.ctx.beginPath();
+    this.ctx.arc(0, -rotRadius, knobR, 0, Math.PI * 2);
+    this.ctx.fillStyle = isRotHover ? '#38bdf8' : '#0284c7';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 2 / this.zoom;
+    this.ctx.stroke();
+
+    // Curved rotate symbol (↻) inside the knob
+    this.ctx.beginPath();
+    const iconR = 4.5 / this.zoom;
+    this.ctx.arc(0, -rotRadius, iconR, -Math.PI * 0.8, Math.PI * 0.6);
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.stroke();
+
+    // Arrow head
+    const arrowX = Math.cos(Math.PI * 0.6) * iconR;
+    const arrowY = -rotRadius + Math.sin(Math.PI * 0.6) * iconR;
+    this.ctx.beginPath();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.arc(arrowX, arrowY, 1.8 / this.zoom, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // 4. Pivot Crosshair Anchor Marker (always at local 0,0)
+    const isPivotHover = this.hoveredGizmoHandle === 'pivot';
+    const pivotR = (isPivotHover ? 7.5 : 6) / this.zoom;
+
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, pivotR, 0, Math.PI * 2);
+    this.ctx.fillStyle = isPivotHover ? 'rgba(34, 197, 94, 0.45)' : 'rgba(34, 197, 94, 0.2)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#22c55e';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, 2 / this.zoom, 0, Math.PI * 2);
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fill();
+
+    const tickLen = 9 / this.zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(-tickLen, 0);
+    this.ctx.lineTo(tickLen, 0);
+    this.ctx.moveTo(0, -tickLen);
+    this.ctx.lineTo(0, tickLen);
+    this.ctx.strokeStyle = '#22c55e';
+    this.ctx.lineWidth = 1.2 / this.zoom;
+    this.ctx.stroke();
 
     this.ctx.restore();
   }

@@ -11,6 +11,8 @@ export interface VectorOutlineElement {
   bounds: { x: number; y: number; width: number; height: number };
   deformationMode: 'cutout' | 'mesh';
   assignedBoneId?: AnatomicalJointId;
+  originJointId?: AnatomicalJointId;
+  targetJointId?: AnatomicalJointId;
   meshOptions?: {
     triangles: number[];          // Vertex index triplets for Earcut triangulation
     bendBones?: [string, string]; // [parentBone, childBone] for dual-joint bending
@@ -186,6 +188,8 @@ export interface AnatomicalJointDef {
 export interface BonePartAttachment {
   id?: string;
   boneId: AnatomicalJointId;
+  originJointId?: AnatomicalJointId;
+  targetJointId?: AnatomicalJointId;
   image: HTMLImageElement;
   imageUrl: string;
   fileName: string;
@@ -200,6 +204,8 @@ export interface BonePartAttachment {
   height?: number;
   visible?: boolean;
   opacity?: number;
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 export interface ViewArtworkData {
@@ -230,6 +236,8 @@ export interface RigProjectData {
     parts: Record<string, {
       id?: string;
       boneId: AnatomicalJointId;
+      originJointId?: AnatomicalJointId;
+      targetJointId?: AnatomicalJointId;
       fileName: string;
       imageUrl: string;
       scale?: number;
@@ -240,6 +248,8 @@ export interface RigProjectData {
       pivotY?: number;
       width?: number;
       height?: number;
+      flipX?: boolean;
+      flipY?: boolean;
     }>;
   }>;
   partsLibrary?: {
