@@ -83,8 +83,9 @@ export class RigStudioCanvas {
     this.canvas.className = 'studio-canvas';
     this.canvas.style.display = 'block';
     this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
-    this.container.appendChild(this.canvas);
+    if (this.container) {
+      this.container.appendChild(this.canvas);
+    }
 
     this.ctx = this.canvas.getContext('2d')!;
 
@@ -145,6 +146,9 @@ export class RigStudioCanvas {
   public setPart(boneId: AnatomicalJointId, part: BonePartAttachment | null): void {
     if (part) {
       this.parts[boneId] = part;
+      if (part.image && (!part.image.complete || !part.image.naturalWidth)) {
+        part.image.addEventListener('load', () => this.render(), { once: true });
+      }
     } else {
       delete this.parts[boneId];
     }
@@ -157,6 +161,11 @@ export class RigStudioCanvas {
 
   public setParts(partsMap: Record<string, BonePartAttachment>): void {
     this.parts = { ...partsMap };
+    for (const p of Object.values(this.parts)) {
+      if (p.image && (!p.image.complete || !p.image.naturalWidth)) {
+        p.image.addEventListener('load', () => this.render(), { once: true });
+      }
+    }
     this.render();
   }
 
@@ -243,6 +252,11 @@ export class RigStudioCanvas {
     }
     if (partsMap) {
       this.parts = { ...partsMap };
+      for (const p of Object.values(this.parts)) {
+        if (p.image && (!p.image.complete || !p.image.naturalWidth)) {
+          p.image.addEventListener('load', () => this.render(), { once: true });
+        }
+      }
     } else {
       this.parts = {};
     }
@@ -308,8 +322,10 @@ export class RigStudioCanvas {
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.scale(dpr, dpr);
+    if (this.ctx) {
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(dpr, dpr);
+    }
     this.render();
   }
 
@@ -579,6 +595,7 @@ export class RigStudioCanvas {
   }
 
   public render(): void {
+    if (!this.ctx) return;
     const rect = this.container.getBoundingClientRect();
     const w = rect.width;
     const h = rect.height;
@@ -1027,10 +1044,9 @@ export class RigStudioCanvas {
       const isSpine = boneDef?.category === 'spine';
 
       // Character scale factor:
-      // High-res character texture is ~740px tall inside spritesheet.
-      // On canvas, character skeleton is bh (380px) tall.
-      // Scaling by bh / 740 ≈ 0.5135 makes part lengths match bone lengths seamlessly!
-      const charScale = bh / 740;
+      // Uses the natural height of the source graphic sheet so parts scale seamlessly
+      const srcNatH = this.sourceImage?.naturalHeight || 740;
+      const charScale = bh / srcNatH;
 
       const scale = (part.scale ?? 1.0) * charScale;
       const targetW = img.width * scale;

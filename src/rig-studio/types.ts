@@ -215,6 +215,51 @@ export interface ViewArtworkData {
   visible: boolean;
 }
 
+export interface RigProjectData {
+  format?: string;
+  version?: string;
+  characterName: string;
+  activeView?: StudioView;
+  views: Record<string, {
+    label: string;
+    imageUrl?: string;
+    fileName?: string;
+    fileSize?: string;
+    joints: Record<string, { x: number; y: number }>;
+    envelopes: Record<string, number>;
+    parts: Record<string, {
+      id?: string;
+      boneId: AnatomicalJointId;
+      fileName: string;
+      imageUrl: string;
+      scale?: number;
+      offsetX?: number;
+      offsetY?: number;
+      rotation?: number;
+      pivotX?: number;
+      pivotY?: number;
+      width?: number;
+      height?: number;
+    }>;
+  }>;
+  partsLibrary?: {
+    id: string;
+    name: string;
+    imageUrl: string;
+    width: number;
+    height: number;
+    assignedBoneId: AnatomicalJointId | null;
+    pivotX?: number;
+    pivotY?: number;
+  }[];
+  slicer?: {
+    imageUrl?: string;
+    fileName?: string;
+    fileSize?: string;
+    elements?: VectorOutlineElement[];
+  };
+}
+
 /**
  * Studio Mode Tabs
  */

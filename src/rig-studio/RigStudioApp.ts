@@ -6,7 +6,8 @@ import {
   SpineDocument,
   StudioView,
   VectorOutlineElement,
-  ViewArtworkData
+  ViewArtworkData,
+  RigProjectData
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -165,15 +166,22 @@ export class RigStudioApp {
         </div>
 
         <div class="studio-header-actions">
-          <button class="btn-studio btn-load-demo" title="Load sample demo character artwork">
-            🎨 Demo Artwork
+          <button class="btn-studio btn-load-demo" title="Load sample fully rigged character (Sir Ronald) with all bone graphics attached">
+            ⚔️ Load Demo Rig
           </button>
-          <label class="btn-studio" style="cursor:pointer;" title="Import graphics image from disk">
-            📁 Import
+          <label class="btn-studio" style="cursor:pointer;" title="Load a saved rigged character project with graphics (.json)">
+            📂 Load Rig (.json)
+            <input type="file" id="input-load-rig-json" accept=".json" style="display:none;" />
+          </label>
+          <label class="btn-studio" style="cursor:pointer;" title="Import graphics image from disk into active view">
+            📁 Import Image
             <input type="file" id="input-graphic-upload" accept="image/*" style="display:none;" />
           </label>
+          <button class="btn-studio btn-save-rig-json" title="Save complete character rig project with graphics (.json)">
+            💾 Save Rig (.json)
+          </button>
           <button class="btn-studio btn-export-spine" title="Export rig as Spine JSON">
-            💾 Export Spine
+            🦴 Export Spine
           </button>
           ${this.bridge.isEmbeddedMode ? `
             <button class="btn-studio btn-studio-primary btn-apply-host">
@@ -199,6 +207,8 @@ export class RigStudioApp {
         <input type="file" id="input-spritesheet-upload" accept="image/*" style="display:none;" />
         <!-- Hidden input for loading image into slicer -->
         <input type="file" id="input-slicer-image-upload" accept="image/*" style="display:none;" />
+        <!-- Hidden input for loading rig project JSON -->
+        <input type="file" id="input-load-rig-json" accept=".json" style="display:none;" />
 
         <!-- Left Panel: Import & Joint Tools -->
         <aside class="studio-left-sidebar" id="left-sidebar">
@@ -358,10 +368,25 @@ export class RigStudioApp {
       }
     });
 
-    // Demo Character button
+    // Load Demo Rigged Character button
     const demoBtn = this.container.querySelector('.btn-load-demo');
     demoBtn?.addEventListener('click', () => {
-      this.loadDemoCharacter();
+      this.loadDemoCharacter(true);
+    });
+
+    // Load Rig Project JSON input
+    const loadRigInput = this.container.querySelector('#input-load-rig-json') as HTMLInputElement;
+    loadRigInput?.addEventListener('change', () => {
+      if (loadRigInput.files && loadRigInput.files[0]) {
+        this.handleLoadRigJson(loadRigInput.files[0]);
+        loadRigInput.value = '';
+      }
+    });
+
+    // Save Rig Project JSON button
+    const saveRigJsonBtn = this.container.querySelector('.btn-save-rig-json');
+    saveRigJsonBtn?.addEventListener('click', () => {
+      this.saveRigProjectJson();
     });
 
     // Export Spine JSON
@@ -373,7 +398,7 @@ export class RigStudioApp {
     // Save Local or Apply to Host
     const saveBtn = this.container.querySelector('.btn-save-local');
     saveBtn?.addEventListener('click', () => {
-      this.exportSpineJson();
+      this.saveRigProjectJson();
     });
 
     const applyBtn = this.container.querySelector('.btn-apply-host');
@@ -450,6 +475,16 @@ export class RigStudioApp {
       this.renderSlicerRightSidebar();
       this.slicer?.resizeCanvas();
     } else {
+      // Synchronize slicer image to active rig view and canvas if slicer image was loaded/changed
+      if (this.slicerImage) {
+        const currentArt = this.views[this.activeView];
+        if (!currentArt.image || currentArt.image !== this.slicerImage) {
+          currentArt.image = this.slicerImage;
+          currentArt.imageUrl = this.slicerImageUrl;
+          currentArt.fileName = this.slicerImageFileName;
+          this.canvas?.setSourceImage(this.slicerImage, this.slicerImageFileName, false);
+        }
+      }
       this.renderLeftSidebar();
       this.renderRightSidebar();
       this.canvas?.resizeCanvas();
@@ -474,6 +509,14 @@ export class RigStudioApp {
       },
       onTextureLoaded: (img) => {
         this.slicerImage = img;
+        const currentArt = this.views[this.activeView];
+        currentArt.image = img;
+        currentArt.imageUrl = this.slicerImageUrl;
+        currentArt.fileName = this.slicerImageFileName;
+        if (this.canvas) {
+          this.canvas.setSourceImage(img, this.slicerImageFileName || 'sheet.png', false);
+          this.canvas.render();
+        }
         this.renderSlicerLeftSidebar();
         this.renderSlicerRightSidebar();
         this.updateSlicerHUD();
@@ -536,21 +579,38 @@ export class RigStudioApp {
     if (toolEl) toolEl.textContent = this.slicerToolMode.toUpperCase();
   }
 
-  private loadSlicerImageFromUrl(url: string, fileName: string, fileSize = ''): void {
+  public setSlicerImage(img: HTMLImageElement, url: string, fileName: string, fileSize = ''): void {
+    this.slicerImage = img;
+    this.slicerImageUrl = url;
+    this.slicerImageFileName = fileName;
+    this.slicerImageFileSize = fileSize;
+    if (this.slicer) {
+      this.slicer.setImage(img);
+      this.slicer.resetView();
+    }
+
+    // Synchronize newly loaded graphic directly into the active Rig & Bones view
+    const currentArt = this.views[this.activeView];
+    currentArt.image = img;
+    currentArt.imageUrl = url;
+    currentArt.fileName = fileName;
+    currentArt.fileSize = fileSize;
+
+    if (this.canvas) {
+      this.canvas.setSourceImage(img, fileName, false);
+      this.canvas.render();
+    }
+
+    this.renderSlicerLeftSidebar();
+    this.renderSlicerRightSidebar();
+    this.updateSlicerHUD();
+  }
+
+  public loadSlicerImageFromUrl(url: string, fileName: string, fileSize = ''): void {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      this.slicerImage = img;
-      this.slicerImageUrl = url;
-      this.slicerImageFileName = fileName;
-      this.slicerImageFileSize = fileSize;
-      if (this.slicer) {
-        this.slicer.setImage(img);
-        this.slicer.resetView();
-      }
-      this.renderSlicerLeftSidebar();
-      this.renderSlicerRightSidebar();
-      this.updateSlicerHUD();
+      this.setSlicerImage(img, url, fileName, fileSize);
     };
     img.src = url;
   }
@@ -600,9 +660,14 @@ export class RigStudioApp {
           <button class="btn-studio" id="btn-slicer-load-file" style="font-size:0.7rem; justify-content:center;">
             📁 Load Image from Disk...
           </button>
+          ${hasImage ? `
+            <button class="btn-studio" id="btn-slicer-sync-to-rig" style="font-size:0.7rem; justify-content:center; color:#38bdf8; border-color:rgba(56, 189, 248, 0.4);" title="Set this graphic as active rig artwork and update canvas">
+              🖼️ Set as Base Rig Artwork
+            </button>
+          ` : ''}
           ${this.views[this.activeView].image ? `
-            <button class="btn-studio" id="btn-slicer-load-active-view" style="font-size:0.7rem; justify-content:center; color:#38bdf8;">
-              🖼️ Use Active View Artwork
+            <button class="btn-studio" id="btn-slicer-load-active-view" style="font-size:0.7rem; justify-content:center; color:#94a3b8;">
+              ↩️ Use Active View Artwork
             </button>
           ` : ''}
           <button class="btn-studio" id="btn-slicer-load-ronald" style="font-size:0.7rem; justify-content:center; color:#10b981;">
@@ -639,6 +704,20 @@ export class RigStudioApp {
     });
     sidebar.querySelector('#btn-slicer-load-file')?.addEventListener('click', () => {
       (this.container.querySelector('#input-slicer-image-upload') as HTMLInputElement)?.click();
+    });
+    sidebar.querySelector('#btn-slicer-sync-to-rig')?.addEventListener('click', () => {
+      if (this.slicerImage) {
+        const art = this.views[this.activeView];
+        art.image = this.slicerImage;
+        art.imageUrl = this.slicerImageUrl;
+        art.fileName = this.slicerImageFileName;
+        art.fileSize = this.slicerImageFileSize;
+        if (this.canvas) {
+          this.canvas.setSourceImage(this.slicerImage, this.slicerImageFileName, false);
+          this.canvas.render();
+        }
+        alert(`Graphic "${this.slicerImageFileName}" set as base artwork for ${this.activeView.toUpperCase()} rig!`);
+      }
     });
     sidebar.querySelector('#btn-slicer-load-active-view')?.addEventListener('click', () => {
       const art = this.views[this.activeView];
@@ -782,14 +861,69 @@ export class RigStudioApp {
       });
     });
 
-    // Bone assignment change
+    // Bone assignment change with immediate live sync to rig canvas & parts library
     sidebar.querySelectorAll('.select-slicer-elem-bone').forEach(sel => {
       sel.addEventListener('change', () => {
         const select = sel as HTMLSelectElement;
         const id = select.getAttribute('data-elem-id');
         const boneId = (select.value || undefined) as AnatomicalJointId | undefined;
-        if (id) {
-          this.slicer?.updateElementAssignedBone(id, boneId);
+        if (id && this.slicer) {
+          this.slicer.updateElementAssignedBone(id, boneId);
+          // Sync element thumbnail and bone attachment live
+          const elem = this.slicer.getElements().find(el => el.id === id);
+          if (elem) {
+            const thumbUrl = this.slicer.generateThumbnail(elem);
+            if (thumbUrl) {
+              const img = new Image();
+              img.onload = () => this.canvas?.render();
+              img.src = thumbUrl;
+              const pivotX = elem.bounds.width > 0 ? elem.pivot.x / elem.bounds.width : 0.5;
+              const pivotY = elem.bounds.height > 0 ? elem.pivot.y / elem.bounds.height : 0.5;
+
+              const libIdx = this.partsLibrary.findIndex(p => p.id === id);
+              if (libIdx >= 0) {
+                this.partsLibrary[libIdx].assignedBoneId = boneId || null;
+              } else {
+                this.partsLibrary.push({
+                  id: elem.id,
+                  name: elem.name,
+                  imageUrl: thumbUrl,
+                  image: img,
+                  width: Math.round(elem.bounds.width),
+                  height: Math.round(elem.bounds.height),
+                  assignedBoneId: boneId || null,
+                  pivotX,
+                  pivotY
+                });
+              }
+
+              const currentArt = this.views[this.activeView];
+              if (boneId) {
+                const boneAttachment: BonePartAttachment = {
+                  id: elem.id,
+                  boneId,
+                  fileName: elem.name + '.png',
+                  imageUrl: thumbUrl,
+                  image: img,
+                  width: Math.round(elem.bounds.width),
+                  height: Math.round(elem.bounds.height),
+                  pivotX,
+                  pivotY,
+                  visible: true,
+                  opacity: 1
+                };
+                currentArt.parts[boneId] = boneAttachment;
+                this.canvas?.setPart(boneId, boneAttachment);
+              } else {
+                for (const bId of Object.keys(currentArt.parts)) {
+                  if (currentArt.parts[bId]?.id === id) {
+                    delete currentArt.parts[bId];
+                    this.canvas?.setPart(bId as AnatomicalJointId, null);
+                  }
+                }
+              }
+            }
+          }
         }
       });
     });
@@ -805,11 +939,23 @@ export class RigStudioApp {
 
     const currentArt = this.views[this.activeView];
 
+    // Ensure slicer graphic is set as the active view base image
+    if (this.slicerImage) {
+      currentArt.image = this.slicerImage;
+      currentArt.imageUrl = this.slicerImageUrl;
+      currentArt.fileName = this.slicerImageFileName;
+      currentArt.fileSize = this.slicerImageFileSize;
+      this.canvas?.setSourceImage(this.slicerImage, this.slicerImageFileName, false);
+    }
+
     for (const elem of elements) {
       const thumbUrl = this.slicer.generateThumbnail(elem);
       if (!thumbUrl) continue;
 
       const img = new Image();
+      img.onload = () => {
+        this.canvas?.render();
+      };
       img.src = thumbUrl;
 
       const pivotX = elem.bounds.width > 0 ? elem.pivot.x / elem.bounds.width : 0.5;
@@ -854,6 +1000,12 @@ export class RigStudioApp {
       }
     }
 
+    if (this.canvas) {
+      this.canvas.setParts(currentArt.parts);
+      this.canvas.render();
+    }
+
+    this.activeRightTab = 'bones';
     this.switchStudioMode('rig');
   }
 
@@ -1180,6 +1332,10 @@ export class RigStudioApp {
         this.canvas?.setPart(item.assignedBoneId, part);
       }
     }
+    if (this.canvas) {
+      this.canvas.setParts(currentArt.parts);
+      this.canvas.render();
+    }
     this.renderRightSidebar();
   }
 
@@ -1344,6 +1500,9 @@ export class RigStudioApp {
         const dataUrl = off.toDataURL('image/png');
 
         const partImg = new Image();
+        partImg.onload = () => {
+          this.canvas?.render();
+        };
         partImg.src = dataUrl;
 
         const pX = elem.pivot.x / elem.bounds.width;
@@ -1991,6 +2150,9 @@ export class RigStudioApp {
       if (updateCanvas && targetView === this.activeView) {
         this.canvas?.setSourceImage(img, fileName);
         art.joints = this.canvas?.getJoints() || art.joints;
+        if (Object.keys(art.parts).length > 0) {
+          this.canvas?.setParts(art.parts);
+        }
       }
       this.renderLeftSidebar();
       this.renderRightSidebar();
@@ -1998,14 +2160,247 @@ export class RigStudioApp {
     img.src = url;
   }
 
-  public loadDemoCharacter(): void {
-    // Load Front demo artwork
+  public loadDemoCharacter(autoAssemble = true): void {
+    // 1. Clear existing parts library and view attachments
+    this.partsLibrary = [];
+    for (const v of Object.values(this.views)) {
+      v.parts = {};
+    }
+    if (this.canvas) {
+      this.canvas.setParts({});
+    }
+
+    // 2. Load Front demo artwork
     this.loadImageFromUrl('/demo/assets/characters/sir_ronald_front.png', 'character_front.png', 'front', true);
     // Preload Back demo artwork
     this.loadImageFromUrl('/demo/assets/characters/sir_ronald_back.png', 'character_back.png', 'back', false);
-    // Pre-populate Ronald demo parts in Parts Library if empty
-    if (this.partsLibrary.length === 0) {
-      this.loadRonaldDemoParts(true);
+
+    // 3. Snap joints to Ronald anatomical defaults
+    this.snapRigToCharacterFit();
+
+    // 4. Pre-populate Ronald demo parts in Parts Library and auto-assemble onto bones
+    this.loadRonaldDemoParts(autoAssemble);
+
+    // 5. Pre-populate Ronald elements in Slicer
+    this.loadRonaldPreMarkedElementsInSlicer();
+  }
+
+  public saveRigProjectJson(): void {
+    if (this.canvas) {
+      this.views[this.activeView].joints = JSON.parse(JSON.stringify(this.canvas.getJoints()));
+      this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
+      this.views[this.activeView].parts = { ...this.canvas.getParts() };
+    }
+
+    const viewsExport: Record<string, any> = {};
+    for (const [vKey, vData] of Object.entries(this.views)) {
+      const partsExport: Record<string, any> = {};
+      for (const [pKey, pVal] of Object.entries(vData.parts)) {
+        partsExport[pKey] = {
+          id: pVal.id,
+          boneId: pVal.boneId,
+          fileName: pVal.fileName,
+          imageUrl: pVal.imageUrl,
+          scale: pVal.scale ?? 1.0,
+          offsetX: pVal.offsetX ?? 0,
+          offsetY: pVal.offsetY ?? 0,
+          rotation: pVal.rotation ?? 0,
+          pivotX: pVal.pivotX,
+          pivotY: pVal.pivotY,
+          width: pVal.width,
+          height: pVal.height
+        };
+      }
+
+      viewsExport[vKey] = {
+        label: vData.label,
+        imageUrl: vData.imageUrl,
+        fileName: vData.fileName,
+        fileSize: vData.fileSize,
+        joints: vData.joints,
+        envelopes: vData.envelopes,
+        parts: partsExport
+      };
+    }
+
+    const partsLibExport = this.partsLibrary.map(item => ({
+      id: item.id,
+      name: item.name,
+      imageUrl: item.imageUrl,
+      width: item.width,
+      height: item.height,
+      assignedBoneId: item.assignedBoneId ?? null,
+      pivotX: item.pivotX,
+      pivotY: item.pivotY
+    }));
+
+    const slicerExport = {
+      imageUrl: this.slicerImageUrl,
+      fileName: this.slicerImageFileName,
+      fileSize: this.slicerImageFileSize,
+      elements: this.slicer?.getElements() || []
+    };
+
+    const projectData: RigProjectData = {
+      format: 'questforge-rig-project',
+      version: '1.0',
+      characterName: this.characterName,
+      activeView: this.activeView,
+      views: viewsExport,
+      partsLibrary: partsLibExport,
+      slicer: slicerExport
+    };
+
+    const jsonStr = JSON.stringify(projectData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.characterName.toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  public handleLoadRigJson(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+        this.loadRigProjectData(data);
+      } catch (err: any) {
+        console.error('Failed to parse rig JSON:', err);
+        alert(`Failed to load rig project: ${err.message || 'Invalid JSON format'}`);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  public loadRigProjectData(data: any): void {
+    if (data.format === 'questforge-rig-project' || data.views) {
+      if (data.characterName) {
+        this.characterName = data.characterName;
+        this.updateHeaderTitle();
+      }
+
+      // 1. Restore Views
+      if (data.views) {
+        for (const [vKey, vData] of Object.entries(data.views) as [StudioView, any][]) {
+          if (!this.views[vKey]) continue;
+          const targetView = this.views[vKey];
+          targetView.joints = vData.joints || targetView.joints;
+          targetView.envelopes = vData.envelopes || targetView.envelopes;
+          targetView.fileName = vData.fileName || targetView.fileName;
+          targetView.fileSize = vData.fileSize || targetView.fileSize;
+          targetView.imageUrl = vData.imageUrl || targetView.imageUrl;
+
+          if (vData.imageUrl) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              targetView.image = img;
+              if (this.activeView === vKey) {
+                this.canvas?.setSourceImage(img, targetView.fileName, false);
+                this.canvas?.render();
+              }
+            };
+            img.src = vData.imageUrl;
+          }
+
+          targetView.parts = {};
+          if (vData.parts) {
+            for (const [boneId, partData] of Object.entries(vData.parts) as [AnatomicalJointId, any][]) {
+              const partImg = new Image();
+              partImg.crossOrigin = 'anonymous';
+              partImg.onload = () => this.canvas?.render();
+              partImg.src = partData.imageUrl;
+
+              targetView.parts[boneId] = {
+                id: partData.id,
+                boneId,
+                fileName: partData.fileName || `${boneId}.png`,
+                imageUrl: partData.imageUrl,
+                image: partImg,
+                scale: partData.scale ?? 1.0,
+                offsetX: partData.offsetX ?? 0,
+                offsetY: partData.offsetY ?? 0,
+                rotation: partData.rotation ?? 0,
+                pivotX: partData.pivotX,
+                pivotY: partData.pivotY,
+                width: partData.width,
+                height: partData.height,
+                visible: true,
+                opacity: 1
+              };
+            }
+          }
+        }
+      }
+
+      // 2. Restore Parts Library
+      if (Array.isArray(data.partsLibrary)) {
+        this.partsLibrary = [];
+        for (const item of data.partsLibrary) {
+          const libImg = new Image();
+          libImg.crossOrigin = 'anonymous';
+          libImg.onload = () => this.canvas?.render();
+          libImg.src = item.imageUrl;
+
+          this.partsLibrary.push({
+            id: item.id,
+            name: item.name,
+            imageUrl: item.imageUrl,
+            image: libImg,
+            width: item.width || 64,
+            height: item.height || 64,
+            assignedBoneId: item.assignedBoneId || null,
+            pivotX: item.pivotX,
+            pivotY: item.pivotY
+          });
+        }
+      }
+
+      // 3. Restore Slicer
+      if (data.slicer) {
+        if (data.slicer.imageUrl) {
+          this.loadSlicerImageFromUrl(data.slicer.imageUrl, data.slicer.fileName || 'slicer_sheet.png', data.slicer.fileSize || '');
+        }
+        if (Array.isArray(data.slicer.elements) && this.slicer) {
+          this.slicer.setElements(data.slicer.elements);
+        }
+      }
+
+      // 4. Set active view without overwriting newly loaded data from old canvas state
+      const targetActiveView = (data.activeView && this.views[data.activeView as StudioView]) ? (data.activeView as StudioView) : 'front';
+      this.activeView = targetActiveView;
+
+      this.container.querySelectorAll('.studio-view-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-view') === targetActiveView);
+      });
+
+      const hudView = this.container.querySelector('#hud-active-view');
+      if (hudView) hudView.textContent = targetActiveView.toUpperCase();
+
+      // 5. Update canvas joints, envelopes, parts
+      const activeArt = this.views[this.activeView];
+      if (this.canvas) {
+        this.canvas.setView(this.activeView, activeArt.joints, activeArt.envelopes, activeArt.parts);
+        if (activeArt.image) {
+          this.canvas.setSourceImage(activeArt.image, activeArt.fileName, false);
+        }
+        this.canvas.setParts(activeArt.parts);
+        this.canvas.resetPose();
+      }
+
+      this.renderLeftSidebar();
+      this.renderRightSidebar();
+    } else if (data.bones || data.skeleton) {
+      if (data.skeleton?.questforge?.elements && this.slicer) {
+        this.slicer.setElements(data.skeleton.questforge.elements);
+      }
+      if (data.skeleton?.questforge?.textureUrl) {
+        this.loadImageFromUrl(data.skeleton.questforge.textureUrl, 'imported_texture.png', 'front', true);
+      }
     }
   }
 
