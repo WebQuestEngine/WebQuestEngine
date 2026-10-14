@@ -561,6 +561,123 @@ export class RigStudioCanvas {
     }
   }
 
+  private panAnimFrame: number | null = null;
+
+  public cancelPanAnimation(): void {
+    if (this.panAnimFrame !== null) {
+      cancelAnimationFrame(this.panAnimFrame);
+      this.panAnimFrame = null;
+    }
+  }
+
+  /**
+   * Ensures the given joint or bone is comfortably visible within the canvas viewport,
+   * smoothly panning to center it if it is offscreen or clipped.
+   */
+  public ensureJointInView(id: AnatomicalJointId | null, smooth = true): void {
+    if (!id) return;
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    if (!joints) return;
+
+    let worldX: number | null = null;
+    let worldY: number | null = null;
+
+    // 1. Check if it's an anatomical bone
+    const bone = ANATOMICAL_BONES.find(b => b.id === id);
+    if (bone) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
+      if (seg) {
+        worldX = (seg.p1.x + seg.p2.x) / 2;
+        worldY = (seg.p1.y + seg.p2.y) / 2;
+      }
+    }
+
+    // 2. If not found as bone segment, check as direct joint
+    if (worldX === null || worldY === null) {
+      const pt = joints[id];
+      if (pt) {
+        worldX = pt.x;
+        worldY = pt.y;
+      }
+    }
+
+    // 3. Check attached part transform anchor
+    if (worldX === null || worldY === null) {
+      const part = this.parts[id];
+      if (part) {
+        const info = this.getPartTransformInfo(id);
+        if (info) {
+          worldX = info.anchorX;
+          worldY = info.anchorY;
+        }
+      }
+    }
+
+    if (worldX === null || worldY === null) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const viewW = rect.width;
+    const viewH = rect.height;
+    if (viewW <= 0 || viewH <= 0) return;
+
+    const screenX = this.panX + worldX * this.zoom;
+    const screenY = this.panY + worldY * this.zoom;
+
+    const margin = 60;
+    const isComfortablyInView =
+      screenX >= margin &&
+      screenX <= (viewW - margin) &&
+      screenY >= margin &&
+      screenY <= (viewH - margin);
+
+    if (isComfortablyInView) return;
+
+    const targetPanX = Math.round(viewW / 2 - worldX * this.zoom);
+    const targetPanY = Math.round(viewH / 2 - worldY * this.zoom);
+
+    if (!smooth) {
+      this.cancelPanAnimation();
+      this.panX = targetPanX;
+      this.panY = targetPanY;
+      this.render();
+      return;
+    }
+
+    this.animatePanTo(targetPanX, targetPanY);
+  }
+
+  private animatePanTo(targetX: number, targetY: number, durationMs = 220): void {
+    this.cancelPanAnimation();
+    const startX = this.panX;
+    const startY = this.panY;
+    const diffX = targetX - startX;
+    const diffY = targetY - startY;
+
+    if (Math.hypot(diffX, diffY) < 4) {
+      this.panX = targetX;
+      this.panY = targetY;
+      this.render();
+      return;
+    }
+
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - t, 3);
+      this.panX = Math.round(startX + diffX * ease);
+      this.panY = Math.round(startY + diffY * ease);
+      this.render();
+
+      if (t < 1) {
+        this.panAnimFrame = requestAnimationFrame(step);
+      } else {
+        this.panAnimFrame = null;
+      }
+    };
+    this.panAnimFrame = requestAnimationFrame(step);
+  }
+
   public getSelectedJoint(): AnatomicalJointId | null {
     return this.selectedJointId;
   }
@@ -611,6 +728,7 @@ export class RigStudioCanvas {
 
     this.container.addEventListener('wheel', (e) => {
       e.preventDefault();
+      this.cancelPanAnimation();
       const rect = this.canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -682,6 +800,7 @@ export class RigStudioCanvas {
     });
 
     this.container.addEventListener('mousedown', (e) => {
+      this.cancelPanAnimation();
       if (e.button === 1 || this.isSpacePressed) {
         this.isPanning = true;
         this.lastMouseX = e.clientX;

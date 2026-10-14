@@ -736,6 +736,12 @@ body.rig-studio-body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
+.part-card.selected {
+  border-color: #38bdf8 !important;
+  background: #172844 !important;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.4) !important;
+}
+
 .part-card:active {
   cursor: grabbing;
 }
@@ -806,6 +812,16 @@ body.rig-studio-body {
 .part-status-badge.unassigned {
   background: rgba(148, 163, 184, 0.1);
   color: #94a3b8;
+}
+
+.bone-part-slot-card {
+  cursor: pointer;
+}
+
+.bone-part-slot-card.selected {
+  border-color: #38bdf8 !important;
+  background: #14223d !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3) !important;
 }
 
 .bone-part-slot-card.drag-target-active {

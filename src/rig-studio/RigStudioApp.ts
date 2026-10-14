@@ -134,6 +134,7 @@ export class RigStudioApp {
   };
 
   private selectedJointId: AnatomicalJointId | null = null;
+  private selectedPartLibraryId: string | null = null;
   private canvas: RigStudioCanvas | null = null;
 
   // Undo / Redo History Stack
@@ -1802,12 +1803,24 @@ export class RigStudioApp {
       });
     });
 
+    sidebar.querySelectorAll('.btn-elem-order-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-elem-id');
+        if (id) {
+          this.slicer?.moveElementUp(id);
+          this.slicer?.ensureElementInView(id);
+        }
+      });
+    });
+
     sidebar.querySelectorAll('.btn-elem-order-down').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-elem-id');
         if (id) {
           this.slicer?.moveElementDown(id);
+          this.slicer?.ensureElementInView(id);
         }
       });
     });
@@ -1860,18 +1873,17 @@ export class RigStudioApp {
           const toIdx = currentElements.findIndex(el => el.id === targetId);
           if (fromIdx >= 0 && toIdx >= 0) {
             this.slicer.reorderElement(fromIdx, toIdx);
+            this.slicer.ensureElementInView(sourceId);
           }
         }
       });
     });
 
-    // Select element card on click
+    // Select element card on click and ensure it is in view on canvas
     sidebar.querySelectorAll('.slicer-element-card').forEach(card => {
       card.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         if (
-          target.tagName === 'INPUT' ||
-          target.tagName === 'SELECT' ||
           target.tagName === 'BUTTON' ||
           target.closest('button') ||
           target.classList.contains('elem-drag-handle')
@@ -1879,7 +1891,19 @@ export class RigStudioApp {
         const id = card.getAttribute('data-elem-id');
         if (id) {
           this.slicer?.selectElement(id);
+          this.slicer?.ensureElementInView(id);
         }
+      });
+
+      // Also ensure in view when focusing inputs inside the card
+      card.querySelectorAll('input, select').forEach(field => {
+        field.addEventListener('focus', () => {
+          const id = card.getAttribute('data-elem-id');
+          if (id && this.slicer?.getSelectedElement()?.id !== id) {
+            this.slicer?.selectElement(id);
+            this.slicer?.ensureElementInView(id);
+          }
+        });
       });
     });
 
@@ -2024,6 +2048,8 @@ export class RigStudioApp {
         }
       });
     });
+
+    this.scrollSelectedElementIntoViewInSidebar();
   }
 
   public applyMarkedElementsToRig(): void {
@@ -2931,8 +2957,11 @@ export class RigStudioApp {
               <div class="parts-library-grid">
                 ${this.partsLibrary.map(item => {
                   const assignedBone = ANATOMICAL_BONES.find(b => b.id === item.assignedBoneId);
+                  const isPartSelected = (this.selectedJointId && item.assignedBoneId === this.selectedJointId) ||
+                    (this.selectedJointId && currentArt.parts[this.selectedJointId]?.fileName === item.name) ||
+                    (this.selectedPartLibraryId === item.id);
                   return `
-                    <div class="part-card" data-part-id="${item.id}" draggable="true" title="Drag and drop onto a bone on canvas or list">
+                    <div class="part-card ${isPartSelected ? 'selected' : ''}" data-part-id="${item.id}" draggable="true" title="Drag and drop onto a bone on canvas or list">
                       <div class="part-card-thumb">
                         <img src="${item.imageUrl}" class="part-card-img" alt="${item.name}" />
                       </div>
@@ -3066,7 +3095,9 @@ export class RigStudioApp {
         if (jId) {
           this.selectedJointId = jId;
           this.canvas?.selectJoint(jId);
+          this.canvas?.ensureJointInView(jId);
           this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
         }
       });
     });
@@ -3078,7 +3109,31 @@ export class RigStudioApp {
         if (bId) {
           this.selectedJointId = bId;
           this.canvas?.selectJoint(bId);
+          this.canvas?.ensureJointInView(bId);
           this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
+        }
+      });
+    });
+
+    // Bone slot card click (anywhere on the card)
+    sidebar.querySelectorAll('.bone-part-slot-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'BUTTON' ||
+          target.closest('button') ||
+          target.closest('.bone-drop-target-area')
+        ) return;
+        const bId = card.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) {
+          this.selectedJointId = bId;
+          this.canvas?.selectJoint(bId);
+          this.canvas?.ensureJointInView(bId);
+          this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
         }
       });
     });
@@ -3303,8 +3358,33 @@ export class RigStudioApp {
       this.renderRightSidebar();
     });
 
-    // Draggable Part Cards in Library
+    // Draggable Part Cards in Library & Click to Select
     sidebar.querySelectorAll('.part-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'SELECT' ||
+          target.closest('select') ||
+          target.tagName === 'BUTTON' ||
+          target.closest('button')
+        ) return;
+        const pId = card.getAttribute('data-part-id');
+        const item = this.partsLibrary.find(p => p.id === pId);
+        if (item) {
+          this.selectedPartLibraryId = item.id;
+          const currentArt = this.views[this.activeView];
+          const assignedBone = item.assignedBoneId ||
+            (Object.keys(currentArt.parts).find(b => currentArt.parts[b]?.fileName === item.name || currentArt.parts[b]?.imageUrl === item.imageUrl) as AnatomicalJointId | undefined);
+          if (assignedBone) {
+            this.selectedJointId = assignedBone;
+            this.canvas?.selectJoint(assignedBone);
+            this.canvas?.ensureJointInView(assignedBone);
+          }
+          this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
+        }
+      });
+
       card.addEventListener('dragstart', (evt: Event) => {
         const e = evt as DragEvent;
         const pId = card.getAttribute('data-part-id');
@@ -3349,12 +3429,32 @@ export class RigStudioApp {
       this.resetBoneOrder();
     });
 
+    sidebar.querySelectorAll('.layer-item-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'BUTTON' ||
+          target.closest('button') ||
+          target.classList.contains('elem-drag-handle')
+        ) return;
+        const bId = card.getAttribute('data-bone-id') as AnatomicalJointId;
+        if (bId) {
+          this.selectedJointId = bId;
+          this.canvas?.selectJoint(bId);
+          this.canvas?.ensureJointInView(bId);
+          this.renderRightSidebar();
+          this.renderCanvasAlignmentBar();
+        }
+      });
+    });
+
     sidebar.querySelectorAll('.btn-select-layer-card').forEach(el => {
       el.addEventListener('click', () => {
         const bId = el.getAttribute('data-bone-id') as AnatomicalJointId;
         if (bId) {
           this.selectedJointId = bId;
           this.canvas?.selectJoint(bId);
+          this.canvas?.ensureJointInView(bId);
           this.renderRightSidebar();
           this.renderCanvasAlignmentBar();
         }
@@ -3464,6 +3564,49 @@ export class RigStudioApp {
         card.classList.remove('dragging');
         sidebar.querySelectorAll('.layer-item-card').forEach(c => c.classList.remove('drag-over'));
       });
+    });
+
+    this.scrollSelectedElementIntoViewInSidebar();
+  }
+
+  /**
+   * Synchronizes the right sidebar list scroll position so that the currently
+   * selected element, bone, layer, or part card is smoothly scrolled into view.
+   */
+  private scrollSelectedElementIntoViewInSidebar(): void {
+    requestAnimationFrame(() => {
+      const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement;
+      if (!sidebar) return;
+
+      const sidebarContent = sidebar.querySelector('.sidebar-content') as HTMLElement;
+      if (!sidebarContent) return;
+
+      let targetEl: HTMLElement | null = null;
+
+      if (this.activeStudioMode === 'slicer') {
+        targetEl = sidebar.querySelector('.slicer-element-card.selected') as HTMLElement;
+      } else {
+        if (this.activeRightTab === 'bones') {
+          targetEl = (sidebar.querySelector('.bone-part-slot-card.selected') ||
+                      sidebar.querySelector('.btn-select-pivot.active')) as HTMLElement;
+        } else if (this.activeRightTab === 'layers') {
+          targetEl = sidebar.querySelector('.layer-item-card.selected') as HTMLElement;
+        } else if (this.activeRightTab === 'parts') {
+          targetEl = sidebar.querySelector('.part-card.selected') as HTMLElement;
+        } else if (this.activeRightTab === 'animations') {
+          targetEl = sidebar.querySelector('.anim-card.active') as HTMLElement;
+        }
+      }
+
+      if (targetEl) {
+        const cRect = sidebarContent.getBoundingClientRect();
+        const tRect = targetEl.getBoundingClientRect();
+        // Check if comfortably in view within sidebarContent
+        const isComfortablyInView = tRect.top >= cRect.top + 8 && tRect.bottom <= cRect.bottom - 8;
+        if (!isComfortablyInView) {
+          targetEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        }
+      }
     });
   }
 
@@ -4358,6 +4501,9 @@ export class RigStudioApp {
     this.recordHistory('Move Layer Up');
     const success = this.canvas.moveBoneUp(boneId);
     if (success) {
+      this.selectedJointId = boneId;
+      this.canvas.selectJoint(boneId);
+      this.canvas.ensureJointInView(boneId);
       this.syncActiveViewBoneOrder();
       this.renderRightSidebar();
       this.renderCanvasAlignmentBar();
@@ -4372,6 +4518,9 @@ export class RigStudioApp {
     this.recordHistory('Move Layer Down');
     const success = this.canvas.moveBoneDown(boneId);
     if (success) {
+      this.selectedJointId = boneId;
+      this.canvas.selectJoint(boneId);
+      this.canvas.ensureJointInView(boneId);
       this.syncActiveViewBoneOrder();
       this.renderRightSidebar();
       this.renderCanvasAlignmentBar();
@@ -4386,6 +4535,9 @@ export class RigStudioApp {
     this.recordHistory('Move Layer to Top');
     const success = this.canvas.moveBoneToTop(boneId);
     if (success) {
+      this.selectedJointId = boneId;
+      this.canvas.selectJoint(boneId);
+      this.canvas.ensureJointInView(boneId);
       this.syncActiveViewBoneOrder();
       this.renderRightSidebar();
       this.renderCanvasAlignmentBar();
@@ -4400,6 +4552,9 @@ export class RigStudioApp {
     this.recordHistory('Move Layer to Bottom');
     const success = this.canvas.moveBoneToBottom(boneId);
     if (success) {
+      this.selectedJointId = boneId;
+      this.canvas.selectJoint(boneId);
+      this.canvas.ensureJointInView(boneId);
       this.syncActiveViewBoneOrder();
       this.renderRightSidebar();
       this.renderCanvasAlignmentBar();
@@ -4434,6 +4589,13 @@ export class RigStudioApp {
     this.recordHistory('Reorder Layer');
     const success = this.canvas.reorderBone(fromIndex, toIndex);
     if (success) {
+      const currentOrder = this.canvas.getBoneDrawOrder();
+      const movedBoneId = currentOrder[toIndex];
+      if (movedBoneId) {
+        this.selectedJointId = movedBoneId;
+        this.canvas.selectJoint(movedBoneId);
+        this.canvas.ensureJointInView(movedBoneId);
+      }
       this.syncActiveViewBoneOrder();
       this.renderRightSidebar();
       this.renderCanvasAlignmentBar();

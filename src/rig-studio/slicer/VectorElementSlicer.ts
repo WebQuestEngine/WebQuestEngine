@@ -123,6 +123,91 @@ export class VectorElementSlicer {
     }
   }
 
+  private panAnimFrame: number | null = null;
+
+  public cancelPanAnimation(): void {
+    if (this.panAnimFrame !== null) {
+      cancelAnimationFrame(this.panAnimFrame);
+      this.panAnimFrame = null;
+    }
+  }
+
+  /**
+   * Ensures the given element is comfortably visible within the canvas viewport,
+   * smoothly panning to center it if it is offscreen or clipped.
+   */
+  public ensureElementInView(id: string, smooth = true): void {
+    const elem = this.elements.find(e => e.id === id);
+    if (!elem) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const viewW = rect.width;
+    const viewH = rect.height;
+    if (viewW <= 0 || viewH <= 0) return;
+
+    const minX = this.panX + elem.bounds.x * this.zoom;
+    const maxX = this.panX + (elem.bounds.x + elem.bounds.width) * this.zoom;
+    const minY = this.panY + elem.bounds.y * this.zoom;
+    const maxY = this.panY + (elem.bounds.y + elem.bounds.height) * this.zoom;
+
+    const margin = 50;
+    const isComfortablyInView =
+      minX >= margin &&
+      maxX <= (viewW - margin) &&
+      minY >= margin &&
+      maxY <= (viewH - margin);
+
+    if (isComfortablyInView) return;
+
+    const elemCenterX = elem.bounds.x + elem.bounds.width / 2;
+    const elemCenterY = elem.bounds.y + elem.bounds.height / 2;
+
+    const targetPanX = Math.round(viewW / 2 - elemCenterX * this.zoom);
+    const targetPanY = Math.round(viewH / 2 - elemCenterY * this.zoom);
+
+    if (!smooth) {
+      this.cancelPanAnimation();
+      this.panX = targetPanX;
+      this.panY = targetPanY;
+      this.render();
+      return;
+    }
+
+    this.animatePanTo(targetPanX, targetPanY);
+  }
+
+  private animatePanTo(targetX: number, targetY: number, durationMs = 220): void {
+    this.cancelPanAnimation();
+    const startX = this.panX;
+    const startY = this.panY;
+    const diffX = targetX - startX;
+    const diffY = targetY - startY;
+
+    if (Math.hypot(diffX, diffY) < 4) {
+      this.panX = targetX;
+      this.panY = targetY;
+      this.render();
+      return;
+    }
+
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - t, 3);
+      this.panX = Math.round(startX + diffX * ease);
+      this.panY = Math.round(startY + diffY * ease);
+      this.render();
+
+      if (t < 1) {
+        this.panAnimFrame = requestAnimationFrame(step);
+      } else {
+        this.panAnimFrame = null;
+      }
+    };
+    this.panAnimFrame = requestAnimationFrame(step);
+  }
+
   public getSelectedVertexIndex(): number | null {
     return this.selectedVertexIndex;
   }
@@ -211,6 +296,7 @@ export class VectorElementSlicer {
 
     this.container.addEventListener('wheel', (e) => {
       e.preventDefault();
+      this.cancelPanAnimation();
       const rect = this.canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -226,6 +312,7 @@ export class VectorElementSlicer {
     }, { passive: false });
 
     this.container.addEventListener('mousedown', (e) => {
+      this.cancelPanAnimation();
       if (e.button === 1 || this.toolMode === 'pan' || this.isSpacePressed) {
         this.isPanning = true;
         this.lastMouseX = e.clientX;
