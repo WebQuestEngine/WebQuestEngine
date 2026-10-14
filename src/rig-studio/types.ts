@@ -11,7 +11,7 @@ export interface VectorOutlineElement {
   bounds: { x: number; y: number; width: number; height: number };
   deformationMode: 'cutout' | 'mesh';
   assignedBoneId?: AnatomicalJointId;
-  originJointId?: AnatomicalJointId;
+  originJointId?: AnatomicalJointId | 'hip_mid';
   targetJointId?: AnatomicalJointId;
   sheetId?: string;
   meshOptions?: {
@@ -225,7 +225,7 @@ export interface AnatomicalJointDef {
 export interface BonePartAttachment {
   id?: string;
   boneId: AnatomicalJointId;
-  originJointId?: AnatomicalJointId;
+  originJointId?: AnatomicalJointId | 'hip_mid';
   targetJointId?: AnatomicalJointId;
   image: HTMLImageElement;
   imageUrl: string;
@@ -275,7 +275,7 @@ export interface RigProjectData {
     parts: Record<string, {
       id?: string;
       boneId: AnatomicalJointId;
-      originJointId?: AnatomicalJointId;
+      originJointId?: AnatomicalJointId | 'hip_mid';
       targetJointId?: AnatomicalJointId;
       fileName: string;
       imageUrl: string;

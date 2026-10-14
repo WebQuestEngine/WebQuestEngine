@@ -583,6 +583,7 @@ export class KeyframeTimeline {
 
     // Add Keyframe button
     this.container.querySelector('.btn-timeline-add-key')?.addEventListener('click', () => {
+      this.addKeyframe(this.restJoints);
       this.events.onKeyframeAdded?.(this.currentTime, this.restJoints);
     });
 

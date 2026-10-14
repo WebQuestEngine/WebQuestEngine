@@ -518,7 +518,7 @@ export class RigStudioCanvas {
     }
     if (boneOrder && boneOrder.length > 0) {
       this.setBoneDrawOrder(boneOrder);
-    } else {
+    } else if (!this.boneDrawOrder || this.boneDrawOrder.length === 0) {
       this.boneDrawOrder = [...DEFAULT_BONE_DRAW_ORDER];
     }
     this.selectedJointId = null;
@@ -1331,8 +1331,15 @@ export class RigStudioCanvas {
         return joints[jId as AnatomicalJointId] || null;
       };
 
-      const origId = part.originJointId || (boneDef?.originJointId || boneId);
-      const tgtId = part.targetJointId || boneDef?.targetJointId;
+      let origId = part.originJointId || (boneDef?.originJointId || boneId);
+      let tgtId = part.targetJointId || boneDef?.targetJointId;
+
+      // Auto-correct Torso bone ('chest') if erroneously set to chest -> chest or neck
+      if (boneId === 'chest' && (origId === 'chest' || origId === tgtId)) {
+        origId = 'hip_mid';
+        tgtId = 'chest';
+      }
+
       const p1 = resolvePoint(origId);
       let p2 = resolvePoint(tgtId);
       if (!p2 && boneDef?.defaultLength && p1) {

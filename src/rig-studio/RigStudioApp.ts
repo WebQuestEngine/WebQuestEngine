@@ -150,9 +150,24 @@ export class RigStudioApp {
     this.renderLayout();
     this.initBridge();
 
-    // In standalone mode, auto-load demo character if none loaded
+    // In standalone mode, auto-restore latest project if saved, otherwise load demo character
     if (!this.bridge.isEmbeddedMode) {
-      this.loadDemoCharacter();
+      let restored = false;
+      try {
+        const saved = localStorage.getItem('questforge_rig_project_latest');
+        if (saved) {
+          const project = JSON.parse(saved);
+          if (project && (project.format === 'questforge-rig-project' || project.views)) {
+            this.loadRigProjectData(project);
+            restored = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not restore saved rig project:', err);
+      }
+      if (!restored) {
+        this.loadDemoCharacter();
+      }
     }
   }
 
@@ -340,7 +355,9 @@ export class RigStudioApp {
       },
       onJointsModified: (joints) => {
         this.views[this.activeView].joints = { ...joints };
+        this.syncPresetAnimationsWithRestJoints(this.activeView);
         this.updateUndoRedoButtons();
+        this.persistRigStateToLocalStorage();
       },
       onPartModified: (boneId, part) => {
         this.views[this.activeView].parts[boneId] = part;
@@ -402,8 +419,8 @@ export class RigStudioApp {
         }
       }
 
-      // Reorder Layers in Rig & Bones Mode (Inkscape shortcuts: PageUp / PageDown / Home / End, or Ctrl+[ / Ctrl+])
-      if (this.activeStudioMode === 'rig' && this.selectedJointId && !isInput) {
+      // Reorder Layers in Rig & Bones Mode and Animate Mode (Inkscape shortcuts: PageUp / PageDown / Home / End, or [ / ] / Ctrl+[ / Ctrl+])
+      if ((this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate') && this.selectedJointId && !isInput) {
         if (e.key === 'Home' || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === ']' || e.key === '}'))) {
           e.preventDefault();
           this.moveSelectedBoneToTop();
@@ -414,12 +431,12 @@ export class RigStudioApp {
           this.moveSelectedBoneToBottom();
           return;
         }
-        if (e.key === 'PageUp' || ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '}'))) {
+        if (e.key === 'PageUp' || (!e.ctrlKey && !e.metaKey && e.key === ']') || ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '}'))) {
           e.preventDefault();
           this.moveSelectedBoneUp();
           return;
         }
-        if (e.key === 'PageDown' || ((e.ctrlKey || e.metaKey) && (e.key === '[' || e.key === '{'))) {
+        if (e.key === 'PageDown' || (!e.ctrlKey && !e.metaKey && e.key === '[') || ((e.ctrlKey || e.metaKey) && (e.key === '[' || e.key === '{'))) {
           e.preventDefault();
           this.moveSelectedBoneDown();
           return;
@@ -837,6 +854,7 @@ export class RigStudioApp {
       this.renderSlicerRightSidebar();
       this.slicer?.resizeCanvas();
     } else if (mode === 'animate') {
+      this.syncPresetAnimationsWithRestJoints(this.activeView);
       this.canvas?.setToolMode('preview');
       this.initTimelineIfNeeded();
       this.activeRightTab = 'animations';
@@ -1709,6 +1727,7 @@ export class RigStudioApp {
                       <span style="font-size:0.62rem; color:#94a3b8; font-weight:600; white-space:nowrap;">Origin:</span>
                       <select class="select-slicer-elem-origin" data-elem-id="${el.id}" style="flex:1; min-width:0; font-size:0.63rem; background:#0b1120; border:1px solid rgba(255,255,255,0.12); color:#f1f5f9; border-radius:3px; padding:2px 3px;">
                         <option value="">Default Origin</option>
+                        <option value="hip_mid" ${el.originJointId === 'hip_mid' ? 'selected' : ''}>Pelvis / Hip Midpoint (hip_mid)</option>
                         ${ANATOMICAL_JOINTS.map(j => `
                           <option value="${j.id}" ${el.originJointId === j.id ? 'selected' : ''}>
                             ${j.name}
@@ -1900,8 +1919,8 @@ export class RigStudioApp {
             if (boneId) {
               const bDef = ANATOMICAL_BONES.find(b => b.id === boneId);
               if (bDef) {
-                if (!elem.originJointId) elem.originJointId = (bDef.originJointId !== 'hip_mid' ? bDef.originJointId : 'chest') as AnatomicalJointId;
-                if (!elem.targetJointId) elem.targetJointId = bDef.targetJointId as AnatomicalJointId;
+                if (!elem.originJointId) elem.originJointId = bDef.originJointId as any;
+                if (!elem.targetJointId) elem.targetJointId = bDef.targetJointId as any;
                 const origSel = sidebar.querySelector(`.select-slicer-elem-origin[data-elem-id="${id}"]`) as HTMLSelectElement | null;
                 const tgtSel = sidebar.querySelector(`.select-slicer-elem-target[data-elem-id="${id}"]`) as HTMLSelectElement | null;
                 if (origSel && elem.originJointId) origSel.value = elem.originJointId;
@@ -2399,6 +2418,8 @@ export class RigStudioApp {
     this.views[this.activeView].joints = JSON.parse(JSON.stringify(defaultJoints));
     this.canvas?.setJoints(this.views[this.activeView].joints);
     this.canvas?.resetPose();
+    this.syncPresetAnimationsWithRestJoints(this.activeView);
+    this.persistRigStateToLocalStorage();
     this.renderRightSidebar();
   }
 
@@ -3523,7 +3544,8 @@ export class RigStudioApp {
     const matchBoneFromFilename = (name: string): AnatomicalJointId | null => {
       const lower = name.toLowerCase().replace(/[-_.\s]/g, '');
       if (lower.includes('head')) return 'head';
-      if (lower.includes('neck') || lower.includes('torso') || lower.includes('body') || lower.includes('chest')) return 'neck';
+      if (lower.includes('torso') || lower.includes('body') || lower.includes('chest') || lower.includes('waist')) return 'chest';
+      if (lower.includes('neck')) return 'neck';
       if (lower.includes('shoulderl') || lower.includes('upperarml') || lower.includes('leftupperarm') || lower.includes('bicepl')) return 'shoulder_l';
       if (lower.includes('shoulderr') || lower.includes('upperarmr') || lower.includes('rightupperarm') || lower.includes('bicepr')) return 'shoulder_r';
       if (lower.includes('elbowl') || lower.includes('forearml') || lower.includes('lowerarml') || lower.includes('leftforearm')) return 'elbow_l';
@@ -3664,7 +3686,7 @@ export class RigStudioApp {
         fileSize: vData.fileSize,
         joints: vData.joints,
         envelopes: vData.envelopes,
-        boneOrder: vData.boneOrder ? [...vData.boneOrder] : (this.canvas && this.activeView === vKey ? [...this.canvas.getBoneDrawOrder()] : undefined),
+        boneOrder: vData.boneOrder ? [...vData.boneOrder] : (this.canvas && this.activeView === vKey ? [...this.canvas.getBoneDrawOrder()] : [...DEFAULT_BONE_DRAW_ORDER]),
         parts: partsExport
       };
     }
@@ -3988,23 +4010,30 @@ export class RigStudioApp {
         }
       },
       bones,
-      slots: [
-        { name: 'hip', bone: 'hip' },
-        { name: 'torso', bone: 'torso' },
-        { name: 'head', bone: 'head' },
-        { name: 'arm_upper_r', bone: 'arm_upper_r' },
-        { name: 'arm_lower_r', bone: 'arm_lower_r' },
-        { name: 'hand_r', bone: 'hand_r' },
-        { name: 'arm_upper_l', bone: 'arm_upper_l' },
-        { name: 'arm_lower_l', bone: 'arm_lower_l' },
-        { name: 'hand_l', bone: 'hand_l' },
-        { name: 'leg_upper_r', bone: 'leg_upper_r' },
-        { name: 'leg_lower_r', bone: 'leg_lower_r' },
-        { name: 'foot_r', bone: 'foot_r' },
-        { name: 'leg_upper_l', bone: 'leg_upper_l' },
-        { name: 'leg_lower_l', bone: 'leg_lower_l' },
-        { name: 'foot_l', bone: 'foot_l' }
-      ],
+      slots: (() => {
+        const spineBoneMap: Record<string, string> = {
+          hip_l: 'leg_upper_l',
+          knee_l: 'leg_lower_l',
+          ankle_l: 'foot_l',
+          hip_r: 'leg_upper_r',
+          knee_r: 'leg_lower_r',
+          ankle_r: 'foot_r',
+          chest: 'torso',
+          neck: 'neck',
+          head: 'head',
+          shoulder_l: 'arm_upper_l',
+          elbow_l: 'arm_lower_l',
+          wrist_l: 'hand_l',
+          shoulder_r: 'arm_upper_r',
+          elbow_r: 'arm_lower_r',
+          wrist_r: 'hand_r'
+        };
+        const order = this.canvas ? this.canvas.getBoneDrawOrder() : (this.views.front.boneOrder || DEFAULT_BONE_DRAW_ORDER);
+        return order.map(bId => {
+          const sName = spineBoneMap[bId] || bId;
+          return { name: sName, bone: sName };
+        });
+      })(),
       skins: [
         { name: 'front', attachments: {} },
         { name: 'back', attachments: {} },
@@ -4273,15 +4302,54 @@ export class RigStudioApp {
       this.renderCanvasAlignmentBar();
     });
 
+    bar.querySelector('#hud-btn-order-top')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneToTop();
+    });
+    bar.querySelector('#hud-btn-order-up')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneUp();
+    });
+    bar.querySelector('#hud-btn-order-down')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneDown();
+    });
+    bar.querySelector('#hud-btn-order-bottom')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.moveSelectedBoneToBottom();
+    });
+
     bar.querySelector('#hud-btn-undo')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.undo();
     });
   }
 
+  private persistTimeout: any = null;
+  public persistRigStateToLocalStorage(): void {
+    if (this.persistTimeout) clearTimeout(this.persistTimeout);
+    this.persistTimeout = setTimeout(() => {
+      try {
+        const data = this.buildRigProjectData();
+        const jsonStr = JSON.stringify(data);
+        localStorage.setItem(`questforge_rig_project_${this.characterName || 'default'}`, jsonStr);
+        localStorage.setItem('questforge_rig_project_latest', jsonStr);
+      } catch (e) {
+        console.warn('Could not auto-persist rig project to localStorage:', e);
+      }
+    }, 350);
+  }
+
   public syncActiveViewBoneOrder(): void {
     if (this.canvas) {
-      this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
+      const currentOrder = [...this.canvas.getBoneDrawOrder()];
+      this.views[this.activeView].boneOrder = currentOrder;
+      for (const vData of Object.values(this.views)) {
+        if (!vData.boneOrder) {
+          vData.boneOrder = [...currentOrder];
+        }
+      }
+      this.persistRigStateToLocalStorage();
     }
   }
 
@@ -4673,6 +4741,103 @@ export class RigStudioApp {
     };
 
     this.activeAnimationName = 'idle';
+  }
+
+  public syncPresetAnimationsWithRestJoints(viewId?: StudioView): void {
+    const targetViews = viewId ? [viewId] : (Object.keys(this.views) as StudioView[]);
+    for (const v of targetViews) {
+      const joints = this.views[v]?.joints;
+      if (!joints) continue;
+
+      // 1. Keep 'idle' breathing animation calibrated to rest joints
+      const idleAnim = this.animations['idle'];
+      if (idleAnim) {
+        if (!idleAnim.relevantSides.includes(v)) {
+          idleAnim.relevantSides.push(v);
+        }
+        const track = idleAnim.tracks[v];
+        if (!track || (track.keyframes.length === 3 && track.keyframes[0].time === 0 && track.keyframes[2].time === 1.6)) {
+          const j0 = JSON.parse(JSON.stringify(joints));
+          const j1 = JSON.parse(JSON.stringify(joints));
+          j1.chest = { x: joints.chest.x, y: joints.chest.y - 4 };
+          j1.neck = { x: joints.neck.x, y: joints.neck.y - 4 };
+          j1.head = { x: joints.head.x, y: joints.head.y - 5 };
+
+          idleAnim.tracks[v] = {
+            duration: 1.6,
+            keyframes: [
+              { time: 0.0, name: 'Rest', joints: j0 },
+              { time: 0.8, name: 'Inhale', joints: j1 },
+              { time: 1.6, name: 'Rest', joints: JSON.parse(JSON.stringify(j0)) }
+            ]
+          };
+        }
+      }
+
+      // 2. Keep 'walk' cycle calibrated to character's true rest joints (prevents torso/neck split)
+      const walkAnim = this.animations['walk'];
+      if (walkAnim) {
+        if (!walkAnim.relevantSides.includes(v)) {
+          walkAnim.relevantSides.push(v);
+        }
+        const track = walkAnim.tracks[v];
+        if (!track || (track.keyframes.length === 5 && track.keyframes[0].time === 0 && track.keyframes[4].time === 1.0)) {
+          const j0 = JSON.parse(JSON.stringify(joints));
+          const j1 = JSON.parse(JSON.stringify(joints));
+          const j2 = JSON.parse(JSON.stringify(joints));
+          const j3 = JSON.parse(JSON.stringify(joints));
+
+          if (v === 'left' || v === 'right') {
+            const dir = v === 'left' ? 1 : -1;
+            j1.knee_l = { x: joints.knee_l.x + 18 * dir, y: joints.knee_l.y - 8 };
+            j1.ankle_l = { x: joints.ankle_l.x + 22 * dir, y: joints.ankle_l.y - 4 };
+            j1.knee_r = { x: joints.knee_r.x - 16 * dir, y: joints.knee_r.y - 4 };
+            j1.ankle_r = { x: joints.ankle_r.x - 20 * dir, y: joints.ankle_r.y };
+            j1.wrist_l = { x: joints.wrist_l.x - 14 * dir, y: joints.wrist_l.y - 4 };
+            j1.wrist_r = { x: joints.wrist_r.x + 16 * dir, y: joints.wrist_r.y - 4 };
+
+            j3.knee_l = { x: joints.knee_l.x - 16 * dir, y: joints.knee_l.y - 4 };
+            j3.ankle_l = { x: joints.ankle_l.x - 20 * dir, y: joints.ankle_l.y };
+            j3.knee_r = { x: joints.knee_r.x + 18 * dir, y: joints.knee_r.y - 8 };
+            j3.ankle_r = { x: joints.ankle_r.x + 22 * dir, y: joints.ankle_r.y - 4 };
+            j3.wrist_l = { x: joints.wrist_l.x + 16 * dir, y: joints.wrist_l.y - 4 };
+            j3.wrist_r = { x: joints.wrist_r.x - 14 * dir, y: joints.wrist_r.y - 4 };
+          } else {
+            j1.knee_l = { x: joints.knee_l.x, y: joints.knee_l.y - 14 };
+            j1.ankle_l = { x: joints.ankle_l.x, y: joints.ankle_l.y - 16 };
+            j1.elbow_l = { x: joints.elbow_l.x - 10, y: joints.elbow_l.y };
+            j1.wrist_l = { x: joints.wrist_l.x - 12, y: joints.wrist_l.y };
+            j1.elbow_r = { x: joints.elbow_r.x - 6, y: joints.elbow_r.y };
+            j1.wrist_r = { x: joints.wrist_r.x - 8, y: joints.wrist_r.y };
+
+            j3.knee_r = { x: joints.knee_r.x, y: joints.knee_r.y - 14 };
+            j3.ankle_r = { x: joints.ankle_r.x, y: joints.ankle_r.y - 16 };
+            j3.elbow_r = { x: joints.elbow_r.x + 10, y: joints.elbow_r.y };
+            j3.wrist_r = { x: joints.wrist_r.x + 12, y: joints.wrist_r.y };
+            j3.elbow_l = { x: joints.elbow_l.x + 6, y: joints.elbow_l.y };
+            j3.wrist_l = { x: joints.wrist_l.x + 8, y: joints.wrist_l.y };
+          }
+
+          walkAnim.tracks[v] = {
+            duration: 1.0,
+            keyframes: [
+              { time: 0.0, name: 'Contact', joints: j0 },
+              { time: 0.25, name: 'Down', joints: j1 },
+              { time: 0.5, name: 'Passing', joints: j2 },
+              { time: 0.75, name: 'Apex', joints: j3 },
+              { time: 1.0, name: 'Contact', joints: JSON.parse(JSON.stringify(j0)) }
+            ]
+          };
+        }
+      }
+    }
+
+    if (this.timeline && this.activeStudioMode === 'animate') {
+      const activeArt = this.views[this.activeView];
+      if (activeArt) {
+        this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, activeArt.joints);
+      }
+    }
   }
 
   private initTimelineIfNeeded(): void {
