@@ -137,6 +137,12 @@ export class RigStudioApp {
   private selectedPartLibraryId: string | null = null;
   private canvas: RigStudioCanvas | null = null;
 
+  // Last loaded files for direct save without dialog
+  private lastLoadedRigFileName: string | null = null;
+  private lastLoadedRigFileHandle: any = null;
+  private lastLoadedElementsFileName: string | null = null;
+  private lastLoadedElementsFileHandle: any = null;
+
   // Undo / Redo History Stack
   private undoStack: StudioHistoryState[] = [];
   private redoStack: StudioHistoryState[] = [];
@@ -160,6 +166,8 @@ export class RigStudioApp {
           const project = JSON.parse(saved);
           if (project && (project.format === 'questforge-rig-project' || project.views)) {
             this.loadRigProjectData(project);
+            this.lastLoadedRigFileName = `${(this.characterName || 'sir_ronald').toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
+            this.lastLoadedElementsFileName = `${(this.characterName || 'sir_ronald').toLowerCase().replace(/\s+/g, '_')}_elements.json`;
             restored = true;
           }
         }
@@ -223,7 +231,7 @@ export class RigStudioApp {
           <button class="btn-studio btn-load-demo" title="Load sample fully rigged character (Sir Ronald) with all bone graphics attached">
             ⚔️ Load Demo Rig
           </button>
-          <label class="btn-studio" style="cursor:pointer;" title="Load a saved rigged character project with graphics (.json)">
+          <label class="btn-studio" id="btn-load-rig-label" style="cursor:pointer;" title="Load a saved rigged character project with graphics (.json)">
             📂 Load Rig (.json)
             <input type="file" id="input-load-rig-json" accept=".json" style="display:none;" />
           </label>
@@ -243,7 +251,7 @@ export class RigStudioApp {
             </button>
             <button class="btn-studio btn-close-modal">✕</button>
           ` : `
-            <button class="btn-studio btn-studio-primary btn-save-local" title="Quick Save rig project in-place (Ctrl+S / No dialog)">
+            <button class="btn-studio btn-studio-primary btn-save-local" id="btn-save-rig-overwrite" title="Save & Overwrite loaded rig file on disk (Ctrl+S / No dialog)">
               💾 Save Rig
             </button>
           `}
@@ -311,9 +319,9 @@ export class RigStudioApp {
               </div>
               <div style="width:1px; height:20px; background:rgba(255,255,255,0.15); margin:0 4px;"></div>
               <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
-                <button class="btn-studio" id="btn-slicer-save-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#38bdf8;" title="Save marked elements in-place (instant, no dialog)">💾 Save Elements</button>
+                <button class="btn-studio" id="btn-slicer-save-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#38bdf8;" title="Save & Overwrite loaded elements file on disk (Ctrl+S / No dialog)">💾 Save Elements</button>
                 <button class="btn-studio" id="btn-slicer-export-elements-toolbar" style="font-size:0.68rem; padding:4px 7px; color:#67e8f9;" title="Export marked elements to a .json file on disk">⬇ Export (.json)</button>
-                <label class="btn-studio" style="font-size:0.68rem; padding:4px 7px; color:#a855f7; cursor:pointer; margin:0;" title="Load marked elements from a .json file">
+                <label class="btn-studio" id="btn-load-elements-toolbar-label" style="font-size:0.68rem; padding:4px 7px; color:#a855f7; cursor:pointer; margin:0;" title="Load marked elements from a .json file">
                   📂 Load Elements
                   <input type="file" id="input-load-elements-toolbar" accept=".json" style="display:none;" />
                 </label>
@@ -545,8 +553,31 @@ export class RigStudioApp {
     const loadRigInput = this.container.querySelector('#input-load-rig-json') as HTMLInputElement;
     loadRigInput?.addEventListener('change', () => {
       if (loadRigInput.files && loadRigInput.files[0]) {
+        this.lastLoadedRigFileHandle = null;
+        this.lastLoadedRigFileName = loadRigInput.files[0].name;
         this.handleLoadRigJson(loadRigInput.files[0]);
         loadRigInput.value = '';
+      }
+    });
+
+    const loadRigLabel = this.container.querySelector('#btn-load-rig-label');
+    loadRigLabel?.addEventListener('click', async (e) => {
+      if ('showOpenFilePicker' in window) {
+        e.preventDefault();
+        try {
+          const [handle] = await (window as any).showOpenFilePicker({
+            types: [{ description: 'Rig Project JSON', accept: { 'application/json': ['.json'] } }],
+            multiple: false
+          });
+          const file = await handle.getFile();
+          this.lastLoadedRigFileHandle = handle;
+          this.lastLoadedRigFileName = file.name;
+          this.handleLoadRigJson(file);
+        } catch (err: any) {
+          if (err.name === 'AbortError') return;
+          console.warn('showOpenFilePicker failed, falling back to input', err);
+          loadRigInput?.click();
+        }
       }
     });
 
@@ -1286,11 +1317,34 @@ export class RigStudioApp {
     toolbar.querySelector('#btn-slicer-export-elements-toolbar')?.addEventListener('click', () => {
       this.saveElementsJson();
     });
-    toolbar.querySelector('#input-load-elements-toolbar')?.addEventListener('change', (e) => {
-      const input = e.target as HTMLInputElement;
-      if (input.files && input.files[0]) {
-        this.handleLoadElementsJson(input.files[0]);
-        input.value = '';
+    const loadToolbarInput = toolbar.querySelector('#input-load-elements-toolbar') as HTMLInputElement;
+    loadToolbarInput?.addEventListener('change', () => {
+      if (loadToolbarInput.files && loadToolbarInput.files[0]) {
+        this.lastLoadedElementsFileHandle = null;
+        this.lastLoadedElementsFileName = loadToolbarInput.files[0].name;
+        this.handleLoadElementsJson(loadToolbarInput.files[0]);
+        loadToolbarInput.value = '';
+      }
+    });
+
+    const loadToolbarLabel = toolbar.querySelector('#btn-load-elements-toolbar-label');
+    loadToolbarLabel?.addEventListener('click', async (e) => {
+      if ('showOpenFilePicker' in window) {
+        e.preventDefault();
+        try {
+          const [handle] = await (window as any).showOpenFilePicker({
+            types: [{ description: 'QuestForge Elements JSON', accept: { 'application/json': ['.json'] } }],
+            multiple: false
+          });
+          const file = await handle.getFile();
+          this.lastLoadedElementsFileHandle = handle;
+          this.lastLoadedElementsFileName = file.name;
+          this.handleLoadElementsJson(file);
+        } catch (err: any) {
+          if (err.name === 'AbortError') return;
+          console.warn('showOpenFilePicker failed, falling back to input', err);
+          loadToolbarInput?.click();
+        }
       }
     });
   }
@@ -1324,7 +1378,83 @@ export class RigStudioApp {
     }, durationMs);
   }
 
-  public saveElementsLocal(): void {
+  /**
+   * Directly overwrites the file on disk without opening any save/download dialog.
+   * Uses FileSystemFileHandle if available, or the Vite dev server /api/save-file endpoint.
+   * Only falls back to a save picker if neither direct method is available.
+   */
+  public async overwriteFileDirectly(
+    content: string,
+    fallbackFilename: string,
+    existingHandle: any | null
+  ): Promise<{ success: boolean; filename: string; handle: any | null }> {
+    const filename = existingHandle?.name || fallbackFilename;
+
+    // 1. If we have a FileSystemFileHandle, overwrite directly to local disk (no dialog)
+    if (existingHandle && typeof existingHandle.createWritable === 'function') {
+      try {
+        if (typeof existingHandle.queryPermission === 'function') {
+          const status = await existingHandle.queryPermission({ mode: 'readwrite' });
+          if (status !== 'granted' && typeof existingHandle.requestPermission === 'function') {
+            await existingHandle.requestPermission({ mode: 'readwrite' });
+          }
+        }
+        const writable = await existingHandle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        return { success: true, filename: existingHandle.name || filename, handle: existingHandle };
+      } catch (err: any) {
+        console.warn('FileSystemFileHandle overwrite failed, attempting dev server endpoint:', err);
+      }
+    }
+
+    // 2. Direct Dev Server endpoint: writes directly to disk on host without browser dialog
+    try {
+      const res = await fetch('/api/save-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, content })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          return { success: true, filename, handle: existingHandle };
+        }
+      }
+    } catch (err) {
+      console.warn('Dev server direct save endpoint not available:', err);
+    }
+
+    // 3. Fallback: Prompt user if showSaveFilePicker is supported, to acquire handle for future overwrites
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        return { success: true, filename: handle.name || filename, handle };
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          return { success: false, filename, handle: existingHandle };
+        }
+      }
+    }
+
+    // 4. Ultimate fallback: download link
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return { success: true, filename, handle: null };
+  }
+
+  public async saveElementsLocal(): Promise<void> {
     const elements = this.slicer ? this.slicer.getElements() : this.savedElements;
     if (elements.length === 0) {
       this.showToast('No marked elements yet to save. Mark elements first using Magic Wand or Polygon tools.', 'warning');
@@ -1333,7 +1463,35 @@ export class RigStudioApp {
 
     this.savedElements = JSON.parse(JSON.stringify(elements));
     this.persistElementsToStorage();
-    this.showToast(`✓ Saved ${elements.length} element${elements.length > 1 ? 's' : ''}!`, 'success');
+
+    const doc: SavedElementsDocument = {
+      format: 'questforge-elements',
+      version: '1.0',
+      characterName: this.characterName,
+      imageFileName: this.slicerImageFileName || 'character_parts.png',
+      imageFileSize: this.slicerImageFileSize || '',
+      imageUrl: this.slicerImageUrl || '',
+      elementCount: elements.length,
+      elements: elements
+    };
+
+    const jsonStr = JSON.stringify(doc, null, 2);
+    const defaultFilename = `${(this.characterName || 'character').toLowerCase().replace(/\s+/g, '_')}_elements.json`;
+    const targetFilename = this.lastLoadedElementsFileName || defaultFilename;
+
+    try {
+      const result = await this.overwriteFileDirectly(jsonStr, targetFilename, this.lastLoadedElementsFileHandle);
+      if (result.success) {
+        this.lastLoadedElementsFileName = result.filename;
+        if (result.handle) {
+          this.lastLoadedElementsFileHandle = result.handle;
+        }
+        this.showToast(`✓ Overwrote ${result.filename}! (${elements.length} element${elements.length > 1 ? 's' : ''})`, 'success');
+      }
+    } catch (err: any) {
+      console.error('Failed to overwrite elements file:', err);
+      this.showToast(`Failed to overwrite file: ${err.message || 'Unknown error'}`, 'warning');
+    }
   }
 
   public saveElementsJson(): void {
@@ -1366,6 +1524,9 @@ export class RigStudioApp {
   }
 
   public handleLoadElementsJson(file: File): void {
+    if (file && file.name) {
+      this.lastLoadedElementsFileName = file.name;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -1632,13 +1793,13 @@ export class RigStudioApp {
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
           <span style="font-weight:700; font-size:0.8rem; color:#f1f5f9;">Marked Elements (${elements.length})</span>
           <div style="display:flex; gap:4px; align-items:center;">
-            <button class="btn-studio" id="btn-slicer-save-elements" style="font-size:0.64rem; padding:2px 6px; color:#38bdf8;" title="Quick save marked elements (Ctrl+S / No dialog)">
+            <button class="btn-studio" id="btn-slicer-save-elements" style="font-size:0.64rem; padding:2px 6px; color:#38bdf8;" title="Save & Overwrite loaded elements file on disk (Ctrl+S / No dialog)">
               💾 Save
             </button>
             <button class="btn-studio" id="btn-slicer-export-elements" style="font-size:0.64rem; padding:2px 6px; color:#67e8f9;" title="Export marked elements as .json file">
               ⬇ Export
             </button>
-            <label class="btn-studio" style="font-size:0.64rem; padding:2px 6px; color:#a855f7; cursor:pointer; margin:0;" title="Load elements from .json file">
+            <label class="btn-studio" id="btn-load-elements-sidebar-label" style="font-size:0.64rem; padding:2px 6px; color:#a855f7; cursor:pointer; margin:0;" title="Load elements from .json file">
               📂 Load
               <input type="file" id="input-load-elements-file" accept=".json" style="display:none;" />
             </label>
@@ -1778,11 +1939,34 @@ export class RigStudioApp {
       this.saveElementsJson();
     });
 
-    sidebar.querySelector('#input-load-elements-file')?.addEventListener('change', (e) => {
-      const input = e.target as HTMLInputElement;
-      if (input.files && input.files[0]) {
-        this.handleLoadElementsJson(input.files[0]);
-        input.value = '';
+    const loadSidebarInput = sidebar.querySelector('#input-load-elements-file') as HTMLInputElement;
+    loadSidebarInput?.addEventListener('change', () => {
+      if (loadSidebarInput.files && loadSidebarInput.files[0]) {
+        this.lastLoadedElementsFileHandle = null;
+        this.lastLoadedElementsFileName = loadSidebarInput.files[0].name;
+        this.handleLoadElementsJson(loadSidebarInput.files[0]);
+        loadSidebarInput.value = '';
+      }
+    });
+
+    const loadSidebarLabel = sidebar.querySelector('#btn-load-elements-sidebar-label');
+    loadSidebarLabel?.addEventListener('click', async (e) => {
+      if ('showOpenFilePicker' in window) {
+        e.preventDefault();
+        try {
+          const [handle] = await (window as any).showOpenFilePicker({
+            types: [{ description: 'QuestForge Elements JSON', accept: { 'application/json': ['.json'] } }],
+            multiple: false
+          });
+          const file = await handle.getFile();
+          this.lastLoadedElementsFileHandle = handle;
+          this.lastLoadedElementsFileName = file.name;
+          this.handleLoadElementsJson(file);
+        } catch (err: any) {
+          if (err.name === 'AbortError') return;
+          console.warn('showOpenFilePicker failed, falling back to input', err);
+          loadSidebarInput?.click();
+        }
       }
     });
 
@@ -3760,6 +3944,11 @@ export class RigStudioApp {
   }
 
   public loadDemoCharacter(autoAssemble = true): void {
+    this.lastLoadedRigFileName = 'sir_ronald_rigged.json';
+    this.lastLoadedRigFileHandle = null;
+    this.lastLoadedElementsFileName = 'sir_ronald_elements.json';
+    this.lastLoadedElementsFileHandle = null;
+
     // 1. Clear existing parts library and view attachments
     this.partsLibrary = [];
     for (const v of Object.values(this.views)) {
@@ -3882,20 +4071,38 @@ export class RigStudioApp {
     };
   }
 
-  public saveRigLocal(): void {
+  public async saveRigLocal(): Promise<void> {
     const projectData = this.buildRigProjectData();
+    const jsonStr = JSON.stringify(projectData, null, 2);
+
+    // Keep localStorage backup as well
     try {
-      const jsonStr = JSON.stringify(projectData);
       const key = `questforge_rig_project_${this.characterName || 'default'}`;
       localStorage.setItem(key, jsonStr);
       localStorage.setItem('questforge_rig_project_latest', jsonStr);
-      if (this.bridge.isEmbeddedMode) {
-        this.saveRigToHost();
-      }
-      this.showToast(`✓ Rig project saved! (${this.characterName})`, 'success');
     } catch (e: any) {
-      console.error('Failed to save rig project locally:', e);
-      this.showToast(`Error saving rig: ${e.message || 'Storage quota exceeded'}`, 'warning');
+      console.warn('Failed to save rig project to localStorage backup:', e);
+    }
+
+    if (this.bridge.isEmbeddedMode) {
+      this.saveRigToHost();
+    }
+
+    const defaultFilename = `${(this.characterName || 'character').toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
+    const targetFilename = this.lastLoadedRigFileName || defaultFilename;
+
+    try {
+      const result = await this.overwriteFileDirectly(jsonStr, targetFilename, this.lastLoadedRigFileHandle);
+      if (result.success) {
+        this.lastLoadedRigFileName = result.filename;
+        if (result.handle) {
+          this.lastLoadedRigFileHandle = result.handle;
+        }
+        this.showToast(`✓ Overwrote ${result.filename}! (${this.characterName})`, 'success');
+      }
+    } catch (err: any) {
+      console.error('Failed to overwrite rig file:', err);
+      this.showToast(`Failed to overwrite file: ${err.message || 'Unknown error'}`, 'warning');
     }
   }
 
@@ -3913,6 +4120,9 @@ export class RigStudioApp {
   }
 
   public handleLoadRigJson(file: File): void {
+    if (file && file.name) {
+      this.lastLoadedRigFileName = file.name;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -3932,6 +4142,9 @@ export class RigStudioApp {
       if (data.characterName) {
         this.characterName = data.characterName;
         this.updateHeaderTitle();
+      }
+      if (!this.lastLoadedRigFileName) {
+        this.lastLoadedRigFileName = `${(this.characterName || 'character').toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
       }
 
       // 1. Restore Views

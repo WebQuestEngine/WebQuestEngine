@@ -233,7 +233,9 @@ export class MiddleDragScroller {
     // Remove contextmenu suppression after a short delay
     setTimeout(() => {
       this.dragMoved = false;
-      window.removeEventListener('contextmenu', this.boundOnContextMenu, { capture: true });
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('contextmenu', this.boundOnContextMenu, { capture: true });
+      }
     }, 50);
   }
 
