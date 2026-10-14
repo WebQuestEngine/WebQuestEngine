@@ -17,6 +17,7 @@ export interface KeyframeTimelineEvents {
   onAutoKeyToggled?: (enabled: boolean) => void;
   onEnableSideRequested?: (animName: string, side: StudioView) => void;
   onDurationChanged?: (duration: number) => void;
+  onKeyframeSelected?: (index: number, keyframe: StudioKeyframe | null) => void;
 }
 
 /**
@@ -223,7 +224,7 @@ export class KeyframeTimeline {
     return this.isAutoKey;
   }
 
-  public addKeyframe(joints: Record<AnatomicalJointId, { x: number; y: number }>): void {
+  public addKeyframe(joints: Record<AnatomicalJointId, { x: number; y: number }>, name?: string): void {
     const track = this.getActiveTrack();
     if (!track) return;
 
@@ -234,9 +235,10 @@ export class KeyframeTimeline {
     const existingIndex = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.03);
     if (existingIndex >= 0) {
       track.keyframes[existingIndex].joints = clonedJoints;
+      if (name) track.keyframes[existingIndex].name = name;
       this.selectedKeyframeIndex = existingIndex;
     } else {
-      track.keyframes.push({ time: t, joints: clonedJoints });
+      track.keyframes.push({ time: t, name: name || undefined, joints: clonedJoints });
       track.keyframes.sort((a, b) => a.time - b.time);
       this.selectedKeyframeIndex = track.keyframes.findIndex(k => k.time === t);
     }
@@ -248,6 +250,25 @@ export class KeyframeTimeline {
     this.renderKeyframeTrack();
     this.updatePlayheadPosition();
     this.events.onKeyframeAdded?.(t, clonedJoints);
+    if (this.selectedKeyframeIndex !== null) {
+      this.events.onKeyframeSelected?.(this.selectedKeyframeIndex, track.keyframes[this.selectedKeyframeIndex]);
+    }
+  }
+
+  public setKeyframeName(index: number, name: string): void {
+    const track = this.getActiveTrack();
+    if (track && track.keyframes[index]) {
+      track.keyframes[index].name = name.trim() || undefined;
+      this.renderKeyframeTrack();
+    }
+  }
+
+  public getSelectedKeyframe(): { index: number; keyframe: StudioKeyframe } | null {
+    const track = this.getActiveTrack();
+    if (track && this.selectedKeyframeIndex !== null && track.keyframes[this.selectedKeyframeIndex]) {
+      return { index: this.selectedKeyframeIndex, keyframe: track.keyframes[this.selectedKeyframeIndex] };
+    }
+    return null;
   }
 
   public deleteSelectedKeyframe(): void {
@@ -478,14 +499,20 @@ export class KeyframeTimeline {
     lane.innerHTML = keyframes.map((k, idx) => {
       const leftPx = Math.round(k.time * pixelsPerSec);
       const isSelected = this.selectedKeyframeIndex === idx;
+      const poseTitle = k.name ? `Pose "${k.name}" at ${k.time.toFixed(2)}s` : `Pose Keyframe at ${k.time.toFixed(2)}s`;
 
       return `
         <div class="keyframe-diamond ${isSelected ? 'selected' : ''}"
           data-index="${idx}"
           data-time="${k.time}"
-          title="Pose Keyframe at ${k.time.toFixed(2)}s (Click to jump / Del to delete)"
+          title="${poseTitle} (Click to jump / Del to delete)"
           style="left:${leftPx - 6}px;">
         </div>
+        ${k.name ? `
+          <span class="kf-name-tag" style="position:absolute; left:${leftPx}px; top:11px; font-size:0.55rem; color:#7dd3fc; pointer-events:none; white-space:nowrap; transform:translateX(-50%); font-weight:600; text-shadow:0 1px 2px #000;">
+            ${k.name}
+          </span>
+        ` : ''}
       `;
     }).join('');
 
@@ -499,6 +526,7 @@ export class KeyframeTimeline {
         if (k) {
           this.setTime(k.time);
           this.renderKeyframeTrack();
+          this.events.onKeyframeSelected?.(idx, k);
         }
       });
     });

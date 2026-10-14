@@ -767,8 +767,9 @@ export class VectorElementSlicer {
     elem.bounds = this.computePolygonBounds(elem.polygon);
   }
 
-  public generateThumbnail(elem: VectorOutlineElement): string {
-    if (!this.image || !elem.bounds || elem.bounds.width <= 0 || elem.bounds.height <= 0) return '';
+  public generateThumbnail(elem: VectorOutlineElement, customImg?: HTMLImageElement): string {
+    const srcImg = customImg || this.image;
+    if (!srcImg || !elem.bounds || elem.bounds.width <= 0 || elem.bounds.height <= 0) return '';
     try {
       const w = Math.max(1, Math.round(elem.bounds.width));
       const h = Math.max(1, Math.round(elem.bounds.height));
@@ -790,7 +791,7 @@ export class VectorElementSlicer {
       tctx.clip();
 
       tctx.drawImage(
-        this.image,
+        srcImg,
         elem.bounds.x,
         elem.bounds.y,
         elem.bounds.width,

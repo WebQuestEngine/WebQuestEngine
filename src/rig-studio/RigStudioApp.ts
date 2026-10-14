@@ -11,7 +11,8 @@ import {
   SavedElementsDocument,
   StudioAnimationDefinition,
   StudioKeyframe,
-  StudioSideTrack
+  StudioSideTrack,
+  StudioImageSheet
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -64,7 +65,7 @@ export class RigStudioApp {
   private activeAnimationName = 'idle';
   private timeline: KeyframeTimeline | null = null;
 
-  // Slicer State
+  // Slicer & Multi-Sheet State
   private slicer: VectorElementSlicer | null = null;
   private slicerToolMode: SlicerToolMode = 'select';
   private slicerImage: HTMLImageElement | null = null;
@@ -72,6 +73,8 @@ export class RigStudioApp {
   private slicerImageFileName: string = 'spritesheet.png';
   private slicerImageFileSize: string = '';
   private savedElements: VectorOutlineElement[] = [];
+  private imageSheets: StudioImageSheet[] = [];
+  private activeSheetId: string = 'sheet_ronald';
 
   private toolMode: JointToolMode = 'select';
   private symmetryEnabled = true;
@@ -179,10 +182,7 @@ export class RigStudioApp {
         </div>
 
         <nav class="studio-views-bar">
-          <button class="studio-view-btn active" data-view="front">Front</button>
-          <button class="studio-view-btn" data-view="back">Back</button>
-          <button class="studio-view-btn" data-view="left">Left Side</button>
-          <button class="studio-view-btn" data-view="right">Right Side</button>
+          <!-- Populated dynamically by renderViewsBar() -->
         </nav>
 
         <div class="studio-mode-switcher">
@@ -269,6 +269,8 @@ export class RigStudioApp {
 
           <!-- Viewport 2: Element Slicer Canvas -->
           <div id="slicer-viewport-container" style="position:absolute; inset:0; display:none; flex-direction:column;">
+            <div id="slicer-sheets-bar" class="slicer-sheets-bar"></div>
+            <input type="file" id="input-add-sheet-file" accept="image/*" style="display:none;" />
             <div class="slicer-toolbar" id="slicer-toolbar">
               <div class="tool-group" style="display:flex; gap:4px; align-items:center;">
                 <button class="slicer-tool-btn active" data-tool="select" title="Select Element / Drag Nodes (Del to delete)">↖️ Select</button>
@@ -449,14 +451,16 @@ export class RigStudioApp {
       });
     });
 
-    // View Switcher Buttons (Front, Back, Left Side, Right Side)
-    this.container.querySelectorAll('.studio-view-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const viewId = btn.getAttribute('data-view') as StudioView;
-        if (viewId && viewId !== this.activeView) {
-          this.switchView(viewId);
-        }
-      });
+    // View Switcher Buttons & Dynamic Pose Bar
+    this.renderViewsBar();
+
+    // Multi-Sheet image upload input
+    const addSheetFileInput = this.container.querySelector('#input-add-sheet-file') as HTMLInputElement;
+    addSheetFileInput?.addEventListener('change', () => {
+      if (addSheetFileInput.files && addSheetFileInput.files[0]) {
+        this.addImageSheetFromFile(addSheetFileInput.files[0]);
+        addSheetFileInput.value = '';
+      }
     });
 
     // Slicer Image Upload via file input
@@ -612,6 +616,200 @@ export class RigStudioApp {
     this.renderCanvasAlignmentBar();
   }
 
+  public renderViewsBar(): void {
+    const nav = this.container.querySelector('.studio-views-bar') as HTMLElement;
+    if (!nav) return;
+
+    nav.innerHTML = `
+      ${Object.entries(this.views).map(([vId, vData]) => {
+        const isActive = vId === this.activeView;
+        const isCore = ['front', 'back', 'left', 'right'].includes(vId);
+        return `
+          <button class="studio-view-btn ${isActive ? 'active' : ''}" data-view="${vId}" title="Switch to '${vData.label}' pose">
+            <span class="pose-btn-label">${vData.label}</span>
+            <span class="pose-rename-btn" data-view="${vId}" title="Rename '${vData.label}'">✏️</span>
+            ${!isCore ? `
+              <span class="pose-del-btn" data-view="${vId}" title="Delete '${vData.label}'">✕</span>
+            ` : ''}
+          </button>
+        `;
+      }).join('')}
+      <button class="studio-add-pose-btn" id="btn-studio-add-pose" title="Define a new character pose with custom name">
+        ➕ Add Pose
+      </button>
+    `;
+
+    // View switch buttons
+    nav.querySelectorAll('.studio-view-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('pose-rename-btn') || target.classList.contains('pose-del-btn')) return;
+        const vId = btn.getAttribute('data-view');
+        if (vId && vId !== this.activeView) {
+          this.switchView(vId);
+        }
+      });
+    });
+
+    // Rename buttons
+    nav.querySelectorAll('.pose-rename-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const vId = btn.getAttribute('data-view');
+        if (vId) this.promptRenamePose(vId);
+      });
+    });
+
+    // Delete buttons
+    nav.querySelectorAll('.pose-del-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const vId = btn.getAttribute('data-view');
+        if (vId) this.deletePose(vId);
+      });
+    });
+
+    // Add pose button
+    nav.querySelector('#btn-studio-add-pose')?.addEventListener('click', () => {
+      this.openNewPoseModal();
+    });
+  }
+
+  public openNewPoseModal(): void {
+    const existing = document.querySelector('.studio-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'studio-modal-overlay';
+    overlay.innerHTML = `
+      <div class="studio-modal">
+        <div class="studio-modal-header">
+          <span class="studio-modal-title">✨ Add New Character Pose</span>
+          <button class="btn-studio modal-close-btn" style="border:none; background:transparent; font-size:1rem; cursor:pointer;">✕</button>
+        </div>
+        <div class="studio-modal-body">
+          <div style="font-size:0.75rem; color:#94a3b8; line-height:1.4;">
+            Create a custom pose (e.g. <b>Crouch</b>, <b>Sitting</b>, <b>Combat Stance</b>, <b>Climb</b>). Each pose maintains its own skeleton joints, artwork graphics, envelope radii, and layer hierarchy.
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <label style="font-size:0.72rem; font-weight:600; color:#e2e8f0;">Pose Name:</label>
+            <input type="text" id="modal-new-pose-name" placeholder="e.g. Crouch, Sitting, Combat Stance..." value="Crouch" style="background:#0b1120; border:1px solid rgba(255,255,255,0.15); color:#f8fafc; border-radius:5px; padding:7px 10px; font-size:0.8rem;" />
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <label style="font-size:0.72rem; font-weight:600; color:#e2e8f0;">Copy Skeleton Joints & Art From:</label>
+            <select id="modal-new-pose-template" style="background:#0b1120; border:1px solid rgba(255,255,255,0.15); color:#f8fafc; border-radius:5px; padding:7px 10px; font-size:0.8rem;">
+              ${Object.entries(this.views).map(([vId, vData]) => `
+                <option value="${vId}" ${vId === this.activeView ? 'selected' : ''}>${vData.label} (${vId})</option>
+              `).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="studio-modal-footer">
+          <button class="btn-studio modal-cancel-btn">Cancel</button>
+          <button class="btn-studio btn-studio-primary modal-create-pose-btn" style="background:#10b981; border-color:#34d399; font-weight:700;">
+            ✓ Create Pose
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const inputName = overlay.querySelector('#modal-new-pose-name') as HTMLInputElement;
+    inputName?.focus();
+    inputName?.select();
+
+    const closeModal = () => overlay.remove();
+    overlay.querySelector('.modal-close-btn')?.addEventListener('click', closeModal);
+    overlay.querySelector('.modal-cancel-btn')?.addEventListener('click', closeModal);
+
+    const doCreate = () => {
+      const name = inputName.value.trim();
+      if (!name) {
+        this.showToast('Please enter a valid pose name', 'warning');
+        return;
+      }
+      const templateId = (overlay.querySelector('#modal-new-pose-template') as HTMLSelectElement).value;
+      this.createPose(name, templateId);
+      closeModal();
+    };
+
+    overlay.querySelector('.modal-create-pose-btn')?.addEventListener('click', doCreate);
+    inputName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doCreate();
+      if (e.key === 'Escape') closeModal();
+    });
+  }
+
+  public createPose(name: string, templateViewId = 'front'): string {
+    const safeId = name.toLowerCase().replace(/[^a-z0-9_]/g, '_') || `pose_${Date.now()}`;
+    let poseId = safeId;
+    let counter = 1;
+    while (this.views[poseId]) {
+      poseId = `${safeId}_${counter++}`;
+    }
+
+    const template = this.views[templateViewId] || this.views.front;
+
+    this.views[poseId] = {
+      viewId: poseId,
+      label: name,
+      image: template.image,
+      imageUrl: template.imageUrl,
+      fileName: template.fileName,
+      fileSize: template.fileSize,
+      joints: JSON.parse(JSON.stringify(template.joints)),
+      envelopes: { ...template.envelopes },
+      parts: { ...template.parts },
+      boneOrder: template.boneOrder ? [...template.boneOrder] : undefined,
+      visible: true
+    };
+
+    this.renderViewsBar();
+    this.switchView(poseId);
+    this.showToast(`✓ Created pose "${name}"`, 'success');
+    return poseId;
+  }
+
+  public promptRenamePose(viewId: string): void {
+    const cur = this.views[viewId];
+    if (!cur) return;
+    const newName = prompt(`Enter new name for pose "${cur.label}":`, cur.label);
+    if (newName && newName.trim() && newName.trim() !== cur.label) {
+      cur.label = newName.trim();
+      this.renderViewsBar();
+      this.renderLeftSidebar();
+      this.renderRightSidebar();
+      this.showToast(`Pose renamed to "${cur.label}"`, 'info');
+    }
+  }
+
+  public deletePose(viewId: string): void {
+    if (['front', 'back', 'left', 'right'].includes(viewId)) {
+      this.showToast(`Default pose "${this.views[viewId]?.label || viewId}" cannot be deleted. You can rename it anytime!`, 'warning');
+      return;
+    }
+    if (!confirm(`Delete pose "${this.views[viewId]?.label || viewId}"?`)) return;
+
+    delete this.views[viewId];
+    if (this.activeView === viewId) {
+      this.switchView('front');
+    } else {
+      this.renderViewsBar();
+      this.renderLeftSidebar();
+      this.renderRightSidebar();
+    }
+    this.showToast(`Pose deleted`, 'info');
+  }
+
+  public duplicatePose(viewId: string): void {
+    const cur = this.views[viewId];
+    if (!cur) return;
+    this.createPose(`${cur.label} Copy`, viewId);
+  }
+
   public switchStudioMode(mode: 'rig' | 'slicer' | 'animate'): void {
     this.activeStudioMode = mode;
 
@@ -672,9 +870,14 @@ export class RigStudioApp {
     const host = this.container.querySelector('#slicer-canvas-host') as HTMLElement;
     if (!host) return;
 
+    this.initImageSheets();
+
     this.slicer = new VectorElementSlicer(host, {
       onElementsChange: (elements) => {
         this.savedElements = elements;
+        const curSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+        if (curSheet) curSheet.elements = [...elements];
+        this.renderSlicerSheetsBar();
         this.persistElementsToStorage();
         this.renderSlicerRightSidebar();
         this.updateSlicerHUD();
@@ -685,6 +888,15 @@ export class RigStudioApp {
       },
       onTextureLoaded: (img) => {
         this.slicerImage = img;
+        const curSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+        if (curSheet) {
+          curSheet.image = img;
+          curSheet.imageUrl = this.slicerImageUrl;
+          curSheet.fileName = this.slicerImageFileName;
+          curSheet.fileSize = this.slicerImageFileSize;
+        }
+        this.renderSlicerSheetsBar();
+
         const currentArt = this.views[this.activeView];
         currentArt.image = img;
         currentArt.imageUrl = this.slicerImageUrl;
@@ -703,17 +915,30 @@ export class RigStudioApp {
     });
 
     this.bindSlicerToolbarEvents();
+    this.renderSlicerSheetsBar();
 
-    // Initial load: current view image or Ronald parts demo
-    const currentArt = this.views[this.activeView];
-    if (currentArt.image) {
-      this.slicerImage = currentArt.image;
-      this.slicerImageUrl = currentArt.imageUrl;
-      this.slicerImageFileName = currentArt.fileName;
-      this.slicerImageFileSize = currentArt.fileSize;
-      this.slicer.setImage(currentArt.image);
+    // Initial load: active sheet image, current view image or Ronald parts demo
+    const activeSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+    if (activeSheet && activeSheet.image) {
+      this.slicerImage = activeSheet.image;
+      this.slicerImageUrl = activeSheet.imageUrl;
+      this.slicerImageFileName = activeSheet.fileName;
+      this.slicerImageFileSize = activeSheet.fileSize || '';
+      this.slicer.setImage(activeSheet.image);
+      if (activeSheet.elements.length > 0) {
+        this.slicer.setElements(activeSheet.elements);
+      }
     } else {
-      this.loadSlicerImageFromUrl('/demo/assets/characters/sir_ronald_parts.png', 'sir_ronald_parts.png', '420 KB');
+      const currentArt = this.views[this.activeView];
+      if (currentArt.image) {
+        this.slicerImage = currentArt.image;
+        this.slicerImageUrl = currentArt.imageUrl;
+        this.slicerImageFileName = currentArt.fileName;
+        this.slicerImageFileSize = currentArt.fileSize;
+        this.slicer.setImage(currentArt.image);
+      } else {
+        this.loadSlicerImageFromUrl('/demo/assets/characters/sir_ronald_parts.png', 'sir_ronald_parts.png', '420 KB');
+      }
     }
 
     // Restore saved elements or storage cache
@@ -722,6 +947,285 @@ export class RigStudioApp {
     } else {
       this.loadElementsFromStorage();
     }
+  }
+
+  private initImageSheets(): void {
+    if (this.imageSheets.length > 0) return;
+
+    const currentArt = this.views[this.activeView];
+    const initialSheets: StudioImageSheet[] = [
+      {
+        id: 'sheet_ronald',
+        name: 'Ronald Character Parts',
+        fileName: 'sir_ronald_parts.png',
+        fileSize: '420 KB',
+        imageUrl: '/demo/assets/characters/sir_ronald_parts.png',
+        image: null,
+        elements: []
+      }
+    ];
+
+    if (currentArt.imageUrl && currentArt.imageUrl !== '/demo/assets/characters/sir_ronald_parts.png') {
+      initialSheets.unshift({
+        id: 'sheet_current_art',
+        name: `${currentArt.label} Artwork Sheet`,
+        fileName: currentArt.fileName || 'character_art.png',
+        fileSize: currentArt.fileSize || '',
+        imageUrl: currentArt.imageUrl,
+        image: currentArt.image,
+        elements: []
+      });
+      this.activeSheetId = 'sheet_current_art';
+    } else {
+      this.activeSheetId = 'sheet_ronald';
+    }
+
+    this.imageSheets = initialSheets;
+  }
+
+  public renderSlicerSheetsBar(): void {
+    const bar = this.container.querySelector('#slicer-sheets-bar') as HTMLElement;
+    if (!bar) return;
+
+    this.initImageSheets();
+
+    bar.innerHTML = `
+      <div class="sheets-bar-title">
+        <span>📑 Image Sheets (${this.imageSheets.length}):</span>
+      </div>
+      <div class="sheets-tab-list">
+        ${this.imageSheets.map(s => {
+          const isActive = s.id === this.activeSheetId;
+          const count = s.id === this.activeSheetId && this.slicer ? this.slicer.getElements().length : s.elements.length;
+          return `
+            <div class="sheet-tab-chip ${isActive ? 'active' : ''}" data-sheet-id="${s.id}" title="${s.fileName} (${s.fileSize || ''})">
+              <span class="sheet-tab-name">${s.name}</span>
+              <span class="sheet-elem-count">${count} parts</span>
+              <button class="sheet-btn-action sheet-btn-rename" data-sheet-id="${s.id}" title="Rename sheet '${s.name}'">✏️</button>
+              ${this.imageSheets.length > 1 ? `
+                <button class="sheet-btn-action sheet-btn-delete" data-sheet-id="${s.id}" title="Remove sheet '${s.name}'">✕</button>
+              ` : ''}
+            </div>
+          `;
+        }).join('')}
+        <button class="btn-studio btn-add-sheet" id="btn-add-image-sheet" style="font-size:0.7rem; padding:4px 9px; color:#10b981; border-color:rgba(16, 185, 129, 0.4);" title="Add another spritesheet / image sheet to organize assets">
+          ➕ Add Image Sheet...
+        </button>
+      </div>
+    `;
+
+    // Chip click to switch sheet
+    bar.querySelectorAll('.sheet-tab-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).classList.contains('sheet-btn-action')) return;
+        const sId = chip.getAttribute('data-sheet-id');
+        if (sId && sId !== this.activeSheetId) {
+          this.switchImageSheet(sId);
+        }
+      });
+    });
+
+    // Rename sheet
+    bar.querySelectorAll('.sheet-btn-rename').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sId = btn.getAttribute('data-sheet-id');
+        if (sId) this.promptRenameSheet(sId);
+      });
+    });
+
+    // Delete sheet
+    bar.querySelectorAll('.sheet-btn-delete').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sId = btn.getAttribute('data-sheet-id');
+        if (sId) this.deleteImageSheet(sId);
+      });
+    });
+
+    // Add sheet button
+    bar.querySelector('#btn-add-image-sheet')?.addEventListener('click', () => {
+      (this.container.querySelector('#input-add-sheet-file') as HTMLInputElement)?.click();
+    });
+  }
+
+  public switchImageSheet(sheetId: string): void {
+    // 1. Sync current elements to the previous active sheet
+    const curSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+    if (curSheet && this.slicer) {
+      curSheet.elements = [...this.slicer.getElements()];
+    }
+
+    const nextSheet = this.imageSheets.find(s => s.id === sheetId);
+    if (!nextSheet) return;
+
+    this.activeSheetId = sheetId;
+
+    const applySheetData = (img: HTMLImageElement) => {
+      nextSheet.image = img;
+      this.slicerImage = img;
+      this.slicerImageUrl = nextSheet.imageUrl;
+      this.slicerImageFileName = nextSheet.fileName;
+      this.slicerImageFileSize = nextSheet.fileSize || '';
+      this.savedElements = [...nextSheet.elements];
+      if (this.slicer) {
+        this.slicer.setImage(img);
+        this.slicer.setElements(this.savedElements);
+        this.slicer.resetView();
+      }
+      this.renderSlicerSheetsBar();
+      this.renderSlicerLeftSidebar();
+      this.renderSlicerRightSidebar();
+      this.updateSlicerHUD();
+    };
+
+    if (nextSheet.image) {
+      applySheetData(nextSheet.image);
+    } else if (nextSheet.imageUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        applySheetData(img);
+      };
+      img.src = nextSheet.imageUrl;
+    }
+  }
+
+  public addImageSheetFromFile(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const sizeStr = file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      const sheetName = baseName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const sheetId = `sheet_${Date.now()}`;
+
+      const img = new Image();
+      img.onload = () => {
+        const newSheet: StudioImageSheet = {
+          id: sheetId,
+          name: sheetName,
+          fileName: file.name,
+          fileSize: sizeStr,
+          imageUrl: dataUrl,
+          image: img,
+          elements: []
+        };
+        this.imageSheets.push(newSheet);
+        this.switchImageSheet(sheetId);
+        this.showToast(`✓ Added image sheet "${sheetName}"`, 'success');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  public promptRenameSheet(sheetId: string): void {
+    const sheet = this.imageSheets.find(s => s.id === sheetId);
+    if (!sheet) return;
+    const name = prompt(`Rename image sheet:`, sheet.name);
+    if (name && name.trim()) {
+      sheet.name = name.trim();
+      this.renderSlicerSheetsBar();
+      this.renderSlicerRightSidebar();
+      this.showToast(`Sheet renamed to "${sheet.name}"`, 'info');
+    }
+  }
+
+  public deleteImageSheet(sheetId: string): void {
+    if (this.imageSheets.length <= 1) {
+      this.showToast(`Cannot delete the only image sheet`, 'warning');
+      return;
+    }
+    const idx = this.imageSheets.findIndex(s => s.id === sheetId);
+    if (idx < 0) return;
+    const name = this.imageSheets[idx].name;
+    if (!confirm(`Delete image sheet "${name}"?`)) return;
+
+    this.imageSheets.splice(idx, 1);
+    if (this.activeSheetId === sheetId) {
+      this.switchImageSheet(this.imageSheets[0].id);
+    } else {
+      this.renderSlicerSheetsBar();
+    }
+    this.showToast(`Deleted sheet "${name}"`, 'info');
+  }
+
+  public applyAllSheetsToRig(): void {
+    // 1. Sync current active sheet elements
+    const curSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+    if (curSheet && this.slicer) {
+      curSheet.elements = [...this.slicer.getElements()];
+    }
+
+    let totalElementsApplied = 0;
+    const currentArt = this.views[this.activeView];
+
+    for (const sheet of this.imageSheets) {
+      const sheetImg = sheet.image || (sheet.id === this.activeSheetId ? this.slicerImage : null);
+      if (!sheetImg || !sheet.elements || sheet.elements.length === 0) continue;
+
+      for (const elem of sheet.elements) {
+        const thumbUrl = this.slicer?.generateThumbnail(elem, sheetImg) || '';
+        if (!thumbUrl) continue;
+
+        const img = new Image();
+        img.onload = () => { this.canvas?.render(); };
+        img.src = thumbUrl;
+
+        const pivotX = elem.bounds.width > 0 ? elem.pivot.x / elem.bounds.width : 0.5;
+        const pivotY = elem.bounds.height > 0 ? elem.pivot.y / elem.bounds.height : 0.5;
+
+        const partItem: RigPartItem = {
+          id: elem.id,
+          name: elem.name,
+          imageUrl: thumbUrl,
+          image: img,
+          width: Math.round(elem.bounds.width),
+          height: Math.round(elem.bounds.height),
+          assignedBoneId: elem.assignedBoneId || null,
+          pivotX,
+          pivotY
+        };
+
+        const existingIdx = this.partsLibrary.findIndex(p => p.id === elem.id);
+        if (existingIdx >= 0) {
+          this.partsLibrary[existingIdx] = partItem;
+        } else {
+          this.partsLibrary.push(partItem);
+        }
+
+        if (elem.assignedBoneId) {
+          const boneAttachment: BonePartAttachment = {
+            id: elem.id,
+            boneId: elem.assignedBoneId,
+            originJointId: elem.originJointId,
+            targetJointId: elem.targetJointId,
+            fileName: elem.name + '.png',
+            imageUrl: thumbUrl,
+            image: img,
+            width: Math.round(elem.bounds.width),
+            height: Math.round(elem.bounds.height),
+            pivotX,
+            pivotY,
+            visible: true,
+            opacity: 1
+          };
+          currentArt.parts[elem.assignedBoneId] = boneAttachment;
+          this.canvas?.setPart(elem.assignedBoneId, boneAttachment);
+        }
+        totalElementsApplied++;
+      }
+    }
+
+    if (this.canvas) {
+      this.canvas.setParts(currentArt.parts);
+      this.canvas.render();
+    }
+    this.renderRightSidebar();
+    this.showToast(`Applied ${totalElementsApplied} elements from all image sheets!`, 'success');
   }
 
   private bindSlicerToolbarEvents(): void {
@@ -1128,12 +1632,20 @@ export class RigStudioApp {
 
       <div class="sidebar-content" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
         <!-- Primary Apply Button -->
-        <button class="btn-studio btn-studio-primary" id="btn-apply-marked-to-rig" style="font-size:0.75rem; padding:8px 8px; justify-content:center; background:#059669; border-color:#10b981; font-weight:700;" title="Cut all marked elements, attach assigned elements to skeleton bones, and view rigged character">
-          ⚡ Apply Marked Elements to Skeleton Rig
-        </button>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <button class="btn-studio btn-studio-primary" id="btn-apply-marked-to-rig" style="font-size:0.75rem; padding:8px 8px; justify-content:center; background:#059669; border-color:#10b981; font-weight:700;" title="Cut all marked elements on active sheet, attach assigned elements to skeleton bones, and view rigged character">
+            ⚡ Apply Active Sheet Elements to Rig
+          </button>
+          ${this.imageSheets.length > 1 ? `
+            <button class="btn-studio" id="btn-apply-all-sheets-to-rig" style="font-size:0.72rem; padding:6px 8px; justify-content:center; background:#0f766e; border-color:#14b8a6; color:#f0fdfa; font-weight:700;" title="Cut and apply elements across ALL ${this.imageSheets.length} loaded image sheets to skeleton bones and parts library">
+              📦 Apply ALL Sheets (${this.imageSheets.length}) to Rig
+            </button>
+          ` : ''}
+        </div>
 
         <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
-          Assign each marked element to a bone below. Reorder elements using ▲/▼ or drag to set stacking/cut order.
+          Working on: <b style="color:#38bdf8;">${this.imageSheets.find(s => s.id === this.activeSheetId)?.name || 'Default Sheet'}</b>.
+          Assign each marked element to a bone below.
         </div>
 
         ${elements.length > 0 ? `
@@ -1232,6 +1744,10 @@ export class RigStudioApp {
     // Bind Right Sidebar Events
     sidebar.querySelector('#btn-apply-marked-to-rig')?.addEventListener('click', () => {
       this.applyMarkedElementsToRig();
+    });
+
+    sidebar.querySelector('#btn-apply-all-sheets-to-rig')?.addEventListener('click', () => {
+      this.applyAllSheetsToRig();
     });
 
     sidebar.querySelector('#btn-slicer-save-elements')?.addEventListener('click', () => {
@@ -1655,9 +2171,24 @@ export class RigStudioApp {
     const hasImage = !!currentArt.image || Object.keys(currentArt.parts).length > 0;
 
     sidebar.innerHTML = `
+      <!-- Character Pose & Naming Panel -->
+      <div style="background:#09101d; border:1px solid rgba(56, 189, 248, 0.25); border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:0.68rem; font-weight:700; color:#38bdf8; text-transform:uppercase; letter-spacing:0.04em;">Character Pose</span>
+          <span style="font-size:0.58rem; color:#64748b; font-family:var(--studio-font-mono);">ID: ${currentArt.viewId}</span>
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="text" id="input-active-pose-label" value="${currentArt.label}" placeholder="Pose Name..." style="flex:1; min-width:0; background:#020617; border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:3px 6px; font-size:0.75rem; font-weight:600; color:#f8fafc;" title="Rename active pose (e.g. Front, Idle, Crouch, Attack)" />
+          <button class="btn-studio" id="btn-pose-duplicate-left" style="font-size:0.65rem; padding:3px 6px;" title="Duplicate this pose to create a new variant">📋</button>
+          ${!['front', 'back', 'left', 'right'].includes(currentArt.viewId) ? `
+            <button class="btn-studio" id="btn-pose-delete-left" style="font-size:0.65rem; padding:3px 6px; color:#ef4444;" title="Delete this custom pose">🗑️</button>
+          ` : ''}
+        </div>
+      </div>
+
       <!-- Import Section (Step 1 & 2) -->
       <div>
-        <div class="panel-section-title">Import</div>
+        <div class="panel-section-title">Import Artwork</div>
 
         ${!currentArt.image ? `
           <div class="import-dropzone" id="left-dropzone">
@@ -1773,6 +2304,24 @@ export class RigStudioApp {
     `;
 
     // Bind left sidebar events
+    const poseInput = sidebar.querySelector('#input-active-pose-label') as HTMLInputElement;
+    poseInput?.addEventListener('change', () => {
+      const val = poseInput.value.trim();
+      if (val && val !== currentArt.label) {
+        currentArt.label = val;
+        this.renderViewsBar();
+        this.showToast(`Pose renamed to "${val}"`, 'info');
+      }
+    });
+
+    sidebar.querySelector('#btn-pose-duplicate-left')?.addEventListener('click', () => {
+      this.duplicatePose(this.activeView);
+    });
+
+    sidebar.querySelector('#btn-pose-delete-left')?.addEventListener('click', () => {
+      this.deletePose(this.activeView);
+    });
+
     const browseBtn = sidebar.querySelector('#btn-browse-file');
     browseBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3131,12 +3680,28 @@ export class RigStudioApp {
       pivotY: item.pivotY
     }));
 
+    const curSheet = this.imageSheets.find(s => s.id === this.activeSheetId);
+    if (curSheet && this.slicer) {
+      curSheet.elements = [...this.slicer.getElements()];
+    }
+
+    const sheetsExport = this.imageSheets.map(s => ({
+      id: s.id,
+      name: s.name,
+      imageUrl: s.imageUrl,
+      fileName: s.fileName,
+      fileSize: s.fileSize,
+      elements: (s.id === this.activeSheetId && this.slicer) ? this.slicer.getElements() : s.elements
+    }));
+
     const elementsToExport = this.slicer ? this.slicer.getElements() : this.savedElements;
     const slicerExport = {
       imageUrl: this.slicerImageUrl,
       fileName: this.slicerImageFileName,
       fileSize: this.slicerImageFileSize,
-      elements: elementsToExport || []
+      elements: elementsToExport || [],
+      activeSheetId: this.activeSheetId,
+      sheets: sheetsExport
     };
 
     return {
@@ -3206,9 +3771,23 @@ export class RigStudioApp {
 
       // 1. Restore Views
       if (data.views) {
-        for (const [vKey, vData] of Object.entries(data.views) as [StudioView, any][]) {
-          if (!this.views[vKey]) continue;
+        for (const [vKey, vData] of Object.entries(data.views) as [string, any][]) {
+          if (!this.views[vKey]) {
+            this.views[vKey] = {
+              viewId: vKey,
+              label: vData.label || vKey,
+              image: null,
+              imageUrl: vData.imageUrl || '',
+              fileName: vData.fileName || `${vKey}.png`,
+              fileSize: vData.fileSize || '',
+              joints: vData.joints || getDefaultJointPositions('front'),
+              envelopes: vData.envelopes || { ...DEFAULT_ENVELOPES },
+              parts: {},
+              visible: true
+            };
+          }
           const targetView = this.views[vKey];
+          targetView.label = vData.label || targetView.label;
           targetView.joints = vData.joints || targetView.joints;
           targetView.envelopes = vData.envelopes || targetView.envelopes;
           targetView.boneOrder = vData.boneOrder ? [...vData.boneOrder] : targetView.boneOrder;
@@ -3286,8 +3865,31 @@ export class RigStudioApp {
         }
       }
 
-      // 3. Restore Slicer Elements & Image
+      // 3. Restore Slicer Sheets, Elements & Image
       if (data.slicer) {
+        if (Array.isArray(data.slicer.sheets) && data.slicer.sheets.length > 0) {
+          this.imageSheets = [];
+          for (const s of data.slicer.sheets) {
+            const sheetObj: StudioImageSheet = {
+              id: s.id,
+              name: s.name,
+              imageUrl: s.imageUrl,
+              fileName: s.fileName,
+              fileSize: s.fileSize,
+              elements: s.elements || [],
+              image: null
+            };
+            if (s.imageUrl) {
+              const sImg = new Image();
+              sImg.crossOrigin = 'anonymous';
+              sImg.onload = () => { sheetObj.image = sImg; };
+              sImg.src = s.imageUrl;
+            }
+            this.imageSheets.push(sheetObj);
+          }
+          this.activeSheetId = data.slicer.activeSheetId || this.imageSheets[0].id;
+        }
+
         if (Array.isArray(data.slicer.elements)) {
           this.savedElements = JSON.parse(JSON.stringify(data.slicer.elements));
           if (this.slicer) {
@@ -3298,6 +3900,7 @@ export class RigStudioApp {
         if (data.slicer.imageUrl) {
           this.loadSlicerImageFromUrl(data.slicer.imageUrl, data.slicer.fileName || 'slicer_sheet.png', data.slicer.fileSize || '');
         }
+        this.renderSlicerSheetsBar();
       }
 
       // 4. Restore Animations
@@ -3314,9 +3917,7 @@ export class RigStudioApp {
       const targetActiveView = (data.activeView && this.views[data.activeView as StudioView]) ? (data.activeView as StudioView) : 'front';
       this.activeView = targetActiveView;
 
-      this.container.querySelectorAll('.studio-view-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-view') === targetActiveView);
-      });
+      this.renderViewsBar();
 
       const hudView = this.container.querySelector('#hud-active-view');
       if (hudView) hudView.textContent = targetActiveView.toUpperCase();
@@ -4288,10 +4889,9 @@ export class RigStudioApp {
               </div>
             </div>
             <div class="side-selector-chips" id="modal-side-selector">
-              <span class="side-chip active" data-side="front">✓ Front</span>
-              <span class="side-chip active" data-side="back">✓ Back</span>
-              <span class="side-chip active" data-side="left">✓ Left Side</span>
-              <span class="side-chip active" data-side="right">✓ Right Side</span>
+              ${Object.entries(this.views).map(([vId, vData]) => `
+                <span class="side-chip active" data-side="${vId}">✓ ${vData.label}</span>
+              `).join('')}
             </div>
             <div style="font-size:0.68rem; color:#64748b; margin-top:6px;">
               Each selected side gets its own independent timeline track and unique keyframes.
@@ -4424,14 +5024,14 @@ export class RigStudioApp {
                 <div style="display:flex; flex-direction:column; gap:3px;">
                   <span style="font-size:0.65rem; color:#94a3b8; font-weight:600;">Relevant Sides:</span>
                   <div class="side-selector-chips">
-                    ${(['front', 'back', 'left', 'right'] as StudioView[]).map(v => {
-                      const active = anim.relevantSides.includes(v);
+                    ${Object.entries(this.views).map(([vId, vData]) => {
+                      const active = anim.relevantSides.includes(vId);
                       return `
                         <span class="side-chip ${active ? 'active' : 'inactive'}"
                           data-anim-name="${anim.name}"
-                          data-side="${v}"
-                          title="Click to toggle relevance for ${v.toUpperCase()}">
-                          ${active ? '✓' : ''} ${v === 'left' ? 'Left' : (v === 'right' ? 'Right' : (v === 'front' ? 'Front' : 'Back'))}
+                          data-side="${vId}"
+                          title="Click to toggle relevance for ${vData.label}">
+                          ${active ? '✓' : ''} ${vData.label}
                         </span>
                       `;
                     }).join('')}
@@ -4450,7 +5050,7 @@ export class RigStudioApp {
                 Inspector: <b>${activeAnim.name}</b>
               </span>
               <span style="font-size:0.68rem; color:#94a3b8;">
-                Current View: <b style="color:#fff;">${this.activeView.toUpperCase()}</b>
+                Current View: <b style="color:#fff;">${this.views[this.activeView]?.label || this.activeView.toUpperCase()}</b>
               </span>
             </div>
 
@@ -4469,15 +5069,16 @@ export class RigStudioApp {
               <div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                   <span style="font-size:0.72rem; color:#94a3b8; font-weight:600;">
-                    Keyframes on ${this.activeView.toUpperCase()} (${keyframes.length}):
+                    Keyframes on ${this.views[this.activeView]?.label || this.activeView.toUpperCase()} (${keyframes.length}):
                   </span>
                 </div>
-                <div class="keyframe-chips-list">
+                <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto;">
                   ${keyframes.map((k, idx) => `
-                    <span class="kf-chip" data-time="${k.time}" data-index="${idx}" title="Jump to ${k.time.toFixed(2)}s">
-                      ${k.time.toFixed(2)}s
-                      <span class="kf-chip-del" data-index="${idx}" title="Delete Keyframe">✕</span>
-                    </span>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; background:#0f172a; padding:3px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.06);">
+                      <span class="kf-chip" data-time="${k.time}" data-index="${idx}" title="Jump playhead to ${k.time.toFixed(2)}s">${k.time.toFixed(2)}s</span>
+                      <input type="text" class="input-kf-pose-name" data-index="${idx}" value="${k.name || ''}" placeholder="Pose Name..." style="flex:1; min-width:0; background:transparent; border:none; border-bottom:1px dashed rgba(255,255,255,0.2); font-size:0.65rem; color:#7dd3fc; padding:1px 3px;" title="Pose name for this keyframe (e.g. Contact, Pass, Apex, Strike)" />
+                      <button class="btn-studio btn-delete-kf" data-index="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#ef4444; border:none; background:transparent; cursor:pointer;" title="Delete keyframe">✕</button>
+                    </div>
                   `).join('')}
                 </div>
               </div>
@@ -4602,8 +5203,22 @@ export class RigStudioApp {
       });
     });
 
-    // Keyframe Chip Delete
-    sidebar.querySelectorAll('.kf-chip-del').forEach(delBtn => {
+    // Keyframe Pose Name Edit
+    sidebar.querySelectorAll('.input-kf-pose-name').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(input.getAttribute('data-index')!, 10);
+        const val = (e.target as HTMLInputElement).value;
+        this.timeline?.setKeyframeName(idx, val);
+        const anim = this.animations[this.activeAnimationName];
+        const track = anim?.tracks[this.activeView];
+        if (track && track.keyframes[idx]) {
+          track.keyframes[idx].name = val.trim() || undefined;
+        }
+      });
+    });
+
+    // Keyframe Delete Button
+    sidebar.querySelectorAll('.btn-delete-kf').forEach(delBtn => {
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const idx = parseInt(delBtn.getAttribute('data-index')!, 10);

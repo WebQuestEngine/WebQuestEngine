@@ -13,10 +13,24 @@ export interface VectorOutlineElement {
   assignedBoneId?: AnatomicalJointId;
   originJointId?: AnatomicalJointId;
   targetJointId?: AnatomicalJointId;
+  sheetId?: string;
   meshOptions?: {
     triangles: number[];          // Vertex index triplets for Earcut triangulation
     bendBones?: [string, string]; // [parentBone, childBone] for dual-joint bending
   };
+}
+
+/**
+ * Image Sheet / Spritesheet asset container for organizing character assets
+ */
+export interface StudioImageSheet {
+  id: string;
+  name: string;
+  imageUrl: string;
+  fileName: string;
+  fileSize?: string;
+  image?: HTMLImageElement | null;
+  elements: VectorOutlineElement[];
 }
 
 /**
@@ -31,6 +45,14 @@ export interface SavedElementsDocument {
   imageUrl?: string;
   elementCount: number;
   elements: VectorOutlineElement[];
+  sheets?: Array<{
+    id: string;
+    name: string;
+    imageUrl: string;
+    fileName: string;
+    fileSize?: string;
+    elements: VectorOutlineElement[];
+  }>;
 }
 
 /**
@@ -164,9 +186,9 @@ export interface SpineDocument {
 }
 
 /**
- * Studio Mode Views (Matching Character Rig Studio Workflow)
+ * Studio Mode Views / Directional Character Poses
  */
-export type StudioView = 'front' | 'back' | 'left' | 'right';
+export type StudioView = 'front' | 'back' | 'left' | 'right' | string;
 
 export type JointToolMode = 'select' | 'add_joint' | 'move' | 'preview';
 
@@ -284,6 +306,15 @@ export interface RigProjectData {
     fileName?: string;
     fileSize?: string;
     elements?: VectorOutlineElement[];
+    activeSheetId?: string;
+    sheets?: Array<{
+      id: string;
+      name: string;
+      imageUrl: string;
+      fileName: string;
+      fileSize?: string;
+      elements: VectorOutlineElement[];
+    }>;
   };
   animations?: Record<string, StudioAnimationDefinition>;
   activeAnimation?: string;
@@ -294,6 +325,7 @@ export interface RigProjectData {
  */
 export interface StudioKeyframe {
   time: number; // in seconds (e.g. 0.0, 0.4)
+  name?: string; // Optional pose name (e.g. "Contact", "Pass", "Apex", "Down")
   joints: Record<AnatomicalJointId, { x: number; y: number }>;
 }
 
