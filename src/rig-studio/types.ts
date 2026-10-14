@@ -45,6 +45,7 @@ export interface SpineQuestForgeMetadata {
   activeAnimation?: string;
   poseBones?: Record<string, SpineBoneData[]>;
   poseSlots?: Record<string, string[]>;
+  animations?: Record<string, StudioAnimationDefinition>;
 }
 
 /**
@@ -284,6 +285,33 @@ export interface RigProjectData {
     fileSize?: string;
     elements?: VectorOutlineElement[];
   };
+  animations?: Record<string, StudioAnimationDefinition>;
+  activeAnimation?: string;
+}
+
+/**
+ * Keyframe pose for studio animation
+ */
+export interface StudioKeyframe {
+  time: number; // in seconds (e.g. 0.0, 0.4)
+  joints: Record<AnatomicalJointId, { x: number; y: number }>;
+}
+
+/**
+ * Unique timeline track per character side/view
+ */
+export interface StudioSideTrack {
+  duration: number; // in seconds
+  keyframes: StudioKeyframe[];
+}
+
+/**
+ * User-defined animation clip with relevant sides configuration
+ */
+export interface StudioAnimationDefinition {
+  name: string;
+  relevantSides: StudioView[];
+  tracks: Partial<Record<StudioView, StudioSideTrack>>;
 }
 
 /**

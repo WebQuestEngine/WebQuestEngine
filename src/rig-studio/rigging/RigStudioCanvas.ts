@@ -24,6 +24,7 @@ export interface RigStudioCanvasEvents {
   onImageDropped?: (file: File) => void;
   onPartDroppedOnBone?: (boneId: AnatomicalJointId, partData: any) => void;
   onFileDroppedOnBone?: (boneId: AnatomicalJointId, file: File) => void;
+  onPreviewPoseChanged?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
 }
 
 export class RigStudioCanvas {
@@ -569,6 +570,15 @@ export class RigStudioCanvas {
     this.render();
   }
 
+  public getPreviewJoints(): Record<AnatomicalJointId, { x: number; y: number }> {
+    return JSON.parse(JSON.stringify(this.previewJoints));
+  }
+
+  public setPreviewJoints(joints: Record<AnatomicalJointId, { x: number; y: number }>): void {
+    this.previewJoints = JSON.parse(JSON.stringify(joints));
+    this.render();
+  }
+
   public resetView(): void {
     const rect = this.container.getBoundingClientRect();
     this.panX = Math.round(rect.width / 2);
@@ -869,6 +879,7 @@ export class RigStudioCanvas {
         if (this.toolMode === 'preview') {
           // Preview posing mode with bone length preservation for all nodes
           this.poseJointInPreview(this.draggedJointId, world.x, world.y);
+          this.events.onPreviewPoseChanged?.(this.previewJoints);
         } else {
           // Standard setup mode (places / moves joint pins with symmetry and graphic lock)
           this.moveJointWithSymmetry(this.draggedJointId, world.x, world.y);
@@ -936,8 +947,10 @@ export class RigStudioCanvas {
       if (this.isDraggingJoint) {
         this.isDraggingJoint = false;
         this.draggedJointId = null;
-        if (this.events.onJointsModified) {
-          this.events.onJointsModified(this.restJoints);
+        if (this.toolMode === 'preview') {
+          this.events.onPreviewPoseChanged?.(this.previewJoints);
+        } else {
+          this.events.onJointsModified?.(this.restJoints);
         }
       }
     });

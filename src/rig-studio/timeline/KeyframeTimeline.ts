@@ -1,244 +1,431 @@
-import { SpineDocument, SpineAnimationTrack, SpineRotateKeyframe, SpineTranslateKeyframe } from '../types';
+import {
+  AnatomicalJointId,
+  StudioAnimationDefinition,
+  StudioKeyframe,
+  StudioSideTrack,
+  StudioView
+} from '../types';
 
-export interface TimelineEvents {
+export interface KeyframeTimelineEvents {
+  onPoseInterpolated?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
   onTimeChange?: (time: number) => void;
-  onAnimationModified?: () => void;
   onPlayToggle?: (isPlaying: boolean) => void;
+  onKeyframeAdded?: (time: number, joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
+  onKeyframeDeleted?: (index: number) => void;
+  onAnimationSelected?: (animName: string) => void;
+  onRequestNewAnimation?: () => void;
+  onAutoKeyToggled?: (enabled: boolean) => void;
+  onEnableSideRequested?: (animName: string, side: StudioView) => void;
+  onDurationChanged?: (duration: number) => void;
+}
+
+/**
+ * Interpolates joint positions smoothly between keyframes across time.
+ */
+export function interpolateJointPoses(
+  keyframes: StudioKeyframe[],
+  time: number,
+  duration: number,
+  loop = true,
+  fallbackJoints: Record<string, { x: number; y: number }> = {}
+): Record<AnatomicalJointId, { x: number; y: number }> {
+  if (!keyframes || keyframes.length === 0) {
+    return JSON.parse(JSON.stringify(fallbackJoints));
+  }
+  if (keyframes.length === 1) {
+    return JSON.parse(JSON.stringify(keyframes[0].joints));
+  }
+
+  const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+  const clampedTime = loop && duration > 0
+    ? (time % duration)
+    : Math.max(0, Math.min(duration, time));
+
+  // If time is before or at first keyframe
+  if (clampedTime <= sorted[0].time) {
+    if (!loop || sorted[sorted.length - 1].time <= sorted[0].time) {
+      return JSON.parse(JSON.stringify(sorted[0].joints));
+    }
+    const k0 = sorted[sorted.length - 1];
+    const k1 = sorted[0];
+    const segmentDuration = (duration - k0.time) + k1.time;
+    if (segmentDuration <= 0) return JSON.parse(JSON.stringify(sorted[0].joints));
+    const tInSeg = clampedTime + (duration - k0.time);
+    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+    return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
+  }
+
+  // If time is after or at last keyframe
+  if (clampedTime >= sorted[sorted.length - 1].time) {
+    if (!loop) {
+      return JSON.parse(JSON.stringify(sorted[sorted.length - 1].joints));
+    }
+    const k0 = sorted[sorted.length - 1];
+    const k1 = sorted[0];
+    const segmentDuration = (duration - k0.time) + k1.time;
+    if (segmentDuration <= 0) return JSON.parse(JSON.stringify(sorted[0].joints));
+    const tInSeg = clampedTime - k0.time;
+    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+    return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
+  }
+
+  // Find bounding keyframes
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const k0 = sorted[i];
+    const k1 = sorted[i + 1];
+    if (clampedTime >= k0.time && clampedTime <= k1.time) {
+      const dt = k1.time - k0.time;
+      const alpha = dt > 0 ? (clampedTime - k0.time) / dt : 0;
+      return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
+    }
+  }
+
+  return JSON.parse(JSON.stringify(sorted[0].joints));
+}
+
+function lerpJointDict(
+  j0: Record<string, { x: number; y: number }>,
+  j1: Record<string, { x: number; y: number }>,
+  alpha: number,
+  fallback: Record<string, { x: number; y: number }>
+): Record<AnatomicalJointId, { x: number; y: number }> {
+  // Smoothstep for organic, continuous motion
+  const ease = alpha * alpha * (3 - 2 * alpha);
+  const result: any = {};
+  const allKeys = new Set([
+    ...Object.keys(j0 || {}),
+    ...Object.keys(j1 || {}),
+    ...Object.keys(fallback || {})
+  ]);
+
+  for (const k of allKeys) {
+    const p0 = j0?.[k] || fallback[k] || { x: 0, y: 0 };
+    const p1 = j1?.[k] || fallback[k] || { x: 0, y: 0 };
+    result[k] = {
+      x: p0.x + (p1.x - p0.x) * ease,
+      y: p0.y + (p1.y - p0.y) * ease
+    };
+  }
+
+  return result;
 }
 
 export class KeyframeTimeline {
   private container: HTMLElement;
-  private doc: SpineDocument;
+  private animations: Record<string, StudioAnimationDefinition> = {};
   private activeAnimKey = 'idle';
+  private activeView: StudioView = 'front';
+  private restJoints: Record<AnatomicalJointId, { x: number; y: number }> = {} as any;
 
   private currentTime = 0;
   private duration = 1.0;
   private isPlaying = false;
   private isLooping = true;
+  private isAutoKey = true;
   private playbackSpeed = 1.0;
 
-  private selectedBone: string | null = null;
-  private selectedKeyframe: { bone: string; type: 'rotate' | 'translate'; index: number } | null = null;
-
+  private selectedKeyframeIndex: number | null = null;
   private isDraggingPlayhead = false;
-  private isDraggingKeyframe = false;
-
   private animTimerId: any = null;
   private lastTimestamp = 0;
 
-  private events: TimelineEvents;
+  private events: KeyframeTimelineEvents;
 
-  constructor(container: HTMLElement, doc: SpineDocument, events: TimelineEvents = {}) {
+  constructor(
+    container: HTMLElement,
+    animations: Record<string, StudioAnimationDefinition>,
+    activeAnimKey: string,
+    activeView: StudioView,
+    restJoints: Record<AnatomicalJointId, { x: number; y: number }>,
+    events: KeyframeTimelineEvents = {}
+  ) {
     this.container = container;
-    this.doc = doc;
+    this.animations = animations;
+    this.activeAnimKey = activeAnimKey;
+    this.activeView = activeView;
+    this.restJoints = restJoints;
     this.events = events;
 
-    this.ensureDefaultAnimation();
+    this.syncActiveTrack();
     this.render();
     this.startPlaybackLoop();
   }
 
-  public setDocument(doc: SpineDocument): void {
-    this.doc = doc;
-    this.ensureDefaultAnimation();
+  public setAnimationState(
+    animations: Record<string, StudioAnimationDefinition>,
+    activeAnimKey: string,
+    activeView: StudioView,
+    restJoints: Record<AnatomicalJointId, { x: number; y: number }>
+  ): void {
+    this.animations = animations;
+    this.activeAnimKey = activeAnimKey;
+    this.activeView = activeView;
+    this.restJoints = restJoints;
+
+    this.syncActiveTrack();
     this.render();
+    this.evaluatePoseAtCurrentTime();
   }
 
-  public setSelectedBone(boneName: string | null): void {
-    this.selectedBone = boneName;
-    this.renderTracks();
+  public setActiveView(view: StudioView, restJoints: Record<AnatomicalJointId, { x: number; y: number }>): void {
+    this.activeView = view;
+    this.restJoints = restJoints;
+    this.syncActiveTrack();
+    this.render();
+    this.evaluatePoseAtCurrentTime();
   }
 
-  public setTime(time: number): void {
-    this.currentTime = Math.max(0, Math.min(this.duration, time));
-    this.updatePlayheadPosition();
-    if (this.events.onTimeChange) this.events.onTimeChange(this.currentTime);
-  }
-
-  public getTime(): number {
-    return this.currentTime;
+  public setActiveAnimation(animName: string): void {
+    if (!this.animations[animName]) return;
+    this.activeAnimKey = animName;
+    this.currentTime = 0;
+    this.syncActiveTrack();
+    this.render();
+    this.evaluatePoseAtCurrentTime();
   }
 
   public getActiveAnimation(): string {
     return this.activeAnimKey;
   }
 
-  public setActiveAnimation(animKey: string): void {
-    if (!this.doc.animations[animKey]) return;
-    this.activeAnimKey = animKey;
-    this.duration = this.computeAnimDuration(this.doc.animations[animKey]);
-    this.currentTime = 0;
-    this.render();
-    if (this.events.onTimeChange) this.events.onTimeChange(this.currentTime);
+  public getTime(): number {
+    return this.currentTime;
   }
 
-  public addKeyframe(boneName: string, rotation?: number, x?: number, y?: number): void {
+  public setTime(time: number): void {
+    this.currentTime = Math.max(0, Math.min(this.duration, time));
+    this.updatePlayheadPosition();
+    this.evaluatePoseAtCurrentTime();
+    this.events.onTimeChange?.(this.currentTime);
+  }
+
+  public getIsPlaying(): boolean {
+    return this.isPlaying;
+  }
+
+  public togglePlay(play?: boolean): void {
+    this.isPlaying = play !== undefined ? play : !this.isPlaying;
+    const playBtn = this.container.querySelector('.btn-timeline-play');
+    if (playBtn) {
+      playBtn.innerHTML = `<span>${this.isPlaying ? '⏸' : '▶'}</span> ${this.isPlaying ? 'Pause' : 'Play'}`;
+    }
+    this.events.onPlayToggle?.(this.isPlaying);
+  }
+
+  public setAutoKey(enabled: boolean): void {
+    this.isAutoKey = enabled;
+    const btn = this.container.querySelector('.chk-auto-key') as HTMLInputElement | null;
+    if (btn) btn.checked = enabled;
+    this.events.onAutoKeyToggled?.(enabled);
+  }
+
+  public getIsAutoKey(): boolean {
+    return this.isAutoKey;
+  }
+
+  public addKeyframe(joints: Record<AnatomicalJointId, { x: number; y: number }>): void {
     const track = this.getActiveTrack();
-    if (!track.bones) track.bones = {};
-    if (!track.bones[boneName]) track.bones[boneName] = {};
+    if (!track) return;
 
     const t = Math.round(this.currentTime * 100) / 100;
+    const clonedJoints = JSON.parse(JSON.stringify(joints));
 
-    if (rotation !== undefined) {
-      if (!track.bones[boneName].rotate) track.bones[boneName].rotate = [];
-      const rotates = track.bones[boneName].rotate!;
-      const existing = rotates.find(k => Math.abs(k.time - t) < 0.02);
-      if (existing) {
-        existing.angle = rotation;
-      } else {
-        rotates.push({ time: t, angle: rotation });
-        rotates.sort((a, b) => a.time - b.time);
-      }
-    }
-
-    if (x !== undefined || y !== undefined) {
-      if (!track.bones[boneName].translate) track.bones[boneName].translate = [];
-      const translates = track.bones[boneName].translate!;
-      const existing = translates.find(k => Math.abs(k.time - t) < 0.02);
-      if (existing) {
-        if (x !== undefined) existing.x = x;
-        if (y !== undefined) existing.y = y;
-      } else {
-        translates.push({ time: t, x, y });
-        translates.sort((a, b) => a.time - b.time);
-      }
+    // Check if keyframe already exists near this timestamp (threshold 0.03s)
+    const existingIndex = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.03);
+    if (existingIndex >= 0) {
+      track.keyframes[existingIndex].joints = clonedJoints;
+      this.selectedKeyframeIndex = existingIndex;
+    } else {
+      track.keyframes.push({ time: t, joints: clonedJoints });
+      track.keyframes.sort((a, b) => a.time - b.time);
+      this.selectedKeyframeIndex = track.keyframes.findIndex(k => k.time === t);
     }
 
     this.duration = Math.max(this.duration, t);
-    this.renderTracks();
-    if (this.events.onAnimationModified) this.events.onAnimationModified();
+    track.duration = this.duration;
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.updatePlayheadPosition();
+    this.events.onKeyframeAdded?.(t, clonedJoints);
   }
 
   public deleteSelectedKeyframe(): void {
-    if (!this.selectedKeyframe) return;
     const track = this.getActiveTrack();
-    const { bone, type, index } = this.selectedKeyframe;
-    const boneTrack = track.bones?.[bone];
-    if (boneTrack) {
-      if (type === 'rotate' && boneTrack.rotate) {
-        boneTrack.rotate.splice(index, 1);
-      } else if (type === 'translate' && boneTrack.translate) {
-        boneTrack.translate.splice(index, 1);
-      }
+    if (!track) return;
+
+    if (this.selectedKeyframeIndex !== null && track.keyframes[this.selectedKeyframeIndex]) {
+      track.keyframes.splice(this.selectedKeyframeIndex, 1);
+      this.events.onKeyframeDeleted?.(this.selectedKeyframeIndex);
+      this.selectedKeyframeIndex = null;
+      this.renderRuler();
+      this.renderKeyframeTrack();
+      this.evaluatePoseAtCurrentTime();
+      return;
     }
-    this.selectedKeyframe = null;
-    this.renderTracks();
-    if (this.events.onAnimationModified) this.events.onAnimationModified();
+
+    // Otherwise delete keyframe nearest to current playhead
+    const t = this.currentTime;
+    const idx = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.04);
+    if (idx >= 0) {
+      track.keyframes.splice(idx, 1);
+      this.events.onKeyframeDeleted?.(idx);
+      this.renderRuler();
+      this.renderKeyframeTrack();
+      this.evaluatePoseAtCurrentTime();
+    }
   }
 
-  private getActiveTrack(): SpineAnimationTrack {
-    if (!this.doc.animations[this.activeAnimKey]) {
-      this.doc.animations[this.activeAnimKey] = { bones: {} };
+  public evaluatePoseAtCurrentTime(): void {
+    const track = this.getActiveTrack();
+    if (!track || track.keyframes.length === 0) {
+      this.events.onPoseInterpolated?.(this.restJoints);
+      return;
     }
-    return this.doc.animations[this.activeAnimKey];
+
+    const posed = interpolateJointPoses(
+      track.keyframes,
+      this.currentTime,
+      this.duration,
+      this.isLooping,
+      this.restJoints
+    );
+    this.events.onPoseInterpolated?.(posed);
   }
 
-  private computeAnimDuration(track: SpineAnimationTrack): number {
-    let max = 0.8;
-    for (const b of Object.values(track.bones || {})) {
-      for (const r of b.rotate || []) {
-        if (r.time > max) max = r.time;
-      }
-      for (const t of b.translate || []) {
-        if (t.time > max) max = t.time;
-      }
-    }
-    return Math.round(max * 100) / 100;
-  }
+  private getActiveTrack(): StudioSideTrack | null {
+    const anim = this.animations[this.activeAnimKey];
+    if (!anim) return null;
+    if (!anim.relevantSides.includes(this.activeView)) return null;
 
-  private ensureDefaultAnimation(): void {
-    if (!this.doc.animations || Object.keys(this.doc.animations).length === 0) {
-      this.doc.animations = {
-        idle: {
-          bones: {
-            torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 3 }, { time: 1.6, angle: 0 }] }
-          }
-        },
-        walk: {
-          bones: {
-            leg_l: { rotate: [{ time: 0, angle: -25 }, { time: 0.4, angle: 25 }, { time: 0.8, angle: -25 }] }
-          }
-        }
+    if (!anim.tracks[this.activeView]) {
+      anim.tracks[this.activeView] = {
+        duration: 1.0,
+        keyframes: [
+          { time: 0, joints: JSON.parse(JSON.stringify(this.restJoints)) }
+        ]
       };
     }
-    this.activeAnimKey = Object.keys(this.doc.animations)[0] || 'idle';
-    this.duration = this.computeAnimDuration(this.doc.animations[this.activeAnimKey]);
+    return anim.tracks[this.activeView]!;
   }
 
-  private boundOnResize = () => {
-    this.renderRuler();
-    this.renderTracks();
-    this.updatePlayheadPosition();
-  };
+  private syncActiveTrack(): void {
+    const track = this.getActiveTrack();
+    if (track) {
+      this.duration = Math.max(0.2, track.duration || 1.0);
+    } else {
+      this.duration = 1.0;
+    }
+  }
 
   private getTrackWidth(): number {
-    const containerWidth = this.container.clientWidth || 500;
-    const minWidthByDuration = Math.round(this.duration * 200);
-    const minTrackWidth = Math.max(600, minWidthByDuration);
-    return Math.max(minTrackWidth, containerWidth - 180);
+    const containerWidth = this.container.clientWidth || 600;
+    const minWidthByDuration = Math.round(this.duration * 240);
+    const minTrackWidth = Math.max(700, minWidthByDuration);
+    return Math.max(minTrackWidth, containerWidth - 220);
   }
 
   public render(): void {
-    const animNames = Object.keys(this.doc.animations);
+    const animList = Object.values(this.animations);
+    const activeAnim = this.animations[this.activeAnimKey];
+    const isRelevantForView = activeAnim?.relevantSides.includes(this.activeView) ?? false;
     const trackWidth = this.getTrackWidth();
-    const totalWidth = 180 + trackWidth;
+    const totalWidth = 200 + trackWidth;
 
     this.container.innerHTML = `
-      <div class="timeline-toolbar" style="overflow-x:auto; overflow-y:hidden;">
-        <div class="tool-group" style="flex-shrink:0;">
-          <button class="tool-btn btn-play-toggle">
+      <div class="timeline-toolbar">
+        <div class="tool-group">
+          <button class="tool-btn btn-timeline-play" title="Play / Pause Animation (Space)">
             <span>${this.isPlaying ? '⏸' : '▶'}</span> ${this.isPlaying ? 'Pause' : 'Play'}
           </button>
-          <button class="tool-btn btn-rewind" title="Rewind to start">⏪</button>
-          <button class="tool-btn btn-step-back" title="Previous Frame">⏮</button>
-          <button class="tool-btn btn-step-fwd" title="Next Frame">⏭</button>
+          <button class="tool-btn btn-timeline-rewind" title="Rewind to start (0.00s)">⏪</button>
+          <button class="tool-btn btn-timeline-step-back" title="Previous Frame (1/30s)">⏮</button>
+          <button class="tool-btn btn-timeline-step-fwd" title="Next Frame (1/30s)">⏭</button>
           <div class="tool-separator"></div>
-          <span style="font-family:var(--studio-font-mono); font-size:0.75rem; color:#38bdf8; white-space:nowrap;">
-            <span id="time-current-label">0.00s</span> / <span id="time-duration-label">${this.duration.toFixed(2)}s</span>
+          <span class="timeline-time-display">
+            <span id="time-current-label">${this.currentTime.toFixed(2)}s</span> / <span id="time-duration-label">${this.duration.toFixed(2)}s</span>
           </span>
         </div>
 
-        <div class="tool-group" style="flex-shrink:0;">
-          <span style="font-size:0.7rem; color:var(--studio-text-muted);">Clip:</span>
-          <select class="studio-select select-timeline-clip" style="padding:2px 6px;">
-            ${animNames.map(k => `<option value="${k}" ${k === this.activeAnimKey ? 'selected' : ''}>${k}</option>`).join('')}
+        <div class="tool-group">
+          <span style="font-size:0.75rem; color:var(--studio-text-muted); font-weight:600;">Clip:</span>
+          <select class="studio-select select-timeline-clip" style="padding:3px 8px; font-weight:600; font-size:0.75rem;">
+            ${animList.map(a => {
+              const rel = a.relevantSides.includes(this.activeView);
+              const sidesBadge = a.relevantSides.map(s => s[0].toUpperCase()).join('/');
+              return `<option value="${a.name}" ${a.name === this.activeAnimKey ? 'selected' : ''}>
+                ${a.name} [${sidesBadge}] ${rel ? '✓' : '(inactive)'}
+              </option>`;
+            }).join('')}
           </select>
-          <button class="tool-btn btn-add-clip" title="New Animation Clip">＋ Clip</button>
+          <button class="tool-btn btn-timeline-new-clip" title="Create New Custom Animation Clip">＋ Clip</button>
           <div class="tool-separator"></div>
-          <label style="font-size:0.7rem; color:var(--studio-text-muted); display:flex; align-items:center; gap:4px; cursor:pointer; white-space:nowrap;">
-            <input type="checkbox" class="chk-loop" ${this.isLooping ? 'checked' : ''} /> Loop
+          <span class="timeline-side-badge ${isRelevantForView ? 'active' : 'warning'}" title="Active orientation for unique animation authoring">
+            Side: <b>${this.activeView.toUpperCase()}</b>
+          </span>
+        </div>
+
+        <div class="tool-group">
+          <button class="tool-btn btn-timeline-add-key" title="Record Keyframe at current playhead time" ${!isRelevantForView ? 'disabled' : ''}>
+            🔑 ＋Key
+          </button>
+          <button class="tool-btn btn-timeline-del-key" title="Delete Keyframe at current playhead time (Del)" ${!isRelevantForView ? 'disabled' : ''}>
+            🗑️ Del
+          </button>
+          <div class="tool-separator"></div>
+          <label class="timeline-toggle-label" title="When active, dragging any joint on canvas auto-records keyframe at current time">
+            <input type="checkbox" class="chk-auto-key" ${this.isAutoKey ? 'checked' : ''} />
+            <span class="auto-key-indicator ${this.isAutoKey ? 'active' : ''}">●</span> Auto-Key
+          </label>
+          <label class="timeline-toggle-label" title="Loop playback continuously">
+            <input type="checkbox" class="chk-timeline-loop" ${this.isLooping ? 'checked' : ''} /> Loop
           </label>
         </div>
       </div>
 
-      <!-- Tracks Viewport (Scrollable in both X and Y) -->
-      <div class="timeline-viewport" style="flex:1; overflow:auto; position:relative; background:#040814;">
+      ${!isRelevantForView ? `
+        <div class="timeline-side-warning-banner">
+          <span>⚠️ Animation <b>"${this.activeAnimKey}"</b> is not configured for <b>${this.activeView.toUpperCase()}</b> side.</span>
+          <button class="btn-studio btn-enable-side-timeline" style="font-size:0.72rem; padding:3px 10px; background:#0284c7; color:#fff;">
+            ＋ Enable for ${this.activeView.toUpperCase()}
+          </button>
+        </div>
+      ` : ''}
+
+      <!-- Timeline Viewport (Ruler + Dope Sheet Tracks) -->
+      <div class="timeline-viewport">
         <div class="timeline-scroll-content" style="min-width:${totalWidth}px; width:max-content; min-height:100%; display:flex; flex-direction:column; position:relative;">
           <!-- Time Ruler -->
-          <div class="timeline-ruler-wrapper" style="position:sticky; top:0; z-index:30; background:#0b1120; border-bottom:1px solid var(--studio-border); height:24px; display:flex;">
-            <!-- Sticky Corner Header -->
-            <div class="timeline-corner-header" style="position:sticky; left:0; width:180px; min-width:180px; height:100%; background:#0b1120; z-index:40; border-right:1px solid var(--studio-border); display:flex; align-items:center; padding:0 8px; font-size:0.7rem; color:var(--studio-text-muted); font-weight:700; letter-spacing:0.04em;">
-              BONES / TRACKS
+          <div class="timeline-ruler-wrapper">
+            <div class="timeline-corner-header">
+              <span>DOPE SHEET / KEYS</span>
             </div>
-            <!-- Ruler Scrub Area -->
-            <div class="timeline-ruler" style="width:${trackWidth}px; min-width:${trackWidth}px; height:100%; position:relative; cursor:pointer;">
+            <div class="timeline-ruler" style="width:${trackWidth}px; min-width:${trackWidth}px;">
               <canvas id="ruler-canvas" style="display:block; width:100%; height:100%;"></canvas>
-              <div id="playhead-line" style="position:absolute; top:0; bottom:-1000px; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:0px;">
-                <div style="width:10px; height:10px; background:#ef4444; transform:translateX(-4px) rotate(45deg); border-radius:2px;"></div>
+              <!-- Draggable Playhead Scrubber -->
+              <div id="playhead-line" style="position:absolute; top:0; bottom:-500px; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:0px;">
+                <div class="playhead-head"></div>
               </div>
             </div>
           </div>
 
-          <!-- Tracks List -->
-          <div class="timeline-tracks-list" style="flex:1; position:relative;">
-            <!-- Dynamically populated -->
+          <!-- Main Keyframe Track Line -->
+          <div class="timeline-tracks-list">
+            <div class="timeline-master-row">
+              <div class="timeline-row-header master">
+                <span>⭐ Poses / Master Track</span>
+              </div>
+              <div class="master-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                <!-- Diamonds populated dynamically -->
+              </div>
+            </div>
           </div>
         </div>
       </div>
     `;
 
     this.renderRuler();
-    this.renderTracks();
+    this.renderKeyframeTrack();
     this.bindDOMEvents();
     this.updatePlayheadPosition();
   }
@@ -256,76 +443,63 @@ export class KeyframeTimeline {
     const pixelsPerSec = trackWidth / this.duration;
 
     ctx.clearRect(0, 0, trackWidth, 24);
-    ctx.strokeStyle = '#334155';
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9px monospace';
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
 
-    // Seconds and Frame ticks
-    const step = pixelsPerSec > 200 ? 0.1 : (pixelsPerSec > 100 ? 0.2 : 0.5);
+    // Step resolution based on width
+    const step = pixelsPerSec > 250 ? 0.05 : (pixelsPerSec > 120 ? 0.1 : 0.2);
+
     for (let t = 0; t <= this.duration + 0.01; t += step) {
-      const x = t * pixelsPerSec;
-      const isMajor = Math.abs(t - Math.round(t)) < 0.02;
+      const x = Math.round(t * pixelsPerSec);
+      const isMajor = Math.abs(t - Math.round(t)) < 0.01;
+      const isHalf = Math.abs(t * 2 - Math.round(t * 2)) < 0.01;
 
       ctx.beginPath();
-      ctx.moveTo(x, isMajor ? 6 : 14);
+      ctx.moveTo(x, isMajor ? 6 : (isHalf ? 12 : 16));
       ctx.lineTo(x, 24);
       ctx.stroke();
 
-      if (isMajor || step >= 0.2) {
-        ctx.fillText(`${t.toFixed(1)}s`, x + 3, 14);
+      if (isMajor || (step <= 0.1 && isHalf)) {
+        ctx.fillText(`${t.toFixed(1)}s`, x + 4, 13);
       }
     }
   }
 
-  private renderTracks(): void {
-    const listEl = this.container.querySelector('.timeline-tracks-list');
-    if (!listEl) return;
+  private renderKeyframeTrack(): void {
+    const lane = this.container.querySelector('.master-track-lane') as HTMLElement;
+    if (!lane) return;
 
     const track = this.getActiveTrack();
-    const bones = this.doc.bones || [];
+    const keyframes = track?.keyframes || [];
     const trackWidth = this.getTrackWidth();
     const pixelsPerSec = trackWidth / this.duration;
 
-    listEl.innerHTML = bones.map(bone => {
-      const isSelected = bone.name === this.selectedBone;
-      const bTrack = track.bones?.[bone.name];
-      const rotateKeys = bTrack?.rotate || [];
+    lane.innerHTML = keyframes.map((k, idx) => {
+      const leftPx = Math.round(k.time * pixelsPerSec);
+      const isSelected = this.selectedKeyframeIndex === idx;
 
       return `
-        <div class="timeline-row ${isSelected ? 'selected' : ''}" style="height:26px; border-bottom:1px solid rgba(148,163,184,0.1); display:flex; align-items:center; background:${isSelected ? 'rgba(2,132,199,0.1)' : 'transparent'};">
-          <!-- Row Header (Sticky on left) -->
-          <div class="timeline-row-header" style="position:sticky; left:0; width:180px; min-width:180px; height:100%; background:#070b14; z-index:20; border-right:1px solid rgba(148,163,184,0.1); padding:0 8px; font-size:0.75rem; font-weight:600; color:${isSelected ? '#38bdf8' : '#cbd5e1'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;">
-            <span>🦴</span>
-            <span>${bone.name}</span>
-          </div>
-
-          <!-- Keyframe Track Line -->
-          <div class="bone-track-lane" data-bone="${bone.name}" style="width:${trackWidth}px; min-width:${trackWidth}px; height:100%; position:relative; background:${isSelected ? 'rgba(56,189,248,0.03)' : 'transparent'};">
-            ${rotateKeys.map((k, idx) => {
-              const leftPx = Math.round(k.time * pixelsPerSec);
-              const isKSelected = this.selectedKeyframe?.bone === bone.name && this.selectedKeyframe?.index === idx;
-              return `
-                <div class="keyframe-diamond ${isKSelected ? 'active' : ''}" 
-                  data-bone="${bone.name}" 
-                  data-index="${idx}" 
-                  data-type="rotate"
-                  style="position:absolute; left:${leftPx - 4}px; top:8px; width:8px; height:8px; background:${isKSelected ? '#f59e0b' : '#38bdf8'}; transform:rotate(45deg); cursor:pointer; z-index:10; border-radius:1px; box-shadow:0 0 4px rgba(56,189,248,0.5);">
-                </div>
-              `;
-            }).join('')}
-          </div>
+        <div class="keyframe-diamond ${isSelected ? 'selected' : ''}"
+          data-index="${idx}"
+          data-time="${k.time}"
+          title="Pose Keyframe at ${k.time.toFixed(2)}s (Click to jump / Del to delete)"
+          style="left:${leftPx - 6}px;">
         </div>
       `;
     }).join('');
 
-    // Bind keyframe click
-    listEl.querySelectorAll('.keyframe-diamond').forEach(d => {
-      d.addEventListener('mousedown', (e) => {
+    // Bind keyframe clicks
+    lane.querySelectorAll('.keyframe-diamond').forEach(el => {
+      el.addEventListener('click', (e) => {
         e.stopPropagation();
-        const bone = d.getAttribute('data-bone')!;
-        const index = parseInt(d.getAttribute('data-index')!, 10);
-        this.selectedKeyframe = { bone, type: 'rotate', index };
-        this.renderTracks();
+        const idx = parseInt(el.getAttribute('data-index')!, 10);
+        this.selectedKeyframeIndex = idx;
+        const k = keyframes[idx];
+        if (k) {
+          this.setTime(k.time);
+          this.renderKeyframeTrack();
+        }
       });
     });
   }
@@ -344,24 +518,21 @@ export class KeyframeTimeline {
   }
 
   private bindDOMEvents(): void {
-    // Play / Pause
-    const playBtn = this.container.querySelector('.btn-play-toggle');
-    playBtn?.addEventListener('click', () => {
-      this.isPlaying = !this.isPlaying;
-      playBtn.innerHTML = `<span>${this.isPlaying ? '⏸' : '▶'}</span> ${this.isPlaying ? 'Pause' : 'Play'}`;
-      if (this.events.onPlayToggle) this.events.onPlayToggle(this.isPlaying);
+    // Play / Pause button
+    this.container.querySelector('.btn-timeline-play')?.addEventListener('click', () => {
+      this.togglePlay();
     });
 
     // Rewind
-    this.container.querySelector('.btn-rewind')?.addEventListener('click', () => {
+    this.container.querySelector('.btn-timeline-rewind')?.addEventListener('click', () => {
       this.setTime(0);
     });
 
-    // Step Forward / Back
-    this.container.querySelector('.btn-step-fwd')?.addEventListener('click', () => {
+    // Frame Steps
+    this.container.querySelector('.btn-timeline-step-fwd')?.addEventListener('click', () => {
       this.setTime(this.currentTime + 1 / 30);
     });
-    this.container.querySelector('.btn-step-back')?.addEventListener('click', () => {
+    this.container.querySelector('.btn-timeline-step-back')?.addEventListener('click', () => {
       this.setTime(this.currentTime - 1 / 30);
     });
 
@@ -369,6 +540,39 @@ export class KeyframeTimeline {
     const clipSelect = this.container.querySelector('.select-timeline-clip') as HTMLSelectElement;
     clipSelect?.addEventListener('change', () => {
       this.setActiveAnimation(clipSelect.value);
+      this.events.onAnimationSelected?.(clipSelect.value);
+    });
+
+    // New Clip request
+    this.container.querySelector('.btn-timeline-new-clip')?.addEventListener('click', () => {
+      this.events.onRequestNewAnimation?.();
+    });
+
+    // Enable side requested from banner
+    this.container.querySelector('.btn-enable-side-timeline')?.addEventListener('click', () => {
+      this.events.onEnableSideRequested?.(this.activeAnimKey, this.activeView);
+    });
+
+    // Add Keyframe button
+    this.container.querySelector('.btn-timeline-add-key')?.addEventListener('click', () => {
+      this.events.onKeyframeAdded?.(this.currentTime, this.restJoints);
+    });
+
+    // Delete Keyframe button
+    this.container.querySelector('.btn-timeline-del-key')?.addEventListener('click', () => {
+      this.deleteSelectedKeyframe();
+    });
+
+    // Auto-Key toggle
+    const autoKeyChk = this.container.querySelector('.chk-auto-key') as HTMLInputElement;
+    autoKeyChk?.addEventListener('change', () => {
+      this.setAutoKey(autoKeyChk.checked);
+    });
+
+    // Loop toggle
+    const loopChk = this.container.querySelector('.chk-timeline-loop') as HTMLInputElement;
+    loopChk?.addEventListener('change', () => {
+      this.isLooping = loopChk.checked;
     });
 
     // Ruler Scrubbing
@@ -390,15 +594,16 @@ export class KeyframeTimeline {
       this.isDraggingPlayhead = false;
     });
 
-    window.addEventListener('resize', this.boundOnResize);
-
-    // Delete keyframe
+    // Delete key shortcut
     window.addEventListener('keydown', (e) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedKeyframe) {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        this.togglePlay();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
         this.deleteSelectedKeyframe();
       }
     });
@@ -425,6 +630,8 @@ export class KeyframeTimeline {
           } else {
             nextTime = this.duration;
             this.isPlaying = false;
+            const playBtn = this.container.querySelector('.btn-timeline-play');
+            if (playBtn) playBtn.innerHTML = `<span>▶</span> Play`;
           }
         }
         this.setTime(nextTime);
@@ -437,6 +644,5 @@ export class KeyframeTimeline {
 
   public destroy(): void {
     if (this.animTimerId) cancelAnimationFrame(this.animTimerId);
-    window.removeEventListener('resize', this.boundOnResize);
   }
 }

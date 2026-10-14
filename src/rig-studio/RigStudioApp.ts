@@ -8,7 +8,10 @@ import {
   VectorOutlineElement,
   ViewArtworkData,
   RigProjectData,
-  SavedElementsDocument
+  SavedElementsDocument,
+  StudioAnimationDefinition,
+  StudioKeyframe,
+  StudioSideTrack
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -22,6 +25,7 @@ import {
 } from './rigging/AnatomicalRig';
 import { RigStudioCanvas } from './rigging/RigStudioCanvas';
 import { VectorElementSlicer, SlicerToolMode } from './slicer/VectorElementSlicer';
+import { KeyframeTimeline } from './timeline/KeyframeTimeline';
 
 export interface RigPartItem {
   id: string;
@@ -50,10 +54,15 @@ export class RigStudioApp {
   private bridge: RigStudioBridge;
 
   private characterName = 'Character';
-  private activeStudioMode: 'rig' | 'slicer' = 'rig';
+  private activeStudioMode: 'rig' | 'slicer' | 'animate' = 'rig';
   private activeView: StudioView = 'front';
-  private activeRightTab: 'bones' | 'parts' | 'layers' = 'bones';
+  private activeRightTab: 'bones' | 'parts' | 'layers' | 'animations' = 'bones';
   private partsLibrary: RigPartItem[] = [];
+
+  // Animations State
+  private animations: Record<string, StudioAnimationDefinition> = {};
+  private activeAnimationName = 'idle';
+  private timeline: KeyframeTimeline | null = null;
 
   // Slicer State
   private slicer: VectorElementSlicer | null = null;
@@ -134,6 +143,7 @@ export class RigStudioApp {
     this.container = container;
     this.bridge = new RigStudioBridge();
 
+    this.initAnimations();
     this.renderLayout();
     this.initBridge();
 
@@ -181,6 +191,9 @@ export class RigStudioApp {
           </button>
           <button class="studio-mode-btn ${this.activeStudioMode === 'slicer' ? 'active' : ''}" data-mode="slicer" title="Load image, mark elements and assign them to bones">
             ✂️ Slicer & Element Marking
+          </button>
+          <button class="studio-mode-btn ${this.activeStudioMode === 'animate' ? 'active' : ''}" data-mode="animate" title="Define animation clips, configure relevant sides and author unique keyframes">
+            🎬 Animations & Timeline
           </button>
         </div>
 
@@ -294,6 +307,9 @@ export class RigStudioApp {
               <span>Tool: <b id="hud-slicer-tool" style="color:#38bdf8;">SELECT</b></span>
             </div>
           </div>
+
+          <!-- Viewport 3: Animation Timeline Dock -->
+          <div id="animation-timeline-container" style="display:none;"></div>
         </section>
 
         <!-- Right Panel: Joints, Envelopes & Parts -->
@@ -310,6 +326,12 @@ export class RigStudioApp {
         this.selectedJointId = jointId;
         this.renderRightSidebar();
         this.renderCanvasAlignmentBar();
+      },
+      onPreviewPoseChanged: (joints) => {
+        if (this.activeStudioMode === 'animate' && this.timeline?.getIsAutoKey()) {
+          this.timeline.addKeyframe(joints);
+          this.renderRightSidebar();
+        }
       },
       onBeforeModification: (desc) => {
         this.recordHistory(desc);
@@ -417,10 +439,10 @@ export class RigStudioApp {
       }
     });
 
-    // Studio Mode Switcher (Rig vs Slicer)
+    // Studio Mode Switcher (Rig vs Slicer vs Animate)
     this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const mode = btn.getAttribute('data-mode') as 'rig' | 'slicer';
+        const mode = btn.getAttribute('data-mode') as 'rig' | 'slicer' | 'animate';
         if (mode && mode !== this.activeStudioMode) {
           this.switchStudioMode(mode);
         }
@@ -577,12 +599,20 @@ export class RigStudioApp {
       this.canvas.setSourceImage(viewData.image, viewData.fileName, false);
     }
 
+    if (this.timeline) {
+      this.timeline.setActiveView(viewId, viewData.joints);
+    }
+    if (this.activeStudioMode === 'animate') {
+      this.canvas?.setToolMode('preview');
+      this.timeline?.evaluatePoseAtCurrentTime();
+    }
+
     this.renderLeftSidebar();
     this.renderRightSidebar();
     this.renderCanvasAlignmentBar();
   }
 
-  public switchStudioMode(mode: 'rig' | 'slicer'): void {
+  public switchStudioMode(mode: 'rig' | 'slicer' | 'animate'): void {
     this.activeStudioMode = mode;
 
     this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
@@ -591,18 +621,34 @@ export class RigStudioApp {
 
     const rigViewport = this.container.querySelector('#rig-viewport-container') as HTMLElement;
     const slicerViewport = this.container.querySelector('#slicer-viewport-container') as HTMLElement;
+    const timelineContainer = this.container.querySelector('#animation-timeline-container') as HTMLElement;
 
-    if (rigViewport) rigViewport.style.display = mode === 'rig' ? 'block' : 'none';
+    if (rigViewport) {
+      rigViewport.style.display = (mode === 'rig' || mode === 'animate') ? 'block' : 'none';
+      rigViewport.style.bottom = mode === 'animate' ? '180px' : '0px';
+    }
     if (slicerViewport) slicerViewport.style.display = mode === 'slicer' ? 'flex' : 'none';
+    if (timelineContainer) timelineContainer.style.display = mode === 'animate' ? 'flex' : 'none';
 
     this.renderCanvasAlignmentBar();
 
     if (mode === 'slicer') {
+      this.timeline?.togglePlay(false);
       this.initSlicerIfNeeded();
       this.renderSlicerLeftSidebar();
       this.renderSlicerRightSidebar();
       this.slicer?.resizeCanvas();
+    } else if (mode === 'animate') {
+      this.canvas?.setToolMode('preview');
+      this.initTimelineIfNeeded();
+      this.activeRightTab = 'animations';
+      this.renderLeftSidebar();
+      this.renderRightSidebar();
+      this.canvas?.resizeCanvas();
+      this.canvas?.render();
     } else {
+      this.timeline?.togglePlay(false);
+      this.canvas?.setToolMode(this.toolMode);
       // Synchronize slicer image to active rig view and canvas if slicer image was loaded/changed
       if (this.slicerImage) {
         const currentArt = this.views[this.activeView];
@@ -1600,6 +1646,11 @@ export class RigStudioApp {
       return;
     }
 
+    if (this.activeStudioMode === 'animate') {
+      this.renderAnimateLeftSidebar();
+      return;
+    }
+
     const currentArt = this.views[this.activeView];
     const hasImage = !!currentArt.image || Object.keys(currentArt.parts).length > 0;
 
@@ -2103,11 +2154,14 @@ export class RigStudioApp {
           <button class="sidebar-tab-btn ${this.activeRightTab === 'bones' ? 'active' : ''}" data-tab="bones" style="flex:1;">
             Joints & Bones
           </button>
-          <button class="sidebar-tab-btn ${this.activeRightTab === 'parts' ? 'active' : ''}" data-tab="parts" style="flex:1.2;">
+          <button class="sidebar-tab-btn ${this.activeRightTab === 'parts' ? 'active' : ''}" data-tab="parts" style="flex:1.1;">
             Parts Library ${libCount > 0 ? `(${libCount})` : ''}
           </button>
           <button class="sidebar-tab-btn ${this.activeRightTab === 'layers' ? 'active' : ''}" data-tab="layers" style="flex:0.8;">
             Layers (${displayLayers.length})
+          </button>
+          <button class="sidebar-tab-btn ${this.activeRightTab === 'animations' ? 'active' : ''}" data-tab="animations" style="flex:1;">
+            🎬 Anims (${Object.keys(this.animations).length})
           </button>
         </div>
       </div>
@@ -2340,7 +2394,7 @@ export class RigStudioApp {
               </div>
             `}
           </div>
-        ` : `
+        ` : this.activeRightTab === 'layers' ? `
           <!-- Layers Tab -->
           <div style="display:flex; flex-direction:column; gap:8px;">
             <div style="font-size:0.72rem; color:#94a3b8; line-height:1.35; padding:2px 0;">
@@ -2399,6 +2453,9 @@ export class RigStudioApp {
               }).join('')}
             </div>
           </div>
+        ` : `
+          <!-- Animations Tab Content -->
+          ${this.renderAnimationsTabContent()}
         `}
       </div>
     `;
@@ -2406,13 +2463,26 @@ export class RigStudioApp {
     // Tab toggle events
     sidebar.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const tab = btn.getAttribute('data-tab') as 'bones' | 'parts' | 'layers';
+        const tab = btn.getAttribute('data-tab') as 'bones' | 'parts' | 'layers' | 'animations';
         if (tab) {
           this.activeRightTab = tab;
-          this.renderRightSidebar();
+          if (tab === 'animations') {
+            if (this.activeStudioMode !== 'animate') {
+              this.switchStudioMode('animate');
+            } else {
+              this.renderRightSidebar();
+            }
+          } else {
+            this.renderRightSidebar();
+          }
         }
       });
     });
+
+    if (this.activeRightTab === 'animations') {
+      this.bindAnimationsTabEvents(sidebar);
+      return;
+    }
 
     // Fit Defaults button
     sidebar.querySelector('#btn-snap-fit-defaults')?.addEventListener('click', () => {
@@ -2998,6 +3068,12 @@ export class RigStudioApp {
 
     // 5. Pre-populate Ronald elements in Slicer
     this.loadRonaldPreMarkedElementsInSlicer();
+
+    // 6. Initialize demo animation cycles (idle & walk) for all sides
+    this.initAnimations();
+    if (this.timeline) {
+      this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    }
   }
 
   public buildRigProjectData(): RigProjectData {
@@ -3070,7 +3146,9 @@ export class RigStudioApp {
       activeView: this.activeView,
       views: viewsExport,
       partsLibrary: partsLibExport,
-      slicer: slicerExport
+      slicer: slicerExport,
+      animations: JSON.parse(JSON.stringify(this.animations)),
+      activeAnimation: this.activeAnimationName
     };
   }
 
@@ -3222,7 +3300,17 @@ export class RigStudioApp {
         }
       }
 
-      // 4. Set active view without overwriting newly loaded data from old canvas state
+      // 4. Restore Animations
+      if (data.animations && Object.keys(data.animations).length > 0) {
+        this.animations = JSON.parse(JSON.stringify(data.animations));
+        if (data.activeAnimation && this.animations[data.activeAnimation]) {
+          this.activeAnimationName = data.activeAnimation;
+        } else {
+          this.activeAnimationName = Object.keys(this.animations)[0] || 'idle';
+        }
+      }
+
+      // 5. Set active view without overwriting newly loaded data from old canvas state
       const targetActiveView = (data.activeView && this.views[data.activeView as StudioView]) ? (data.activeView as StudioView) : 'front';
       this.activeView = targetActiveView;
 
@@ -3233,7 +3321,7 @@ export class RigStudioApp {
       const hudView = this.container.querySelector('#hud-active-view');
       if (hudView) hudView.textContent = targetActiveView.toUpperCase();
 
-      // 5. Update canvas joints, envelopes, parts, and layer order
+      // 6. Update canvas joints, envelopes, parts, and layer order
       const activeArt = this.views[this.activeView];
       if (this.canvas) {
         this.canvas.setView(this.activeView, activeArt.joints, activeArt.envelopes, activeArt.parts, activeArt.boneOrder);
@@ -3242,6 +3330,10 @@ export class RigStudioApp {
         }
         this.canvas.setParts(activeArt.parts);
         this.canvas.resetPose();
+      }
+
+      if (this.timeline) {
+        this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, activeArt.joints);
       }
 
       this.renderLeftSidebar();
@@ -3290,7 +3382,8 @@ export class RigStudioApp {
             side: ['right', 'left'],
             back: ['up']
           },
-          elements: []
+          elements: [],
+          animations: JSON.parse(JSON.stringify(this.animations))
         }
       },
       bones,
@@ -3316,14 +3409,7 @@ export class RigStudioApp {
         { name: 'back', attachments: {} },
         { name: 'side', attachments: {} }
       ],
-      animations: {
-        idle: {
-          bones: {
-            torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 2 }, { time: 1.6, angle: 0 }] },
-            head: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: -1.5 }, { time: 1.6, angle: 0 }] }
-          }
-        }
-      }
+      animations: this.convertStudioAnimationsToSpineTracks()
     };
 
     return spineDoc;
@@ -3835,5 +3921,981 @@ export class RigStudioApp {
     if (titleEl) {
       titleEl.textContent = 'Character Rig Studio';
     }
+  }
+
+  // ============================================================
+  // ANIMATION MANAGEMENT & TIMELINE SYSTEM
+  // ============================================================
+
+  public initAnimations(): void {
+    if (Object.keys(this.animations).length > 0) return;
+
+    const frontJoints = this.views.front.joints || getDefaultJointPositions('front');
+    const backJoints = this.views.back.joints || getDefaultJointPositions('back');
+    const leftJoints = this.views.left.joints || getDefaultJointPositions('left');
+    const rightJoints = this.views.right.joints || getDefaultJointPositions('right');
+
+    // 1. "idle" Animation (1.6s duration) - subtle breathing & posture sway
+    const frontIdle1 = JSON.parse(JSON.stringify(frontJoints));
+    const frontIdle2 = JSON.parse(JSON.stringify(frontJoints));
+    frontIdle2.chest = { x: frontJoints.chest.x, y: frontJoints.chest.y - 4 };
+    frontIdle2.neck = { x: frontJoints.neck.x, y: frontJoints.neck.y - 4 };
+    frontIdle2.head = { x: frontJoints.head.x, y: frontJoints.head.y - 5 };
+
+    const backIdle1 = JSON.parse(JSON.stringify(backJoints));
+    const backIdle2 = JSON.parse(JSON.stringify(backJoints));
+    backIdle2.chest = { x: backJoints.chest.x, y: backJoints.chest.y - 4 };
+    backIdle2.neck = { x: backJoints.neck.x, y: backJoints.neck.y - 4 };
+    backIdle2.head = { x: backJoints.head.x, y: backJoints.head.y - 5 };
+
+    const leftIdle1 = JSON.parse(JSON.stringify(leftJoints));
+    const leftIdle2 = JSON.parse(JSON.stringify(leftJoints));
+    leftIdle2.chest = { x: leftJoints.chest.x, y: leftJoints.chest.y - 4 };
+    leftIdle2.neck = { x: leftJoints.neck.x, y: leftJoints.neck.y - 4 };
+    leftIdle2.head = { x: leftJoints.head.x, y: leftJoints.head.y - 5 };
+
+    const rightIdle1 = JSON.parse(JSON.stringify(rightJoints));
+    const rightIdle2 = JSON.parse(JSON.stringify(rightJoints));
+    rightIdle2.chest = { x: rightJoints.chest.x, y: rightJoints.chest.y - 4 };
+    rightIdle2.neck = { x: rightJoints.neck.x, y: rightJoints.neck.y - 4 };
+    rightIdle2.head = { x: rightJoints.head.x, y: rightJoints.head.y - 5 };
+
+    // 2. "walk" Animation (1.0s duration) - Unique poses per side
+    // Front: alternating leg steps & arm swing
+    const frontWalk0 = JSON.parse(JSON.stringify(frontJoints));
+    const frontWalk1 = JSON.parse(JSON.stringify(frontJoints));
+    frontWalk1.knee_l.y -= 14;
+    frontWalk1.ankle_l.y -= 16;
+    frontWalk1.elbow_l.x -= 10;
+    frontWalk1.wrist_l.x -= 12;
+    frontWalk1.elbow_r.x -= 6;
+    frontWalk1.wrist_r.x -= 8;
+
+    const frontWalk2 = JSON.parse(JSON.stringify(frontJoints));
+    const frontWalk3 = JSON.parse(JSON.stringify(frontJoints));
+    frontWalk3.knee_r.y -= 14;
+    frontWalk3.ankle_r.y -= 16;
+    frontWalk3.elbow_r.x += 10;
+    frontWalk3.wrist_r.x += 12;
+    frontWalk3.elbow_l.x += 6;
+    frontWalk3.wrist_l.x += 8;
+
+    // Left side: natural stride forward and backward
+    const leftWalk0 = JSON.parse(JSON.stringify(leftJoints));
+    const leftWalk1 = JSON.parse(JSON.stringify(leftJoints));
+    leftWalk1.knee_l = { x: leftJoints.knee_l.x + 18, y: leftJoints.knee_l.y - 8 };
+    leftWalk1.ankle_l = { x: leftJoints.ankle_l.x + 22, y: leftJoints.ankle_l.y - 4 };
+    leftWalk1.knee_r = { x: leftJoints.knee_r.x - 16, y: leftJoints.knee_r.y - 4 };
+    leftWalk1.ankle_r = { x: leftJoints.ankle_r.x - 20, y: leftJoints.ankle_r.y };
+    leftWalk1.wrist_l = { x: leftJoints.wrist_l.x - 14, y: leftJoints.wrist_l.y - 4 };
+    leftWalk1.wrist_r = { x: leftJoints.wrist_r.x + 16, y: leftJoints.wrist_r.y - 4 };
+
+    const leftWalk2 = JSON.parse(JSON.stringify(leftJoints));
+    const leftWalk3 = JSON.parse(JSON.stringify(leftJoints));
+    leftWalk3.knee_l = { x: leftJoints.knee_l.x - 16, y: leftJoints.knee_l.y - 4 };
+    leftWalk3.ankle_l = { x: leftJoints.ankle_l.x - 20, y: leftJoints.ankle_l.y };
+    leftWalk3.knee_r = { x: leftJoints.knee_r.x + 18, y: leftJoints.knee_r.y - 8 };
+    leftWalk3.ankle_r = { x: leftJoints.ankle_r.x + 22, y: leftJoints.ankle_r.y - 4 };
+    leftWalk3.wrist_l = { x: leftJoints.wrist_l.x + 16, y: leftJoints.wrist_l.y - 4 };
+    leftWalk3.wrist_r = { x: leftJoints.wrist_r.x - 14, y: leftJoints.wrist_r.y - 4 };
+
+    // Right side: mirrored strides
+    const rightWalk0 = JSON.parse(JSON.stringify(rightJoints));
+    const rightWalk1 = JSON.parse(JSON.stringify(rightJoints));
+    rightWalk1.knee_r = { x: rightJoints.knee_r.x - 18, y: rightJoints.knee_r.y - 8 };
+    rightWalk1.ankle_r = { x: rightJoints.ankle_r.x - 22, y: rightJoints.ankle_r.y - 4 };
+    rightWalk1.knee_l = { x: rightJoints.knee_l.x + 16, y: rightJoints.knee_l.y - 4 };
+    rightWalk1.ankle_l = { x: rightJoints.ankle_l.x + 20, y: rightJoints.ankle_l.y };
+
+    const rightWalk2 = JSON.parse(JSON.stringify(rightJoints));
+    const rightWalk3 = JSON.parse(JSON.stringify(rightJoints));
+    rightWalk3.knee_r = { x: rightJoints.knee_r.x + 16, y: rightJoints.knee_r.y - 4 };
+    rightWalk3.ankle_r = { x: rightJoints.ankle_r.x + 20, y: rightJoints.ankle_r.y };
+    rightWalk3.knee_l = { x: rightJoints.knee_l.x - 18, y: rightJoints.knee_l.y - 8 };
+    rightWalk3.ankle_l = { x: rightJoints.ankle_l.x - 22, y: rightJoints.ankle_l.y - 4 };
+
+    // Back side: walking into screen
+    const backWalk0 = JSON.parse(JSON.stringify(backJoints));
+    const backWalk1 = JSON.parse(JSON.stringify(backJoints));
+    backWalk1.knee_l.y -= 14;
+    backWalk1.ankle_l.y -= 16;
+    const backWalk2 = JSON.parse(JSON.stringify(backJoints));
+    const backWalk3 = JSON.parse(JSON.stringify(backJoints));
+    backWalk3.knee_r.y -= 14;
+    backWalk3.ankle_r.y -= 16;
+
+    this.animations = {
+      idle: {
+        name: 'idle',
+        relevantSides: ['front', 'back', 'left', 'right'],
+        tracks: {
+          front: { duration: 1.6, keyframes: [{ time: 0, joints: frontIdle1 }, { time: 0.8, joints: frontIdle2 }, { time: 1.6, joints: frontIdle1 }] },
+          back: { duration: 1.6, keyframes: [{ time: 0, joints: backIdle1 }, { time: 0.8, joints: backIdle2 }, { time: 1.6, joints: backIdle1 }] },
+          left: { duration: 1.6, keyframes: [{ time: 0, joints: leftIdle1 }, { time: 0.8, joints: leftIdle2 }, { time: 1.6, joints: leftIdle1 }] },
+          right: { duration: 1.6, keyframes: [{ time: 0, joints: rightIdle1 }, { time: 0.8, joints: rightIdle2 }, { time: 1.6, joints: rightIdle1 }] },
+        }
+      },
+      walk: {
+        name: 'walk',
+        relevantSides: ['front', 'back', 'left', 'right'],
+        tracks: {
+          front: { duration: 1.0, keyframes: [
+            { time: 0.0, joints: frontWalk0 },
+            { time: 0.25, joints: frontWalk1 },
+            { time: 0.5, joints: frontWalk2 },
+            { time: 0.75, joints: frontWalk3 },
+            { time: 1.0, joints: frontWalk0 }
+          ]},
+          left: { duration: 1.0, keyframes: [
+            { time: 0.0, joints: leftWalk0 },
+            { time: 0.25, joints: leftWalk1 },
+            { time: 0.5, joints: leftWalk2 },
+            { time: 0.75, joints: leftWalk3 },
+            { time: 1.0, joints: leftWalk0 }
+          ]},
+          right: { duration: 1.0, keyframes: [
+            { time: 0.0, joints: rightWalk0 },
+            { time: 0.25, joints: rightWalk1 },
+            { time: 0.5, joints: rightWalk2 },
+            { time: 0.75, joints: rightWalk3 },
+            { time: 1.0, joints: rightWalk0 }
+          ]},
+          back: { duration: 1.0, keyframes: [
+            { time: 0.0, joints: backWalk0 },
+            { time: 0.25, joints: backWalk1 },
+            { time: 0.5, joints: backWalk2 },
+            { time: 0.75, joints: backWalk3 },
+            { time: 1.0, joints: backWalk0 }
+          ]}
+        }
+      }
+    };
+
+    this.activeAnimationName = 'idle';
+  }
+
+  private initTimelineIfNeeded(): void {
+    const container = this.container.querySelector('#animation-timeline-container') as HTMLElement;
+    if (!container) return;
+
+    if (!this.timeline) {
+      this.timeline = new KeyframeTimeline(
+        container,
+        this.animations,
+        this.activeAnimationName,
+        this.activeView,
+        this.views[this.activeView].joints,
+        {
+          onPoseInterpolated: (joints) => {
+            this.canvas?.setPreviewJoints(joints);
+          },
+          onKeyframeAdded: (time, joints) => {
+            this.recordHistory('Record Keyframe');
+            this.renderRightSidebar();
+            this.showToast(`Keyframe saved at ${time.toFixed(2)}s for ${this.activeView.toUpperCase()}`, 'success');
+          },
+          onKeyframeDeleted: (index) => {
+            this.recordHistory('Delete Keyframe');
+            this.renderRightSidebar();
+            this.showToast('Keyframe deleted', 'info');
+          },
+          onAnimationSelected: (animName) => {
+            this.activeAnimationName = animName;
+            this.renderRightSidebar();
+          },
+          onRequestNewAnimation: () => {
+            this.openNewAnimationModal();
+          },
+          onEnableSideRequested: (animName, side) => {
+            this.enableSideForAnimation(animName, side);
+          }
+        }
+      );
+    } else {
+      this.timeline.setAnimationState(
+        this.animations,
+        this.activeAnimationName,
+        this.activeView,
+        this.views[this.activeView].joints
+      );
+    }
+  }
+
+  public createAnimation(name: string, relevantSides: StudioView[], initialDuration = 1.0): void {
+    const cleanName = name.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!cleanName) {
+      this.showToast('Please enter a valid animation name', 'warning');
+      return;
+    }
+    if (this.animations[cleanName]) {
+      this.showToast(`Animation "${cleanName}" already exists`, 'warning');
+      return;
+    }
+    if (!relevantSides || relevantSides.length === 0) {
+      this.showToast('Please select at least one relevant side', 'warning');
+      return;
+    }
+
+    const tracks: Partial<Record<StudioView, StudioSideTrack>> = {};
+    for (const side of relevantSides) {
+      const sideJoints = this.views[side]?.joints || getDefaultJointPositions(side);
+      tracks[side] = {
+        duration: initialDuration,
+        keyframes: [
+          { time: 0.0, joints: JSON.parse(JSON.stringify(sideJoints)) },
+          { time: initialDuration, joints: JSON.parse(JSON.stringify(sideJoints)) }
+        ]
+      };
+    }
+
+    this.animations[cleanName] = {
+      name: cleanName,
+      relevantSides: [...relevantSides],
+      tracks
+    };
+
+    this.activeAnimationName = cleanName;
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+    this.showToast(`✓ Created animation "${cleanName}" for [${relevantSides.join(', ')}]`, 'success');
+  }
+
+  public toggleSideForAnimation(animName: string, side: StudioView): void {
+    const anim = this.animations[animName];
+    if (!anim) return;
+
+    const idx = anim.relevantSides.indexOf(side);
+    if (idx >= 0) {
+      if (anim.relevantSides.length === 1) {
+        this.showToast('An animation must have at least one relevant side', 'warning');
+        return;
+      }
+      anim.relevantSides.splice(idx, 1);
+      this.showToast(`Disabled ${side.toUpperCase()} for "${animName}"`, 'info');
+    } else {
+      anim.relevantSides.push(side);
+      if (!anim.tracks[side]) {
+        const sideJoints = this.views[side]?.joints || getDefaultJointPositions(side);
+        anim.tracks[side] = {
+          duration: 1.0,
+          keyframes: [
+            { time: 0.0, joints: JSON.parse(JSON.stringify(sideJoints)) },
+            { time: 1.0, joints: JSON.parse(JSON.stringify(sideJoints)) }
+          ]
+        };
+      }
+      this.showToast(`✓ Enabled ${side.toUpperCase()} for "${animName}"`, 'success');
+    }
+
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+  }
+
+  public enableSideForAnimation(animName: string, side: StudioView): void {
+    const anim = this.animations[animName];
+    if (!anim) return;
+    if (!anim.relevantSides.includes(side)) {
+      anim.relevantSides.push(side);
+    }
+    if (!anim.tracks[side]) {
+      const sideJoints = this.views[side]?.joints || getDefaultJointPositions(side);
+      anim.tracks[side] = {
+        duration: 1.0,
+        keyframes: [
+          { time: 0.0, joints: JSON.parse(JSON.stringify(sideJoints)) },
+          { time: 1.0, joints: JSON.parse(JSON.stringify(sideJoints)) }
+        ]
+      };
+    }
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+    this.showToast(`✓ Enabled ${side.toUpperCase()} for "${animName}"`, 'success');
+  }
+
+  public deleteAnimation(animName: string): void {
+    if (Object.keys(this.animations).length <= 1) {
+      this.showToast('Cannot delete the only remaining animation', 'warning');
+      return;
+    }
+    delete this.animations[animName];
+    if (this.activeAnimationName === animName) {
+      this.activeAnimationName = Object.keys(this.animations)[0];
+    }
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+    this.showToast(`Deleted animation "${animName}"`, 'info');
+  }
+
+  public renameAnimation(oldName: string, newName: string): void {
+    const cleanNew = newName.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!cleanNew || cleanNew === oldName) return;
+    if (this.animations[cleanNew]) {
+      this.showToast(`Animation "${cleanNew}" already exists`, 'warning');
+      return;
+    }
+    const anim = this.animations[oldName];
+    if (!anim) return;
+    anim.name = cleanNew;
+    delete this.animations[oldName];
+    this.animations[cleanNew] = anim;
+    if (this.activeAnimationName === oldName) {
+      this.activeAnimationName = cleanNew;
+    }
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+    this.showToast(`Renamed to "${cleanNew}"`, 'success');
+  }
+
+  public duplicateAnimation(animName: string): void {
+    const orig = this.animations[animName];
+    if (!orig) return;
+    let newName = `${orig.name}_copy`;
+    let counter = 2;
+    while (this.animations[newName]) {
+      newName = `${orig.name}_copy${counter++}`;
+    }
+    this.animations[newName] = JSON.parse(JSON.stringify(orig));
+    this.animations[newName].name = newName;
+    this.activeAnimationName = newName;
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+    this.renderRightSidebar();
+    this.showToast(`✓ Duplicated to "${newName}"`, 'success');
+  }
+
+  public openNewAnimationModal(): void {
+    const existing = document.querySelector('.studio-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'studio-modal-overlay';
+    overlay.innerHTML = `
+      <div class="studio-modal">
+        <div class="studio-modal-header">
+          <span class="studio-modal-title">＋ New Animation Clip</span>
+          <button class="btn-icon-small btn-modal-close" style="font-size:1.1rem;">✕</button>
+        </div>
+        <div class="studio-modal-body">
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Animation Name</label>
+            <input type="text" id="modal-new-anim-name" class="studio-select" placeholder="e.g. run, attack, dance, wave" style="width:100%; font-size:0.85rem; padding:6px 10px;" />
+          </div>
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label style="font-size:0.75rem; color:#94a3b8; font-weight:600;">Relevant for Sides</label>
+              <div style="display:flex; gap:6px;">
+                <button class="btn-studio btn-sides-all" style="font-size:0.65rem; padding:2px 6px;">All</button>
+                <button class="btn-sides-sides-only btn-studio" style="font-size:0.65rem; padding:2px 6px;">Sides Only</button>
+              </div>
+            </div>
+            <div class="side-selector-chips" id="modal-side-selector">
+              <span class="side-chip active" data-side="front">✓ Front</span>
+              <span class="side-chip active" data-side="back">✓ Back</span>
+              <span class="side-chip active" data-side="left">✓ Left Side</span>
+              <span class="side-chip active" data-side="right">✓ Right Side</span>
+            </div>
+            <div style="font-size:0.68rem; color:#64748b; margin-top:6px;">
+              Each selected side gets its own independent timeline track and unique keyframes.
+            </div>
+          </div>
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Initial Duration (seconds)</label>
+            <input type="number" id="modal-new-anim-dur" class="studio-select" value="1.0" min="0.1" max="10.0" step="0.1" style="width:100%; font-size:0.85rem; padding:6px 10px;" />
+          </div>
+        </div>
+        <div class="studio-modal-footer">
+          <button class="btn-studio btn-modal-cancel">Cancel</button>
+          <button class="btn-studio btn-studio-primary btn-modal-confirm">Create Animation</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const nameInput = overlay.querySelector('#modal-new-anim-name') as HTMLInputElement;
+    const durInput = overlay.querySelector('#modal-new-anim-dur') as HTMLInputElement;
+    const chipsContainer = overlay.querySelector('#modal-side-selector') as HTMLElement;
+    nameInput?.focus();
+
+    // Toggle side chips
+    chipsContainer.querySelectorAll('.side-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const isActive = chip.classList.contains('active');
+        chip.classList.toggle('active', !isActive);
+        chip.classList.toggle('inactive', isActive);
+        chip.textContent = !isActive ? `✓ ${chip.getAttribute('data-side')!.toUpperCase()}` : chip.getAttribute('data-side')!.toUpperCase();
+      });
+    });
+
+    // Preset shortcuts
+    overlay.querySelector('.btn-sides-all')?.addEventListener('click', () => {
+      chipsContainer.querySelectorAll('.side-chip').forEach(c => {
+        c.classList.add('active');
+        c.classList.remove('inactive');
+        c.textContent = `✓ ${c.getAttribute('data-side')!.toUpperCase()}`;
+      });
+    });
+
+    overlay.querySelector('.btn-sides-sides-only')?.addEventListener('click', () => {
+      chipsContainer.querySelectorAll('.side-chip').forEach(c => {
+        const s = c.getAttribute('data-side');
+        const isSide = s === 'left' || s === 'right';
+        c.classList.toggle('active', isSide);
+        c.classList.toggle('inactive', !isSide);
+        c.textContent = isSide ? `✓ ${s!.toUpperCase()}` : s!.toUpperCase();
+      });
+    });
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.btn-modal-close')?.addEventListener('click', close);
+    overlay.querySelector('.btn-modal-cancel')?.addEventListener('click', close);
+
+    const submit = () => {
+      const name = nameInput.value.trim();
+      const sides: StudioView[] = [];
+      chipsContainer.querySelectorAll('.side-chip.active').forEach(c => {
+        sides.push(c.getAttribute('data-side') as StudioView);
+      });
+      const dur = parseFloat(durInput.value) || 1.0;
+
+      if (!name) {
+        this.showToast('Please enter an animation name', 'warning');
+        return;
+      }
+      if (sides.length === 0) {
+        this.showToast('Please select at least one relevant side', 'warning');
+        return;
+      }
+
+      close();
+      this.createAnimation(name, sides, dur);
+    };
+
+    overlay.querySelector('.btn-modal-confirm')?.addEventListener('click', submit);
+    nameInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+      if (e.key === 'Escape') close();
+    });
+  }
+
+  private renderAnimationsTabContent(): string {
+    const animList = Object.values(this.animations);
+    const activeAnim = this.animations[this.activeAnimationName] || animList[0];
+    const isRelevant = activeAnim?.relevantSides.includes(this.activeView) ?? false;
+    const track = activeAnim?.tracks[this.activeView];
+    const keyframes = track?.keyframes || [];
+
+    return `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <!-- Header with Add Action -->
+        <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(148,163,184,0.14); padding-bottom:8px;">
+          <div>
+            <div style="font-size:0.8rem; font-weight:700; color:#fff;">Animation Clips</div>
+            <div style="font-size:0.68rem; color:#94a3b8;">${animList.length} defined clips (unique per side)</div>
+          </div>
+          <button class="btn-studio btn-studio-primary btn-add-animation-header" style="font-size:0.72rem; padding:4px 8px;">
+            ＋ New Clip
+          </button>
+        </div>
+
+        <!-- Animation Cards List -->
+        <div class="anim-cards-list" style="display:flex; flex-direction:column; gap:8px;">
+          ${animList.map(anim => {
+            const isSel = anim.name === this.activeAnimationName;
+            const hasSide = anim.relevantSides.includes(this.activeView);
+
+            return `
+              <div class="anim-card ${isSel ? 'active' : ''}" data-anim-name="${anim.name}">
+                <div class="anim-card-header">
+                  <span class="anim-title">
+                    <span>${isSel ? '🎬' : '🎞️'}</span>
+                    <span>${anim.name}</span>
+                    ${isSel ? `<span style="font-size:0.62rem; background:#0284c7; color:#fff; padding:1px 5px; border-radius:3px;">ACTIVE</span>` : ''}
+                  </span>
+                  <div class="anim-card-actions">
+                    <button class="btn-icon-small btn-rename-anim" data-anim-name="${anim.name}" title="Rename Clip">✏️</button>
+                    <button class="btn-icon-small btn-dup-anim" data-anim-name="${anim.name}" title="Duplicate Clip">📑</button>
+                    ${animList.length > 1 ? `
+                      <button class="btn-icon-small btn-del-anim" data-anim-name="${anim.name}" title="Delete Clip">🗑️</button>
+                    ` : ''}
+                  </div>
+                </div>
+
+                <!-- Relevant Sides Selector -->
+                <div style="display:flex; flex-direction:column; gap:3px;">
+                  <span style="font-size:0.65rem; color:#94a3b8; font-weight:600;">Relevant Sides:</span>
+                  <div class="side-selector-chips">
+                    ${(['front', 'back', 'left', 'right'] as StudioView[]).map(v => {
+                      const active = anim.relevantSides.includes(v);
+                      return `
+                        <span class="side-chip ${active ? 'active' : 'inactive'}"
+                          data-anim-name="${anim.name}"
+                          data-side="${v}"
+                          title="Click to toggle relevance for ${v.toUpperCase()}">
+                          ${active ? '✓' : ''} ${v === 'left' ? 'Left' : (v === 'right' ? 'Right' : (v === 'front' ? 'Front' : 'Back'))}
+                        </span>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- Selected Clip Details & Side Inspector -->
+        ${activeAnim ? `
+          <div style="background:#0a101d; border:1px solid rgba(56,189,248,0.25); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:10px; margin-top:4px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px;">
+              <span style="font-size:0.75rem; font-weight:700; color:#38bdf8;">
+                Inspector: <b>${activeAnim.name}</b>
+              </span>
+              <span style="font-size:0.68rem; color:#94a3b8;">
+                Current View: <b style="color:#fff;">${this.activeView.toUpperCase()}</b>
+              </span>
+            </div>
+
+            ${isRelevant && track ? `
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:0.72rem; color:#94a3b8;">Duration:</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" class="studio-select input-track-duration"
+                    value="${track.duration.toFixed(2)}" min="0.2" max="10.0" step="0.1"
+                    style="width:68px; font-size:0.75rem; padding:2px 6px; text-align:right;" />
+                  <span style="font-size:0.7rem; color:#64748b;">sec</span>
+                </div>
+              </div>
+
+              <!-- Keyframes on this side -->
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <span style="font-size:0.72rem; color:#94a3b8; font-weight:600;">
+                    Keyframes on ${this.activeView.toUpperCase()} (${keyframes.length}):
+                  </span>
+                </div>
+                <div class="keyframe-chips-list">
+                  ${keyframes.map((k, idx) => `
+                    <span class="kf-chip" data-time="${k.time}" data-index="${idx}" title="Jump to ${k.time.toFixed(2)}s">
+                      ${k.time.toFixed(2)}s
+                      <span class="kf-chip-del" data-index="${idx}" title="Delete Keyframe">✕</span>
+                    </span>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- Pose Tools -->
+              <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+                <button class="btn-studio btn-anim-record-current" style="font-size:0.72rem; justify-content:center; color:#38bdf8; border-color:rgba(56,189,248,0.4);" title="Capture current canvas joint positions as a keyframe at playhead time">
+                  🔑 ＋ Record Keyframe at Playhead
+                </button>
+                <div style="display:flex; gap:6px;">
+                  <button class="btn-studio btn-anim-reset-pose" style="font-size:0.68rem; justify-content:center; flex:1;" title="Reset pose to character rest pose">
+                    ↺ Rest Pose
+                  </button>
+                  ${this.activeView !== 'front' ? `
+                    <button class="btn-studio btn-anim-copy-front" style="font-size:0.68rem; justify-content:center; flex:1;" title="Copy keyframe pose from Front view">
+                      📋 Copy Front
+                    </button>
+                  ` : ''}
+                  ${(this.activeView === 'left' || this.activeView === 'right') ? `
+                    <button class="btn-studio btn-anim-mirror-pose" style="font-size:0.68rem; justify-content:center; flex:1;" title="Mirror pose across Left and Right sides">
+                      🪞 Mirror Pose
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            ` : `
+              <div style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+                <div style="font-size:0.72rem; color:#fbbf24; line-height:1.4;">
+                  ⚠️ "<b>${activeAnim.name}</b>" is currently not configured for <b>${this.activeView.toUpperCase()}</b> side.
+                </div>
+                <button class="btn-studio btn-enable-side-for-anim" style="font-size:0.72rem; justify-content:center; background:#0284c7; color:#fff;">
+                  ＋ Enable ${this.activeView.toUpperCase()} Side
+                </button>
+              </div>
+            `}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  private bindAnimationsTabEvents(sidebar: HTMLElement): void {
+    // Header Add Button
+    sidebar.querySelector('.btn-add-animation-header')?.addEventListener('click', () => {
+      this.openNewAnimationModal();
+    });
+
+    // Card Selection
+    sidebar.querySelectorAll('.anim-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.anim-card-actions') || target.closest('.side-chip')) return;
+        const animName = card.getAttribute('data-anim-name');
+        if (animName && animName !== this.activeAnimationName) {
+          this.activeAnimationName = animName;
+          this.timeline?.setActiveAnimation(animName);
+          this.renderRightSidebar();
+        }
+      });
+    });
+
+    // Relevant Side Chips Toggle
+    sidebar.querySelectorAll('.side-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const animName = chip.getAttribute('data-anim-name')!;
+        const side = chip.getAttribute('data-side') as StudioView;
+        this.toggleSideForAnimation(animName, side);
+      });
+    });
+
+    // Rename
+    sidebar.querySelectorAll('.btn-rename-anim').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const animName = btn.getAttribute('data-anim-name')!;
+        const newName = prompt(`Rename animation "${animName}" to:`, animName);
+        if (newName) this.renameAnimation(animName, newName);
+      });
+    });
+
+    // Duplicate
+    sidebar.querySelectorAll('.btn-dup-anim').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const animName = btn.getAttribute('data-anim-name')!;
+        this.duplicateAnimation(animName);
+      });
+    });
+
+    // Delete
+    sidebar.querySelectorAll('.btn-del-anim').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const animName = btn.getAttribute('data-anim-name')!;
+        if (confirm(`Delete animation "${animName}"?`)) {
+          this.deleteAnimation(animName);
+        }
+      });
+    });
+
+    // Duration Input Change
+    const durInput = sidebar.querySelector('.input-track-duration') as HTMLInputElement | null;
+    durInput?.addEventListener('change', () => {
+      const val = Math.max(0.2, Math.min(10.0, parseFloat(durInput.value) || 1.0));
+      const anim = this.animations[this.activeAnimationName];
+      const track = anim?.tracks[this.activeView];
+      if (track) {
+        track.duration = val;
+        this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+        this.showToast(`Updated duration to ${val.toFixed(2)}s`, 'info');
+      }
+    });
+
+    // Keyframe Chips Jump
+    sidebar.querySelectorAll('.kf-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('kf-chip-del')) return;
+        const time = parseFloat(chip.getAttribute('data-time')!);
+        this.timeline?.setTime(time);
+      });
+    });
+
+    // Keyframe Chip Delete
+    sidebar.querySelectorAll('.kf-chip-del').forEach(delBtn => {
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(delBtn.getAttribute('data-index')!, 10);
+        const anim = this.animations[this.activeAnimationName];
+        const track = anim?.tracks[this.activeView];
+        if (track && track.keyframes[idx]) {
+          track.keyframes.splice(idx, 1);
+          this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
+          this.renderRightSidebar();
+          this.showToast('Keyframe deleted', 'info');
+        }
+      });
+    });
+
+    // Record Keyframe button
+    sidebar.querySelector('.btn-anim-record-current')?.addEventListener('click', () => {
+      const joints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
+      this.timeline?.addKeyframe(joints);
+      this.renderRightSidebar();
+      this.showToast(`✓ Keyframe captured for ${this.activeView.toUpperCase()}`, 'success');
+    });
+
+    // Reset Pose
+    sidebar.querySelector('.btn-anim-reset-pose')?.addEventListener('click', () => {
+      this.canvas?.resetPose();
+      if (this.timeline?.getIsAutoKey()) {
+        this.timeline.addKeyframe(this.views[this.activeView].joints);
+      }
+      this.showToast('Pose reset to rest pose', 'info');
+    });
+
+    // Copy Front Pose
+    sidebar.querySelector('.btn-anim-copy-front')?.addEventListener('click', () => {
+      this.copyPoseFromFront();
+    });
+
+    // Mirror Pose
+    sidebar.querySelector('.btn-anim-mirror-pose')?.addEventListener('click', () => {
+      this.mirrorPoseLeftRight();
+    });
+
+    // Enable Side button
+    sidebar.querySelector('.btn-enable-side-for-anim')?.addEventListener('click', () => {
+      this.enableSideForAnimation(this.activeAnimationName, this.activeView);
+    });
+  }
+
+  private renderAnimateLeftSidebar(): void {
+    const sidebar = this.container.querySelector('#left-sidebar') as HTMLElement;
+    if (!sidebar) return;
+
+    const currentArt = this.views[this.activeView];
+
+    sidebar.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div class="panel-section-title">Animation Controls</div>
+
+        <!-- Current View & Clip Status -->
+        <div class="imported-card" style="padding:8px 10px;">
+          <div style="display:flex; flex-direction:column; gap:3px;">
+            <div style="font-size:0.7rem; color:#94a3b8; font-weight:600;">ACTIVE VIEW</div>
+            <div style="font-size:0.85rem; font-weight:700; color:#38bdf8;">${this.activeView.toUpperCase()}</div>
+            <div style="font-size:0.68rem; color:#64748b;">Clip: <b>${this.activeAnimationName}</b></div>
+          </div>
+        </div>
+
+        <!-- Fast Posing Actions -->
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="font-size:0.68rem; color:#94a3b8; font-weight:600;">Posing Tools</div>
+          <button class="btn-studio btn-left-add-kf" style="font-size:0.72rem; justify-content:center; color:#38bdf8;" title="Add keyframe at current timeline position">
+            🔑 Record Pose Keyframe
+          </button>
+          <button class="btn-studio btn-left-reset-pose" style="font-size:0.7rem; justify-content:center;">
+            ↺ Reset to Rest Pose
+          </button>
+          ${this.activeView !== 'front' ? `
+            <button class="btn-studio btn-left-copy-front" style="font-size:0.7rem; justify-content:center;">
+              📋 Copy Pose from Front
+            </button>
+          ` : ''}
+          ${(this.activeView === 'left' || this.activeView === 'right') ? `
+            <button class="btn-studio btn-left-mirror-pose" style="font-size:0.7rem; justify-content:center;">
+              🪞 Mirror Pose (Left ↔ Right)
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- Presets Generator -->
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="font-size:0.68rem; color:#94a3b8; font-weight:600;">Procedural Cycle Presets</div>
+          <button class="btn-studio btn-gen-walk" style="font-size:0.7rem; justify-content:center; color:#10b981;" title="Generate natural walk cycle keyframes on this side">
+            ⚡ Generate Walk Cycle
+          </button>
+          <button class="btn-studio btn-gen-idle" style="font-size:0.7rem; justify-content:center; color:#a855f7;" title="Generate breathing idle cycle keyframes on this side">
+            ⚡ Generate Idle Breathing
+          </button>
+        </div>
+
+        <!-- Studio Display Toggles -->
+        <div class="studio-toggles-section" style="margin-top:4px;">
+          <div class="studio-toggle-row">
+            <span class="toggle-label">Show Bones</span>
+            <label class="studio-switch">
+              <input type="checkbox" id="toggle-anim-show-bones" ${this.showBonesEnabled ? 'checked' : ''} />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="studio-toggle-row">
+            <span class="toggle-label">Ghost (Rest)</span>
+            <label class="studio-switch">
+              <input type="checkbox" id="toggle-anim-show-ghost" ${this.canvas?.getShowGhost() ? 'checked' : ''} />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    `;
+
+    sidebar.querySelector('.btn-left-add-kf')?.addEventListener('click', () => {
+      const joints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
+      this.timeline?.addKeyframe(joints);
+      this.renderRightSidebar();
+    });
+
+    sidebar.querySelector('.btn-left-reset-pose')?.addEventListener('click', () => {
+      this.canvas?.resetPose();
+    });
+
+    sidebar.querySelector('.btn-left-copy-front')?.addEventListener('click', () => {
+      this.copyPoseFromFront();
+    });
+
+    sidebar.querySelector('.btn-left-mirror-pose')?.addEventListener('click', () => {
+      this.mirrorPoseLeftRight();
+    });
+
+    sidebar.querySelector('.btn-gen-walk')?.addEventListener('click', () => {
+      this.generatePresetCycle('walk');
+    });
+
+    sidebar.querySelector('.btn-gen-idle')?.addEventListener('click', () => {
+      this.generatePresetCycle('idle');
+    });
+
+    sidebar.querySelector('#toggle-anim-show-bones')?.addEventListener('change', (e) => {
+      this.showBonesEnabled = (e.target as HTMLInputElement).checked;
+      this.canvas?.setShowBones(this.showBonesEnabled);
+      this.canvas?.render();
+    });
+
+    sidebar.querySelector('#toggle-anim-show-ghost')?.addEventListener('change', (e) => {
+      const checked = (e.target as HTMLInputElement).checked;
+      this.canvas?.setShowGhost(checked);
+      this.canvas?.render();
+    });
+  }
+
+  public copyPoseFromFront(): void {
+    const frontJoints = this.views.front.joints;
+    if (!frontJoints) return;
+    const copied = copyJointsFromFront(frontJoints, this.activeView);
+    this.canvas?.setPreviewJoints(copied);
+    if (this.timeline?.getIsAutoKey()) {
+      this.timeline.addKeyframe(copied);
+      this.renderRightSidebar();
+    }
+    this.showToast(`✓ Copied pose from Front to ${this.activeView.toUpperCase()}`, 'success');
+  }
+
+  public mirrorPoseLeftRight(): void {
+    const currentJoints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
+    const mirrored: Record<AnatomicalJointId, { x: number; y: number }> = JSON.parse(JSON.stringify(currentJoints));
+
+    // Swap symmetrical limbs and invert X
+    for (const joint of ANATOMICAL_JOINTS) {
+      if (joint.isCenter) {
+        mirrored[joint.id].x = -mirrored[joint.id].x;
+      } else if (joint.symmetricWith) {
+        const otherJoint = currentJoints[joint.symmetricWith];
+        if (otherJoint) {
+          mirrored[joint.id] = { x: -otherJoint.x, y: otherJoint.y };
+        }
+      }
+    }
+
+    this.canvas?.setPreviewJoints(mirrored);
+    if (this.timeline?.getIsAutoKey()) {
+      this.timeline.addKeyframe(mirrored);
+      this.renderRightSidebar();
+    }
+    this.showToast('🪞 Mirrored pose across left/right axis', 'success');
+  }
+
+  public generatePresetCycle(preset: 'walk' | 'idle'): void {
+    const sideJoints = this.views[this.activeView].joints;
+    const anim = this.animations[this.activeAnimationName];
+    if (!anim) return;
+
+    if (!anim.relevantSides.includes(this.activeView)) {
+      anim.relevantSides.push(this.activeView);
+    }
+
+    if (preset === 'walk') {
+      const j0 = JSON.parse(JSON.stringify(sideJoints));
+      const j1 = JSON.parse(JSON.stringify(sideJoints));
+      const j2 = JSON.parse(JSON.stringify(sideJoints));
+      const j3 = JSON.parse(JSON.stringify(sideJoints));
+
+      if (this.activeView === 'left' || this.activeView === 'right') {
+        const dir = this.activeView === 'left' ? 1 : -1;
+        j1.knee_l = { x: sideJoints.knee_l.x + 18 * dir, y: sideJoints.knee_l.y - 8 };
+        j1.ankle_l = { x: sideJoints.ankle_l.x + 22 * dir, y: sideJoints.ankle_l.y - 4 };
+        j1.knee_r = { x: sideJoints.knee_r.x - 16 * dir, y: sideJoints.knee_r.y - 4 };
+        j1.ankle_r = { x: sideJoints.ankle_r.x - 20 * dir, y: sideJoints.ankle_r.y };
+
+        j3.knee_l = { x: sideJoints.knee_l.x - 16 * dir, y: sideJoints.knee_l.y - 4 };
+        j3.ankle_l = { x: sideJoints.ankle_l.x - 20 * dir, y: sideJoints.ankle_l.y };
+        j3.knee_r = { x: sideJoints.knee_r.x + 18 * dir, y: sideJoints.knee_r.y - 8 };
+        j3.ankle_r = { x: sideJoints.ankle_r.x + 22 * dir, y: sideJoints.ankle_r.y - 4 };
+      } else {
+        j1.knee_l.y -= 14;
+        j1.ankle_l.y -= 16;
+        j3.knee_r.y -= 14;
+        j3.ankle_r.y -= 16;
+      }
+
+      anim.tracks[this.activeView] = {
+        duration: 1.0,
+        keyframes: [
+          { time: 0.0, joints: j0 },
+          { time: 0.25, joints: j1 },
+          { time: 0.5, joints: j2 },
+          { time: 0.75, joints: j3 },
+          { time: 1.0, joints: j0 }
+        ]
+      };
+    } else {
+      const j0 = JSON.parse(JSON.stringify(sideJoints));
+      const j1 = JSON.parse(JSON.stringify(sideJoints));
+      j1.chest.y -= 4;
+      j1.neck.y -= 4;
+      j1.head.y -= 5;
+
+      anim.tracks[this.activeView] = {
+        duration: 1.6,
+        keyframes: [
+          { time: 0.0, joints: j0 },
+          { time: 0.8, joints: j1 },
+          { time: 1.6, joints: j0 }
+        ]
+      };
+    }
+
+    this.timeline?.setAnimationState(this.animations, this.activeAnimationName, this.activeView, sideJoints);
+    this.renderRightSidebar();
+    this.showToast(`⚡ Generated ${preset.toUpperCase()} cycle for ${this.activeView.toUpperCase()}`, 'success');
+  }
+
+  private convertStudioAnimationsToSpineTracks(): Record<string, any> {
+    const spineAnimations: Record<string, any> = {};
+
+    for (const [animName, animDef] of Object.entries(this.animations)) {
+      for (const side of animDef.relevantSides) {
+        const sideTrack = animDef.tracks[side];
+        if (!sideTrack || !sideTrack.keyframes || sideTrack.keyframes.length === 0) continue;
+
+        const spineKey = side === 'front' ? animName : `${animName}_${side}`;
+        const bonesTrack: Record<string, any> = {};
+
+        for (const kf of sideTrack.keyframes) {
+          const torsoAngle = kf.joints.chest && kf.joints.neck ? Math.atan2(kf.joints.neck.y - kf.joints.chest.y, kf.joints.neck.x - kf.joints.chest.x) * (180 / Math.PI) + 90 : 0;
+          const headAngle = kf.joints.head && kf.joints.neck ? Math.atan2(kf.joints.head.y - kf.joints.neck.y, kf.joints.head.x - kf.joints.neck.x) * (180 / Math.PI) + 90 : 0;
+
+          if (!bonesTrack.torso) bonesTrack.torso = { rotate: [] };
+          bonesTrack.torso.rotate.push({ time: kf.time, angle: Math.round(torsoAngle * 10) / 10 });
+
+          if (!bonesTrack.head) bonesTrack.head = { rotate: [] };
+          bonesTrack.head.rotate.push({ time: kf.time, angle: Math.round(headAngle * 10) / 10 });
+        }
+
+        spineAnimations[spineKey] = { bones: bonesTrack };
+      }
+    }
+
+    if (Object.keys(spineAnimations).length === 0) {
+      spineAnimations.idle = {
+        bones: {
+          torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 2 }, { time: 1.6, angle: 0 }] }
+        }
+      };
+    }
+
+    return spineAnimations;
   }
 }
