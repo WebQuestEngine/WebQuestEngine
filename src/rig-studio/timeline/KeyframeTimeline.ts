@@ -12,12 +12,16 @@ export interface KeyframeTimelineEvents {
   onPlayToggle?: (isPlaying: boolean) => void;
   onKeyframeAdded?: (time: number, joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
   onKeyframeDeleted?: (index: number) => void;
+  onKeyframeCopied?: (keyframe: { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> }) => void;
+  onKeyframePasted?: (time: number, keyframe: StudioKeyframe) => void;
+  onCycleClosed?: (duration: number) => void;
   onAnimationSelected?: (animName: string) => void;
   onRequestNewAnimation?: () => void;
   onAutoKeyToggled?: (enabled: boolean) => void;
   onEnableSideRequested?: (animName: string, side: StudioView) => void;
   onDurationChanged?: (duration: number) => void;
   onKeyframeSelected?: (index: number, keyframe: StudioKeyframe | null) => void;
+  onKinematicsModeChanged?: (mode: 'ik' | 'fk') => void;
 }
 
 /**
@@ -124,6 +128,13 @@ export class KeyframeTimeline {
   private isLooping = true;
   private isAutoKey = true;
   private playbackSpeed = 1.0;
+  private kinematicsMode: 'ik' | 'fk' = 'ik';
+
+  // Static clipboard across animation clips and orientations
+  private static clipboardKeyframe: {
+    name?: string;
+    joints: Record<AnatomicalJointId, { x: number; y: number }>;
+  } | null = null;
 
   private selectedKeyframeIndex: number | null = null;
   private isDraggingPlayhead = false;
@@ -297,6 +308,130 @@ export class KeyframeTimeline {
     }
   }
 
+  public static getClipboard(): { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> } | null {
+    return KeyframeTimeline.clipboardKeyframe
+      ? JSON.parse(JSON.stringify(KeyframeTimeline.clipboardKeyframe))
+      : null;
+  }
+
+  public static setClipboard(keyframe: { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> } | null): void {
+    KeyframeTimeline.clipboardKeyframe = keyframe
+      ? JSON.parse(JSON.stringify(keyframe))
+      : null;
+  }
+
+  public setKinematicsMode(mode: 'ik' | 'fk'): void {
+    this.kinematicsMode = mode;
+    const btn = this.container.querySelector('.btn-timeline-kinematics');
+    if (btn) {
+      btn.innerHTML = `<span>${mode === 'fk' ? '🦴' : '⚡'}</span> ${mode === 'fk' ? 'FK (No-IK)' : 'IK Mode'}`;
+      btn.setAttribute('title', `Toggle Kinematics: ${mode === 'fk' ? 'FK (No-IK)' : 'IK Mode'} [HotKey: K or Hold Shift/Alt while dragging]`);
+    }
+  }
+
+  public getKinematicsMode(): 'ik' | 'fk' {
+    return this.kinematicsMode;
+  }
+
+  /**
+   * Copies the keyframe at the given index, the currently selected keyframe,
+   * or a snapshot of the current pose at the playhead.
+   */
+  public copyKeyframe(index?: number): boolean {
+    const track = this.getActiveTrack();
+    if (!track) return false;
+
+    let targetKeyframe: StudioKeyframe | null = null;
+    if (index !== undefined && track.keyframes[index]) {
+      targetKeyframe = track.keyframes[index];
+    } else if (this.selectedKeyframeIndex !== null && track.keyframes[this.selectedKeyframeIndex]) {
+      targetKeyframe = track.keyframes[this.selectedKeyframeIndex];
+    } else {
+      // Find keyframe near playhead
+      const t = this.currentTime;
+      const near = track.keyframes.find(k => Math.abs(k.time - t) < 0.04);
+      if (near) {
+        targetKeyframe = near;
+      } else {
+        // Snapshot pose at playhead time
+        const currentPosed = interpolateJointPoses(
+          track.keyframes,
+          this.currentTime,
+          this.duration,
+          this.isLooping,
+          this.restJoints
+        );
+        targetKeyframe = {
+          time: this.currentTime,
+          joints: currentPosed
+        };
+      }
+    }
+
+    if (!targetKeyframe) return false;
+
+    KeyframeTimeline.clipboardKeyframe = {
+      name: targetKeyframe.name,
+      joints: JSON.parse(JSON.stringify(targetKeyframe.joints))
+    };
+    this.events.onKeyframeCopied?.(targetKeyframe);
+    return true;
+  }
+
+  /**
+   * Pastes the copied keyframe at targetTime (or current playhead position).
+   */
+  public pasteKeyframe(targetTime?: number): boolean {
+    const track = this.getActiveTrack();
+    if (!track || !KeyframeTimeline.clipboardKeyframe) return false;
+
+    const t = targetTime !== undefined ? targetTime : this.currentTime;
+    const roundedTime = Math.round(t * 100) / 100;
+    const clonedJoints = JSON.parse(JSON.stringify(KeyframeTimeline.clipboardKeyframe.joints));
+    const name = KeyframeTimeline.clipboardKeyframe.name;
+
+    this.currentTime = roundedTime;
+    this.addKeyframe(clonedJoints, name);
+
+    this.events.onKeyframePasted?.(roundedTime, { time: roundedTime, name, joints: clonedJoints });
+    return true;
+  }
+
+  /**
+   * Closes the animation loop for seamless walk/run cycles.
+   * Copies the initial pose at 0.00s and pastes it at the duration end timestamp.
+   */
+  public closeCycle(): boolean {
+    const track = this.getActiveTrack();
+    if (!track) return false;
+
+    // Find first keyframe (at or nearest to 0.00s)
+    let firstKey = track.keyframes.find(k => Math.abs(k.time) < 0.04);
+    if (!firstKey && track.keyframes.length > 0) {
+      firstKey = track.keyframes[0];
+    }
+
+    const jointsToCopy = firstKey
+      ? JSON.parse(JSON.stringify(firstKey.joints))
+      : interpolateJointPoses(track.keyframes, 0, this.duration, this.isLooping, this.restJoints);
+
+    const name = firstKey?.name ? `${firstKey.name} (Loop End)` : 'Loop End';
+
+    // Store in clipboard
+    KeyframeTimeline.clipboardKeyframe = {
+      name,
+      joints: JSON.parse(JSON.stringify(jointsToCopy))
+    };
+
+    // Paste at duration end
+    const endT = Math.round(this.duration * 100) / 100;
+    this.currentTime = endT;
+    this.addKeyframe(jointsToCopy, name);
+
+    this.events.onCycleClosed?.(endT);
+    return true;
+  }
+
   public evaluatePoseAtCurrentTime(): void {
     const track = this.getActiveTrack();
     if (!track || track.keyframes.length === 0) {
@@ -390,8 +525,21 @@ export class KeyframeTimeline {
           <button class="tool-btn btn-timeline-add-key" title="Record Keyframe at current playhead time" ${!isRelevantForView ? 'disabled' : ''}>
             🔑 ＋Key
           </button>
+          <button class="tool-btn btn-timeline-copy-key" title="Copy Keyframe (Ctrl+C)" ${!isRelevantForView ? 'disabled' : ''}>
+            📋 Copy
+          </button>
+          <button class="tool-btn btn-timeline-paste-key" title="Paste Keyframe at Playhead (Ctrl+V)" ${!isRelevantForView ? 'disabled' : ''}>
+            📄 Paste
+          </button>
+          <button class="tool-btn btn-timeline-close-cycle" title="Close Loop Cycle: Copy 0.00s initial pose to duration end (${this.duration.toFixed(2)}s) for seamless looping" ${!isRelevantForView ? 'disabled' : ''}>
+            🔁 Close Cycle
+          </button>
           <button class="tool-btn btn-timeline-del-key" title="Delete Keyframe at current playhead time (Del)" ${!isRelevantForView ? 'disabled' : ''}>
             🗑️ Del
+          </button>
+          <div class="tool-separator"></div>
+          <button class="tool-btn btn-timeline-kinematics" title="Toggle Kinematics Mode: IK or FK (No-IK / Forward Kinematics for free knee/foot rotation) [HotKey: K or Hold Shift/Alt while dragging]">
+            <span>${this.kinematicsMode === 'fk' ? '🦴' : '⚡'}</span> ${this.kinematicsMode === 'fk' ? 'FK (No-IK)' : 'IK Mode'}
           </button>
           <div class="tool-separator"></div>
           <label class="timeline-toggle-label" title="When active, dragging any joint on canvas auto-records keyframe at current time">
@@ -587,6 +735,28 @@ export class KeyframeTimeline {
       this.events.onKeyframeAdded?.(this.currentTime, this.restJoints);
     });
 
+    // Copy Keyframe button
+    this.container.querySelector('.btn-timeline-copy-key')?.addEventListener('click', () => {
+      this.copyKeyframe();
+    });
+
+    // Paste Keyframe button
+    this.container.querySelector('.btn-timeline-paste-key')?.addEventListener('click', () => {
+      this.pasteKeyframe();
+    });
+
+    // Close Cycle button
+    this.container.querySelector('.btn-timeline-close-cycle')?.addEventListener('click', () => {
+      this.closeCycle();
+    });
+
+    // Kinematics toggle button
+    this.container.querySelector('.btn-timeline-kinematics')?.addEventListener('click', () => {
+      const newMode = this.kinematicsMode === 'fk' ? 'ik' : 'fk';
+      this.setKinematicsMode(newMode);
+      this.events.onKinematicsModeChanged?.(newMode);
+    });
+
     // Delete Keyframe button
     this.container.querySelector('.btn-timeline-del-key')?.addEventListener('click', () => {
       this.deleteSelectedKeyframe();
@@ -623,7 +793,7 @@ export class KeyframeTimeline {
       this.isDraggingPlayhead = false;
     });
 
-    // Delete key shortcut
+    // Global timeline keyboard shortcuts (Space: play/pause, Del: delete, Ctrl+C: copy, Ctrl+V: paste, K: kinematics)
     window.addEventListener('keydown', (e) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -634,6 +804,17 @@ export class KeyframeTimeline {
         this.togglePlay();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         this.deleteSelectedKeyframe();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        this.copyKeyframe();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        this.pasteKeyframe();
+      } else if (e.key.toLowerCase() === 'k' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        const newMode = this.kinematicsMode === 'fk' ? 'ik' : 'fk';
+        this.setKinematicsMode(newMode);
+        this.events.onKinematicsModeChanged?.(newMode);
       }
     });
   }

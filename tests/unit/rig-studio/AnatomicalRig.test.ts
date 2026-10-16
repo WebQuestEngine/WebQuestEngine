@@ -8,6 +8,7 @@ import {
   copyJointsFromFront,
   convertJointsToSpineBones,
   poseJointPreservingBones,
+  poseJointFK,
   pathCapsule,
   mirrorJointPositions,
   mirrorAttachedParts,
@@ -392,6 +393,111 @@ describe('AnatomicalRig', () => {
       expect(changed.wrist_r.y).toBeCloseTo(-170, 0);
       expect(Number.isFinite(changed.elbow_r.x)).toBe(true);
       expect(Number.isFinite(changed.elbow_r.y)).toBe(true);
+    });
+  });
+
+  describe('Forward Kinematics (FK / No-IK) Posing', () => {
+    it('rotates feet directly without moving ankle, knee, or hip', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      const origAnkleL = { ...rest.ankle_l };
+      const origKneeL = { ...rest.knee_l };
+      const origHipL = { ...rest.hip_l };
+      const restFootLen = Math.hypot(rest.foot_l.x - rest.ankle_l.x, rest.foot_l.y - rest.ankle_l.y);
+
+      // Drag foot_l to point upward/forward (e.g. toe-lift / heel-strike in walk cycle)
+      const targetX = rest.ankle_l.x + 30;
+      const targetY = rest.ankle_l.y - 10;
+      const posed = poseJointFK('foot_l', targetX, targetY, rest, rest);
+
+      // Ankle, Knee, Hip MUST remain completely stationary in FK
+      expect(posed.ankle_l.x).toBeCloseTo(origAnkleL.x, 2);
+      expect(posed.ankle_l.y).toBeCloseTo(origAnkleL.y, 2);
+      expect(posed.knee_l.x).toBeCloseTo(origKneeL.x, 2);
+      expect(posed.knee_l.y).toBeCloseTo(origKneeL.y, 2);
+      expect(posed.hip_l.x).toBeCloseTo(origHipL.x, 2);
+      expect(posed.hip_l.y).toBeCloseTo(origHipL.y, 2);
+
+      // Foot bone length must be preserved exactly
+      const posedFootLen = Math.hypot(posed.foot_l.x - posed.ankle_l.x, posed.foot_l.y - posed.ankle_l.y);
+      expect(posedFootLen).toBeCloseTo(restFootLen, 1);
+
+      // Foot angle must aim towards target
+      const expectedAngle = Math.atan2(targetY - origAnkleL.y, targetX - origAnkleL.x);
+      const actualAngle = Math.atan2(posed.foot_l.y - posed.ankle_l.y, posed.foot_l.x - posed.ankle_l.x);
+      expect(actualAngle).toBeCloseTo(expectedAngle, 2);
+    });
+
+    it('bends calf and rotates ankle around knee without moving knee or hip, carrying foot', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      const origKneeL = { ...rest.knee_l };
+      const origHipL = { ...rest.hip_l };
+      const restCalfLen = Math.hypot(rest.ankle_l.x - rest.knee_l.x, rest.ankle_l.y - rest.knee_l.y);
+      const restFootLen = Math.hypot(rest.foot_l.x - rest.ankle_l.x, rest.foot_l.y - rest.ankle_l.y);
+
+      // Drag ankle_l to bend calf backwards (e.g. walk cycle pass phase)
+      const targetX = rest.knee_l.x - 30;
+      const targetY = rest.knee_l.y + 40;
+      const posed = poseJointFK('ankle_l', targetX, targetY, rest, rest);
+
+      // Knee and Hip must remain stationary
+      expect(posed.knee_l.x).toBeCloseTo(origKneeL.x, 2);
+      expect(posed.knee_l.y).toBeCloseTo(origKneeL.y, 2);
+      expect(posed.hip_l.x).toBeCloseTo(origHipL.x, 2);
+      expect(posed.hip_l.y).toBeCloseTo(origHipL.y, 2);
+
+      // Calf bone length and foot bone length must be preserved exactly
+      const posedCalfLen = Math.hypot(posed.ankle_l.x - posed.knee_l.x, posed.ankle_l.y - posed.knee_l.y);
+      expect(posedCalfLen).toBeCloseTo(restCalfLen, 1);
+
+      const posedFootLen = Math.hypot(posed.foot_l.x - posed.ankle_l.x, posed.foot_l.y - posed.ankle_l.y);
+      expect(posedFootLen).toBeCloseTo(restFootLen, 1);
+    });
+
+    it('raises knee and rotates thigh around hip, carrying calf and foot without moving hip', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      const origHipL = { ...rest.hip_l };
+      const restThighLen = Math.hypot(rest.knee_l.x - rest.hip_l.x, rest.knee_l.y - rest.hip_l.y);
+      const restCalfLen = Math.hypot(rest.ankle_l.x - rest.knee_l.x, rest.ankle_l.y - rest.knee_l.y);
+
+      // Drag knee_l to raise knee forward/upward (e.g. walk cycle apex / high knee)
+      const targetX = rest.hip_l.x + 35;
+      const targetY = rest.hip_l.y + 20;
+      const posed = poseJointFK('knee_l', targetX, targetY, rest, rest);
+
+      // Hip must remain stationary
+      expect(posed.hip_l.x).toBeCloseTo(origHipL.x, 2);
+      expect(posed.hip_l.y).toBeCloseTo(origHipL.y, 2);
+
+      // Thigh bone length and calf bone length must be preserved
+      const posedThighLen = Math.hypot(posed.knee_l.x - posed.hip_l.x, posed.knee_l.y - posed.hip_l.y);
+      expect(posedThighLen).toBeCloseTo(restThighLen, 1);
+
+      const posedCalfLen = Math.hypot(posed.ankle_l.x - posed.knee_l.x, posed.ankle_l.y - posed.knee_l.y);
+      expect(posedCalfLen).toBeCloseTo(restCalfLen, 1);
+    });
+
+    it('rotates hands and bends wrists around elbows in FK without displacing upper arm', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      const origShoulderL = { ...rest.shoulder_l };
+      const origElbowL = { ...rest.elbow_l };
+      const restHandLen = Math.hypot(rest.hand_l.x - rest.wrist_l.x, rest.hand_l.y - rest.wrist_l.y);
+
+      // Rotate hand_l
+      const posedHand = poseJointFK('hand_l', rest.wrist_l.x - 20, rest.wrist_l.y - 10, rest, rest);
+      expect(posedHand.wrist_l.x).toBeCloseTo(rest.wrist_l.x, 2);
+      expect(posedHand.wrist_l.y).toBeCloseTo(rest.wrist_l.y, 2);
+      expect(posedHand.elbow_l.x).toBeCloseTo(origElbowL.x, 2);
+      expect(posedHand.elbow_l.y).toBeCloseTo(origElbowL.y, 2);
+
+      const posedHandLen = Math.hypot(posedHand.hand_l.x - posedHand.wrist_l.x, posedHand.hand_l.y - posedHand.wrist_l.y);
+      expect(posedHandLen).toBeCloseTo(restHandLen, 1);
+
+      // Bend wrist_l around elbow
+      const posedWrist = poseJointFK('wrist_l', rest.elbow_l.x - 40, rest.elbow_l.y - 10, rest, rest);
+      expect(posedWrist.elbow_l.x).toBeCloseTo(origElbowL.x, 2);
+      expect(posedWrist.elbow_l.y).toBeCloseTo(origElbowL.y, 2);
+      expect(posedWrist.shoulder_l.x).toBeCloseTo(origShoulderL.x, 2);
+      expect(posedWrist.shoulder_l.y).toBeCloseTo(origShoulderL.y, 2);
     });
   });
 });

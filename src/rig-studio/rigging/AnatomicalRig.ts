@@ -383,12 +383,26 @@ export function poseJointPreservingBones(
       y: newElbow.y + Math.sin(newWristAngle) * lowerLen
     };
 
+    const hand = isLeft ? result.hand_l : result.hand_r;
+    let newHand = hand;
+    if (hand) {
+      const handDist = Math.hypot(hand.x - wrist.x, hand.y - wrist.y);
+      const oldHandAngle = Math.atan2(hand.y - wrist.y, hand.x - wrist.x);
+      const newHandAngle = oldHandAngle + deltaAngle;
+      newHand = {
+        x: newWrist.x + Math.cos(newHandAngle) * handDist,
+        y: newWrist.y + Math.sin(newHandAngle) * handDist
+      };
+    }
+
     if (isLeft) {
       result.elbow_l = newElbow;
       result.wrist_l = newWrist;
+      if (hand) result.hand_l = newHand;
     } else {
       result.elbow_r = newElbow;
       result.wrist_r = newWrist;
+      if (hand) result.hand_r = newHand;
     }
     return result;
   }
@@ -422,12 +436,26 @@ export function poseJointPreservingBones(
       y: newKnee.y + Math.sin(newAnkleAngle) * calfLen
     };
 
+    const foot = isLeft ? result.foot_l : result.foot_r;
+    let newFoot = foot;
+    if (foot) {
+      const footDist = Math.hypot(foot.x - ankle.x, foot.y - ankle.y);
+      const oldFootAngle = Math.atan2(foot.y - ankle.y, foot.x - ankle.x);
+      const newFootAngle = oldFootAngle + deltaAngle;
+      newFoot = {
+        x: newAnkle.x + Math.cos(newFootAngle) * footDist,
+        y: newAnkle.y + Math.sin(newFootAngle) * footDist
+      };
+    }
+
     if (isLeft) {
       result.knee_l = newKnee;
       result.ankle_l = newAnkle;
+      if (foot) result.foot_l = newFoot;
     } else {
       result.knee_r = newKnee;
       result.ankle_r = newAnkle;
+      if (foot) result.foot_r = newFoot;
     }
     return result;
   }
@@ -645,6 +673,165 @@ export function poseJointPreservingBones(
   }
 
   return result;
+}
+
+/**
+ * Poses a joint using pure Forward Kinematics (FK / No-IK), directly rotating bones around
+ * their parent joints while strictly preserving bone lengths and carrying descendant child bones.
+ * - Dragging foot rotates foot around ankle (tilt / toe-roll / heel-strike).
+ * - Dragging ankle rotates calf around knee (carrying foot) without moving knee or hip.
+ * - Dragging knee rotates thigh around hip (carrying calf & foot) without moving hip.
+ * - Dragging hand rotates hand around wrist without moving wrist, elbow, or shoulder.
+ * - Dragging wrist rotates forearm around elbow (carrying hand) without moving elbow or shoulder.
+ * - Dragging elbow rotates upper arm around shoulder (carrying forearm & hand).
+ */
+export function poseJointFK(
+  jointId: AnatomicalJointId,
+  targetX: number,
+  targetY: number,
+  restJoints: Record<AnatomicalJointId, { x: number; y: number }>,
+  currentPosed: Record<AnatomicalJointId, { x: number; y: number }>
+): Record<AnatomicalJointId, { x: number; y: number }> {
+  const result: Record<AnatomicalJointId, { x: number; y: number }> = JSON.parse(JSON.stringify(currentPosed));
+  const target = { x: targetX, y: targetY };
+
+  // 1. Foot Tips: Rotates foot around ankle pin without moving ankle, knee, or hip
+  if (jointId === 'foot_l' || jointId === 'foot_r') {
+    const isLeft = jointId === 'foot_l';
+    const ankle = isLeft ? result.ankle_l : result.ankle_r;
+    const foot = isLeft ? result.foot_l : result.foot_r;
+    const restAnkle = isLeft ? restJoints.ankle_l : restJoints.ankle_r;
+    const restFoot = isLeft ? restJoints.foot_l : restJoints.foot_r;
+    const footLen = (restFoot && restAnkle)
+      ? Math.hypot(restFoot.x - restAnkle.x, restFoot.y - restAnkle.y)
+      : (foot ? Math.hypot(foot.x - ankle.x, foot.y - ankle.y) : 35);
+
+    const angle = Math.atan2(target.y - ankle.y, target.x - ankle.x);
+    const newFoot = {
+      x: ankle.x + Math.cos(angle) * footLen,
+      y: ankle.y + Math.sin(angle) * footLen
+    };
+
+    if (isLeft) {
+      result.foot_l = newFoot;
+    } else {
+      result.foot_r = newFoot;
+    }
+    return result;
+  }
+
+  // 2. Ankles: Rotates calf around knee pin and carries foot along, without moving knee or hip
+  if (jointId === 'ankle_l' || jointId === 'ankle_r') {
+    const isLeft = jointId === 'ankle_l';
+    const knee = isLeft ? result.knee_l : result.knee_r;
+    const ankle = isLeft ? result.ankle_l : result.ankle_r;
+    const foot = isLeft ? result.foot_l : result.foot_r;
+    const restKnee = isLeft ? restJoints.knee_l : restJoints.knee_r;
+    const restAnkle = isLeft ? restJoints.ankle_l : restJoints.ankle_r;
+    const calfLen = (restAnkle && restKnee)
+      ? Math.hypot(restAnkle.x - restKnee.x, restAnkle.y - restKnee.y)
+      : Math.hypot(ankle.x - knee.x, ankle.y - knee.y);
+
+    const oldAngle = Math.atan2(ankle.y - knee.y, ankle.x - knee.x);
+    const newAngle = Math.atan2(target.y - knee.y, target.x - knee.x);
+    const deltaAngle = newAngle - oldAngle;
+
+    const newAnkle = {
+      x: knee.x + Math.cos(newAngle) * calfLen,
+      y: knee.y + Math.sin(newAngle) * calfLen
+    };
+
+    let newFoot = foot;
+    if (foot) {
+      const footDist = Math.hypot(foot.x - ankle.x, foot.y - ankle.y);
+      const oldFootAngle = Math.atan2(foot.y - ankle.y, foot.x - ankle.x);
+      const newFootAngle = oldFootAngle + deltaAngle;
+      newFoot = {
+        x: newAnkle.x + Math.cos(newFootAngle) * footDist,
+        y: newAnkle.y + Math.sin(newFootAngle) * footDist
+      };
+    }
+
+    if (isLeft) {
+      result.ankle_l = newAnkle;
+      if (foot) result.foot_l = newFoot;
+    } else {
+      result.ankle_r = newAnkle;
+      if (foot) result.foot_r = newFoot;
+    }
+    return result;
+  }
+
+  // 3. Hand Tips: Rotates hand around wrist pin without moving wrist, elbow, or shoulder
+  if (jointId === 'hand_l' || jointId === 'hand_r') {
+    const isLeft = jointId === 'hand_l';
+    const wrist = isLeft ? result.wrist_l : result.wrist_r;
+    const hand = isLeft ? result.hand_l : result.hand_r;
+    const restWrist = isLeft ? restJoints.wrist_l : restJoints.wrist_r;
+    const restHand = isLeft ? restJoints.hand_l : restJoints.hand_r;
+    const handLen = (restHand && restWrist)
+      ? Math.hypot(restHand.x - restWrist.x, restHand.y - restWrist.y)
+      : (hand ? Math.hypot(hand.x - wrist.x, hand.y - wrist.y) : 28);
+
+    const angle = Math.atan2(target.y - wrist.y, target.x - wrist.x);
+    const newHand = {
+      x: wrist.x + Math.cos(angle) * handLen,
+      y: wrist.y + Math.sin(angle) * handLen
+    };
+
+    if (isLeft) {
+      result.hand_l = newHand;
+    } else {
+      result.hand_r = newHand;
+    }
+    return result;
+  }
+
+  // 4. Wrists: Rotates forearm around elbow pin and carries hand along, without moving elbow or shoulder
+  if (jointId === 'wrist_l' || jointId === 'wrist_r') {
+    const isLeft = jointId === 'wrist_l';
+    const elbow = isLeft ? result.elbow_l : result.elbow_r;
+    const wrist = isLeft ? result.wrist_l : result.wrist_r;
+    const hand = isLeft ? result.hand_l : result.hand_r;
+    const restElbow = isLeft ? restJoints.elbow_l : restJoints.elbow_r;
+    const restWrist = isLeft ? restJoints.wrist_l : restJoints.wrist_r;
+    const lowerLen = (restWrist && restElbow)
+      ? Math.hypot(restWrist.x - restElbow.x, restWrist.y - restElbow.y)
+      : Math.hypot(wrist.x - elbow.x, wrist.y - elbow.y);
+
+    const oldAngle = Math.atan2(wrist.y - elbow.y, wrist.x - elbow.x);
+    const newAngle = Math.atan2(target.y - elbow.y, target.x - elbow.x);
+    const deltaAngle = newAngle - oldAngle;
+
+    const newWrist = {
+      x: elbow.x + Math.cos(newAngle) * lowerLen,
+      y: elbow.y + Math.sin(newAngle) * lowerLen
+    };
+
+    let newHand = hand;
+    if (hand) {
+      const handDist = Math.hypot(hand.x - wrist.x, hand.y - wrist.y);
+      const oldHandAngle = Math.atan2(hand.y - wrist.y, hand.x - wrist.x);
+      const newHandAngle = oldHandAngle + deltaAngle;
+      newHand = {
+        x: newWrist.x + Math.cos(newHandAngle) * handDist,
+        y: newWrist.y + Math.sin(newHandAngle) * handDist
+      };
+    }
+
+    if (isLeft) {
+      result.wrist_l = newWrist;
+      if (hand) result.hand_l = newHand;
+    } else {
+      result.wrist_r = newWrist;
+      if (hand) result.hand_r = newHand;
+    }
+    return result;
+  }
+
+  // 5. For all other joints (knees, elbows, head, neck, shoulders, chest, hips),
+  // poseJointPreservingBones is already pure Forward Kinematics!
+  return poseJointPreservingBones(jointId, targetX, targetY, restJoints, currentPosed);
 }
 
 /**

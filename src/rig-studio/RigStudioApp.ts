@@ -83,6 +83,7 @@ export class RigStudioApp {
   private activeSheetId: string = 'sheet_ronald';
 
   private toolMode: JointToolMode = 'select';
+  private kinematicsMode: 'ik' | 'fk' = 'ik';
   private symmetryEnabled = true;
   private showBonesEnabled = true;
   private showEnvelopesEnabled = true;
@@ -3912,6 +3913,21 @@ export class RigStudioApp {
     this.renderRightSidebar();
   }
 
+  public setKinematicsMode(mode: 'ik' | 'fk'): void {
+    this.kinematicsMode = mode;
+    this.canvas?.setKinematicsMode(mode);
+    this.timeline?.setKinematicsMode(mode);
+    const btns = this.container.querySelectorAll('.btn-anim-toggle-kinematics, .btn-left-toggle-kinematics');
+    btns.forEach(btn => {
+      btn.innerHTML = mode === 'fk' ? '🦴 FK (No-IK Mode)' : '⚡ IK Mode';
+      (btn as HTMLElement).style.color = mode === 'fk' ? '#38bdf8' : '#eab308';
+    });
+  }
+
+  public getKinematicsMode(): 'ik' | 'fk' {
+    return this.kinematicsMode;
+  }
+
   private copyJointsFromFrontView(): void {
     const frontJoints = this.views.front.joints;
     const copied = copyJointsFromFront(frontJoints, this.activeView);
@@ -5343,6 +5359,23 @@ export class RigStudioApp {
             this.renderRightSidebar();
             this.showToast('Keyframe deleted', 'info');
           },
+          onKeyframeCopied: (keyframe) => {
+            this.showToast('📋 Keyframe pose copied to clipboard', 'info');
+          },
+          onKeyframePasted: (time, keyframe) => {
+            this.recordHistory('Paste Keyframe');
+            this.renderRightSidebar();
+            this.showToast(`📄 Keyframe pasted at ${time.toFixed(2)}s`, 'success');
+          },
+          onCycleClosed: (duration) => {
+            this.recordHistory('Close Cycle');
+            this.renderRightSidebar();
+            this.showToast(`🔁 Animation loop closed at ${duration.toFixed(2)}s`, 'success');
+          },
+          onKinematicsModeChanged: (mode) => {
+            this.setKinematicsMode(mode);
+            this.showToast(`Kinematics: ${mode === 'fk' ? '🦴 FK (No-IK Mode)' : '⚡ IK Mode'}`, 'info');
+          },
           onAnimationSelected: (animName) => {
             this.activeAnimationName = animName;
             this.renderRightSidebar();
@@ -5355,6 +5388,7 @@ export class RigStudioApp {
           }
         }
       );
+      this.timeline.setKinematicsMode(this.kinematicsMode);
     } else {
       this.timeline.setAnimationState(
         this.animations,
@@ -5362,6 +5396,7 @@ export class RigStudioApp {
         this.activeView,
         this.views[this.activeView].joints
       );
+      this.timeline.setKinematicsMode(this.kinematicsMode);
     }
   }
 
@@ -5720,6 +5755,7 @@ export class RigStudioApp {
                     <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; background:#0f172a; padding:3px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.06);">
                       <span class="kf-chip" data-time="${k.time}" data-index="${idx}" title="Jump playhead to ${k.time.toFixed(2)}s">${k.time.toFixed(2)}s</span>
                       <input type="text" class="input-kf-pose-name" data-index="${idx}" value="${k.name || ''}" placeholder="Pose Name..." style="flex:1; min-width:0; background:transparent; border:none; border-bottom:1px dashed rgba(255,255,255,0.2); font-size:0.65rem; color:#7dd3fc; padding:1px 3px;" title="Pose name for this keyframe (e.g. Contact, Pass, Apex, Strike)" />
+                      <button class="btn-studio btn-copy-single-kf" data-index="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#38bdf8; border:none; background:transparent; cursor:pointer;" title="Copy this keyframe pose (Ctrl+C)">📋</button>
                       <button class="btn-studio btn-delete-kf" data-index="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#ef4444; border:none; background:transparent; cursor:pointer;" title="Delete keyframe">✕</button>
                     </div>
                   `).join('')}
@@ -5731,6 +5767,23 @@ export class RigStudioApp {
                 <button class="btn-studio btn-anim-record-current" style="font-size:0.72rem; justify-content:center; color:#38bdf8; border-color:rgba(56,189,248,0.4);" title="Capture current canvas joint positions as a keyframe at playhead time">
                   🔑 ＋ Record Keyframe at Playhead
                 </button>
+                <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                  <button class="btn-studio btn-anim-copy-key" style="font-size:0.68rem; justify-content:center; flex:1;" title="Copy active keyframe pose to clipboard (Ctrl+C)">
+                    📋 Copy Key
+                  </button>
+                  <button class="btn-studio btn-anim-paste-key" style="font-size:0.68rem; justify-content:center; flex:1;" title="Paste copied pose at playhead time (Ctrl+V)">
+                    📄 Paste Key
+                  </button>
+                  <button class="btn-studio btn-anim-close-cycle" style="font-size:0.68rem; justify-content:center; flex:1; color:#38bdf8; border-color:rgba(56,189,248,0.4);" title="Close Loop Cycle: Copy 0.00s start pose to duration end for seamless walk/run loop">
+                    🔁 Close Cycle
+                  </button>
+                </div>
+                <div style="display:flex; gap:4px; align-items:center;">
+                  <span style="font-size:0.68rem; color:#94a3b8; font-weight:600;">Kinematics:</span>
+                  <button class="btn-studio btn-anim-toggle-kinematics" style="font-size:0.68rem; justify-content:center; flex:1; font-weight:700; color:${this.kinematicsMode === 'fk' ? '#38bdf8' : '#eab308'};" title="Toggle between Inverse Kinematics (IK) and Forward Kinematics (FK / No-IK to raise knees, rotate feet, bend limbs freely). Hotkey: K or hold Shift/Alt while dragging.">
+                    ${this.kinematicsMode === 'fk' ? '🦴 FK (No-IK Mode)' : '⚡ IK Mode'}
+                  </button>
+                </div>
                 <div style="display:flex; gap:4px; flex-wrap:wrap;">
                   <button class="btn-studio btn-anim-reset-pose" style="font-size:0.68rem; justify-content:center; flex:1;" title="Reset pose to character rest pose">
                     ↺ Rest
@@ -5883,6 +5936,35 @@ export class RigStudioApp {
       });
     });
 
+    // Copy Single Keyframe row
+    sidebar.querySelectorAll('.btn-copy-single-kf').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-index')!, 10);
+        this.timeline?.copyKeyframe(idx);
+      });
+    });
+
+    // Copy Keyframe button
+    sidebar.querySelector('.btn-anim-copy-key')?.addEventListener('click', () => {
+      this.timeline?.copyKeyframe();
+    });
+
+    // Paste Keyframe button
+    sidebar.querySelector('.btn-anim-paste-key')?.addEventListener('click', () => {
+      this.timeline?.pasteKeyframe();
+    });
+
+    // Close Cycle button
+    sidebar.querySelector('.btn-anim-close-cycle')?.addEventListener('click', () => {
+      this.timeline?.closeCycle();
+    });
+
+    // Kinematics toggle button
+    sidebar.querySelector('.btn-anim-toggle-kinematics')?.addEventListener('click', () => {
+      this.setKinematicsMode(this.kinematicsMode === 'fk' ? 'ik' : 'fk');
+    });
+
     // Record Keyframe button
     sidebar.querySelector('.btn-anim-record-current')?.addEventListener('click', () => {
       const joints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
@@ -5944,6 +6026,9 @@ export class RigStudioApp {
           <button class="btn-studio btn-left-add-kf" style="font-size:0.72rem; justify-content:center; color:#38bdf8;" title="Add keyframe at current timeline position">
             🔑 Record Pose Keyframe
           </button>
+          <button class="btn-studio btn-left-toggle-kinematics" style="font-size:0.7rem; justify-content:center; font-weight:700; color:${this.kinematicsMode === 'fk' ? '#38bdf8' : '#eab308'};" title="Toggle between IK and FK (No-IK) posing. Hotkey: K or hold Shift/Alt while dragging.">
+            ${this.kinematicsMode === 'fk' ? '🦴 Kinematics: FK (No-IK)' : '⚡ Kinematics: IK Mode'}
+          </button>
           <button class="btn-studio btn-left-reset-pose" style="font-size:0.7rem; justify-content:center;">
             ↺ Reset to Rest Pose
           </button>
@@ -6003,6 +6088,10 @@ export class RigStudioApp {
       const joints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
       this.timeline?.addKeyframe(joints);
       this.renderRightSidebar();
+    });
+
+    sidebar.querySelector('.btn-left-toggle-kinematics')?.addEventListener('click', () => {
+      this.setKinematicsMode(this.kinematicsMode === 'fk' ? 'ik' : 'fk');
     });
 
     sidebar.querySelector('.btn-left-reset-pose')?.addEventListener('click', () => {

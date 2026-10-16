@@ -13,7 +13,8 @@ import {
   DEFAULT_BONE_DRAW_ORDER,
   getDefaultJointPositions,
   pathCapsule,
-  poseJointPreservingBones
+  poseJointPreservingBones,
+  poseJointFK
 } from './AnatomicalRig';
 
 export interface RigStudioCanvasEvents {
@@ -34,6 +35,7 @@ export class RigStudioCanvas {
 
   private currentView: StudioView = 'front';
   private toolMode: JointToolMode = 'select';
+  private kinematicsMode: 'ik' | 'fk' = 'ik';
   private symmetryEnabled = true;
   private showBonesEnabled = true;
   private showEnvelopesEnabled = true;
@@ -136,6 +138,15 @@ export class RigStudioCanvas {
 
   public getToolMode(): JointToolMode {
     return this.toolMode;
+  }
+
+  public setKinematicsMode(mode: 'ik' | 'fk'): void {
+    this.kinematicsMode = mode;
+    this.render();
+  }
+
+  public getKinematicsMode(): 'ik' | 'fk' {
+    return this.kinematicsMode;
   }
 
   public setSymmetry(enabled: boolean): void {
@@ -996,12 +1007,15 @@ export class RigStudioCanvas {
 
       if (this.isDraggingJoint && this.draggedJointId) {
         if (this.toolMode === 'preview') {
-          // Preview posing mode with bone length preservation for all nodes
-          this.poseJointInPreview(this.draggedJointId, world.x, world.y);
+          // Preview posing mode with bone length preservation for all nodes.
+          // Supports both IK and FK (No-IK) kinematics. Shift/Alt temporarily toggles between them.
+          const isAltOrShift = e.shiftKey || e.altKey;
+          const useFK = (this.kinematicsMode === 'fk') !== isAltOrShift;
+          this.poseJointInPreview(this.draggedJointId, world.x, world.y, useFK);
           this.events.onPreviewPoseChanged?.(this.previewJoints);
         } else {
           // Standard setup mode (places / moves joint pins with symmetry and graphic lock)
-          this.moveJointWithSymmetry(this.draggedJointId, world.x, world.y);
+          this.moveJointWithSymmetry(this.draggedJointId, world.x, world.y, e.shiftKey || e.altKey);
         }
         this.render();
         return;
@@ -1153,7 +1167,7 @@ export class RigStudioCanvas {
     });
   }
 
-  private moveJointWithSymmetry(jointId: AnatomicalJointId, wx: number, wy: number): void {
+  private moveJointWithSymmetry(jointId: AnatomicalJointId, wx: number, wy: number, forceAltOrShift = false): void {
     const jointDef = ANATOMICAL_JOINTS.find(j => j.id === jointId);
     if (!jointDef) return;
 
@@ -1177,10 +1191,12 @@ export class RigStudioCanvas {
     const dy = Math.round(wy) - (oldPos ? oldPos.y : Math.round(wy));
 
     if (jointId === 'hand_l' || jointId === 'hand_r' || jointId === 'foot_l' || jointId === 'foot_r') {
-      this.restJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.restJoints);
+      const isFK = (this.kinematicsMode === 'fk') !== forceAltOrShift;
+      const poser = isFK ? poseJointFK : poseJointPreservingBones;
+      this.restJoints = poser(jointId, wx, wy, this.restJoints, this.restJoints);
       if (this.symmetryEnabled && jointDef.symmetricWith) {
         const symId = jointDef.symmetricWith;
-        this.restJoints = poseJointPreservingBones(symId, -wx, wy, this.restJoints, this.restJoints);
+        this.restJoints = poser(symId, -wx, wy, this.restJoints, this.restJoints);
       }
     } else if (jointDef.isCenter) {
       this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
@@ -1249,9 +1265,15 @@ export class RigStudioCanvas {
 
   /**
    * Poses a joint during Preview Mode while strictly preserving bone lengths across all nodes.
+   * Supports both IK (Inverse Kinematics) and FK (Forward Kinematics / No-IK).
    */
-  private poseJointInPreview(jointId: AnatomicalJointId, wx: number, wy: number): void {
-    this.previewJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.previewJoints);
+  private poseJointInPreview(jointId: AnatomicalJointId, wx: number, wy: number, forceFK?: boolean): void {
+    const isFK = forceFK !== undefined ? forceFK : (this.kinematicsMode === 'fk');
+    if (isFK) {
+      this.previewJoints = poseJointFK(jointId, wx, wy, this.restJoints, this.previewJoints);
+    } else {
+      this.previewJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.previewJoints);
+    }
   }
 
   public render(): void {
@@ -1298,6 +1320,37 @@ export class RigStudioCanvas {
       this.drawPartTransformGizmo(this.selectedJointId);
     }
 
+    this.ctx.restore();
+
+    // 7. Preview Kinematics HUD Badge
+    if (this.toolMode === 'preview') {
+      this.drawKinematicsHUD(w, h);
+    }
+  }
+
+  private drawKinematicsHUD(w: number, h: number): void {
+    this.ctx.save();
+    const isFK = this.kinematicsMode === 'fk';
+    const text = isFK ? '🦴 Posing: FK (No-IK)  [Shift: IK]' : '⚡ Posing: IK  [Shift: FK / No-IK]';
+    this.ctx.font = '600 11px Inter, sans-serif';
+    const textW = this.ctx.measureText(text).width;
+    const padX = 10;
+    const badgeW = textW + padX * 2;
+    const badgeH = 22;
+    const badgeX = 16;
+    const badgeY = h - 34;
+
+    this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    this.ctx.strokeStyle = isFK ? 'rgba(56, 189, 248, 0.4)' : 'rgba(234, 179, 8, 0.4)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = isFK ? '#38bdf8' : '#eab308';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(text, badgeX + padX, badgeY + badgeH / 2);
     this.ctx.restore();
   }
 
