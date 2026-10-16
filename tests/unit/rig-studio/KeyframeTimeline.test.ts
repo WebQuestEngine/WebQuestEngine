@@ -142,4 +142,144 @@ describe('KeyframeTimeline - Copy, Paste, Close Cycle and Kinematics', () => {
 
     timeline.destroy();
   });
+
+  it('moves keyframes across the timeline and triggers onKeyframeMoved', () => {
+    let movedResult: { index: number; oldTime: number; newTime: number } | null = null;
+    const timeline = new KeyframeTimeline(
+      container,
+      animations,
+      'walk',
+      'front',
+      restJoints,
+      {
+        onKeyframeMoved: (index, oldTime, newTime) => {
+          movedResult = { index, oldTime, newTime };
+        }
+      }
+    );
+
+    const track = animations.walk.tracks.front!;
+    expect(track.keyframes[1].time).toBe(0.5);
+
+    // Move keyframe at index 1 (0.5s) to 0.8s
+    const moved = timeline.moveKeyframe(1, 0.8);
+    expect(moved).toBe(true);
+    expect(movedResult).toEqual({ index: 1, oldTime: 0.5, newTime: 0.8 });
+    expect(track.keyframes[1].time).toBe(0.8);
+
+    // Test moving past keyframe 0 to verify sorting
+    timeline.moveKeyframe(1, 0.0);
+    expect(track.keyframes[0].time).toBe(0.0);
+
+    timeline.destroy();
+  });
+
+  it('sets animation timeline length and triggers onDurationChanged', () => {
+    let notifiedDuration: number | null = null;
+    const timeline = new KeyframeTimeline(
+      container,
+      animations,
+      'walk',
+      'front',
+      restJoints,
+      {
+        onDurationChanged: (d) => {
+          notifiedDuration = d;
+        }
+      }
+    );
+
+    expect(timeline.getDuration()).toBe(1.0);
+
+    timeline.setDuration(1.6);
+    expect(timeline.getDuration()).toBe(1.6);
+    expect(notifiedDuration).toBe(1.6);
+    expect(animations.walk.tracks.front?.duration).toBe(1.6);
+
+    // Clamps to min 0.1s
+    timeline.setDuration(0.01);
+    expect(timeline.getDuration()).toBe(0.1);
+
+    timeline.destroy();
+  });
+
+  it('handles timeline zoom in, zoom out, and reset zoom', () => {
+    let notifiedZoom: number | null = null;
+    const timeline = new KeyframeTimeline(
+      container,
+      animations,
+      'walk',
+      'front',
+      restJoints,
+      {
+        onZoomChanged: (z) => {
+          notifiedZoom = z;
+        }
+      }
+    );
+
+    expect(timeline.getZoom()).toBe(1.0);
+
+    timeline.zoomIn();
+    expect(timeline.getZoom()).toBe(1.5);
+    expect(notifiedZoom).toBe(1.5);
+
+    timeline.zoomOut();
+    expect(timeline.getZoom()).toBe(1.0);
+
+    timeline.setZoom(3.0);
+    expect(timeline.getZoom()).toBe(3.0);
+
+    timeline.resetZoom();
+    expect(timeline.getZoom()).toBe(1.0);
+
+    // Clamped between 0.5 and 5.0
+    timeline.setZoom(10.0);
+    expect(timeline.getZoom()).toBe(5.0);
+
+    timeline.setZoom(0.1);
+    expect(timeline.getZoom()).toBe(0.5);
+
+    timeline.destroy();
+  });
+
+  it('manages collapsible element tracks and body groups', () => {
+    const timeline = new KeyframeTimeline(
+      container,
+      animations,
+      'walk',
+      'front',
+      restJoints
+    );
+
+    // Verify elements container was rendered
+    const elContainer = container.querySelector('.timeline-element-tracks-container');
+    expect(elContainer).not.toBeNull();
+
+    // Verify group rows exist
+    const groupRows = container.querySelectorAll('.timeline-group-row');
+    expect(groupRows.length).toBeGreaterThan(0);
+
+    // Verify element rows exist
+    const elementRows = container.querySelectorAll('.timeline-element-row');
+    expect(elementRows.length).toBeGreaterThan(0);
+
+    // Collapse all element groups
+    timeline.collapseAllElementGroups();
+    const rowsAfterCollapse = container.querySelectorAll('.timeline-element-row');
+    expect(rowsAfterCollapse.length).toBe(0);
+
+    // Expand all element groups
+    timeline.expandAllElementGroups();
+    const rowsAfterExpand = container.querySelectorAll('.timeline-element-row');
+    expect(rowsAfterExpand.length).toBeGreaterThan(0);
+
+    // Toggle single group
+    timeline.toggleElementGroup('spine', false);
+    timeline.toggleElementTracks(false);
+    expect(container.querySelectorAll('.timeline-element-row').length).toBe(0);
+
+    timeline.destroy();
+  });
 });
+

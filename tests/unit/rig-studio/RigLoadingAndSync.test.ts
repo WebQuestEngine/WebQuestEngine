@@ -146,7 +146,7 @@ describe('RigStudioApp - Rig Loading and Graphic Synchronization', () => {
     const timelineContainer = container.querySelector('#animation-timeline-container') as HTMLElement;
     expect(rigViewport.style.display).toBe('block');
     expect(timelineContainer.style.display).toBe('flex');
-    expect(rigViewport.style.bottom).toBe('180px');
+    expect(rigViewport.style.bottom).toBe('220px');
 
     // Toggle timeline visibility collapses timeline dock and expands canvas
     app.toggleTimelineVisibility();
@@ -157,7 +157,74 @@ describe('RigStudioApp - Rig Loading and Graphic Synchronization', () => {
     // Toggle back
     app.toggleTimelineVisibility();
     expect(app.getIsTimelineVisible()).toBe(true);
-    expect(rigViewport.style.bottom).toBe('180px');
+    expect(rigViewport.style.bottom).toBe('220px');
     expect(timelineContainer.style.display).toBe('flex');
+  });
+
+  it('supports adjustable side panels widths and bottom timeline height with persistence', () => {
+    // Verify splitter elements exist in the DOM
+    const resizerLeft = container.querySelector('#resizer-left');
+    const resizerRight = container.querySelector('#resizer-right');
+    const resizerBottom = container.querySelector('#resizer-bottom');
+    expect(resizerLeft).not.toBeNull();
+    expect(resizerRight).not.toBeNull();
+    expect(resizerBottom).not.toBeNull();
+
+    const leftSidebar = container.querySelector('#left-sidebar') as HTMLElement;
+    const rightSidebar = container.querySelector('#right-sidebar') as HTMLElement;
+    const timelineContainer = container.querySelector('#animation-timeline-container') as HTMLElement;
+    const rigViewport = container.querySelector('#rig-viewport-container') as HTMLElement;
+
+    // Adjust left sidebar width
+    expect(app.getLeftSidebarWidth()).toBe(240);
+    app.setLeftSidebarWidth(320);
+    expect(app.getLeftSidebarWidth()).toBe(320);
+    expect(leftSidebar.style.width).toBe('320px');
+
+    // Clamps left sidebar width
+    app.setLeftSidebarWidth(50);
+    expect(app.getLeftSidebarWidth()).toBe(160);
+    app.setLeftSidebarWidth(1000);
+    expect(app.getLeftSidebarWidth()).toBe(600);
+
+    // Adjust right sidebar width
+    expect(app.getRightSidebarWidth()).toBe(260);
+    app.setRightSidebarWidth(380);
+    expect(app.getRightSidebarWidth()).toBe(380);
+    expect(rightSidebar.style.width).toBe('380px');
+
+    // Clamps right sidebar width
+    app.setRightSidebarWidth(50);
+    expect(app.getRightSidebarWidth()).toBe(180);
+    app.setRightSidebarWidth(1200);
+    expect(app.getRightSidebarWidth()).toBe(700);
+
+    // Adjust timeline height
+    expect(app.getTimelineHeight()).toBe(220);
+    expect(resizerBottom.querySelector('.resizer-grip-h')).not.toBeNull();
+    app.setTimelineHeight(280);
+    expect(app.getTimelineHeight()).toBe(280);
+    expect(timelineContainer.style.height).toBe('280px');
+    expect(rigViewport.style.bottom).toBe('280px');
+
+    // Clamps timeline height
+    app.setTimelineHeight(30);
+    expect(app.getTimelineHeight()).toBe(90);
+
+    // Double-click resizer resets timeline to 220px
+    resizerBottom.dispatchEvent(new MouseEvent('dblclick'));
+    expect(app.getTimelineHeight()).toBe(220);
+    expect(timelineContainer.style.height).toBe('220px');
+
+    // Toolbar height preset buttons
+    const btnHeightL = container.querySelector('.btn-timeline-height-l') as HTMLElement | null;
+    btnHeightL?.click();
+    expect(app.getTimelineHeight()).toBe(360);
+    expect(timelineContainer.style.height).toBe('360px');
+
+    const btnHeightS = container.querySelector('.btn-timeline-height-s') as HTMLElement | null;
+    btnHeightS?.click();
+    expect(app.getTimelineHeight()).toBe(140);
+    expect(timelineContainer.style.height).toBe('140px');
   });
 });

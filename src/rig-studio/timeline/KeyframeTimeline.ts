@@ -5,6 +5,7 @@ import {
   StudioSideTrack,
   StudioView
 } from '../types';
+import { ANATOMICAL_JOINTS } from '../rigging/AnatomicalRig';
 
 export interface KeyframeTimelineEvents {
   onPoseInterpolated?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
@@ -12,6 +13,7 @@ export interface KeyframeTimelineEvents {
   onPlayToggle?: (isPlaying: boolean) => void;
   onKeyframeAdded?: (time: number, joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
   onKeyframeDeleted?: (index: number) => void;
+  onKeyframeMoved?: (index: number, oldTime: number, newTime: number) => void;
   onKeyframeCopied?: (keyframe: { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> }) => void;
   onKeyframePasted?: (time: number, keyframe: StudioKeyframe) => void;
   onCycleClosed?: (duration: number) => void;
@@ -20,9 +22,51 @@ export interface KeyframeTimelineEvents {
   onAutoKeyToggled?: (enabled: boolean) => void;
   onEnableSideRequested?: (animName: string, side: StudioView) => void;
   onDurationChanged?: (duration: number) => void;
+  onZoomChanged?: (zoom: number) => void;
   onKeyframeSelected?: (index: number, keyframe: StudioKeyframe | null) => void;
   onKinematicsModeChanged?: (mode: 'ik' | 'fk') => void;
+  onHeightPresetRequested?: (height: number) => void;
 }
+
+export interface ElementGroupDef {
+  id: string;
+  name: string;
+  icon: string;
+  jointIds: AnatomicalJointId[];
+}
+
+export const ELEMENT_GROUPS: ElementGroupDef[] = [
+  {
+    id: 'spine',
+    name: 'Spine & Head',
+    icon: '👤',
+    jointIds: ['head', 'neck', 'chest']
+  },
+  {
+    id: 'arm_l',
+    name: 'Left Arm',
+    icon: '💪',
+    jointIds: ['shoulder_l', 'elbow_l', 'wrist_l', 'hand_l']
+  },
+  {
+    id: 'arm_r',
+    name: 'Right Arm',
+    icon: '💪',
+    jointIds: ['shoulder_r', 'elbow_r', 'wrist_r', 'hand_r']
+  },
+  {
+    id: 'leg_l',
+    name: 'Left Leg',
+    icon: '🦵',
+    jointIds: ['hip_l', 'knee_l', 'ankle_l', 'foot_l']
+  },
+  {
+    id: 'leg_r',
+    name: 'Right Leg',
+    icon: '🦵',
+    jointIds: ['hip_r', 'knee_r', 'ankle_r', 'foot_r']
+  }
+];
 
 /**
  * Interpolates joint positions smoothly between keyframes across time.
@@ -130,6 +174,21 @@ export class KeyframeTimeline {
   private playbackSpeed = 1.0;
   private kinematicsMode: 'ik' | 'fk' = 'ik';
 
+  // Zoom level (1.0 = 100%)
+  private zoomLevel = 1.0;
+
+  // Collapsible tracks state
+  private isElementTracksExpanded = true;
+  private collapsedGroups: Set<string> = new Set();
+
+  // Keyframe dragging state
+  private isDraggingKeyframe = false;
+  private draggedKeyframeIndex: number | null = null;
+  private dragStartClientX = 0;
+  private dragStartTime = 0;
+  private hasDraggedKeyframe = false;
+  private dragGhostElement: HTMLElement | null = null;
+
   // Static clipboard across animation clips and orientations
   private static clipboardKeyframe: {
     name?: string;
@@ -211,6 +270,162 @@ export class KeyframeTimeline {
     this.events.onTimeChange?.(this.currentTime);
   }
 
+  public getDuration(): number {
+    return this.duration;
+  }
+
+  /**
+   * Sets the animation timeline duration/length in seconds.
+   */
+  public setDuration(newDuration: number, scaleKeyframes = false): void {
+    const clamped = Math.max(0.1, Math.min(60.0, Math.round(newDuration * 100) / 100));
+    const oldDuration = this.duration;
+    if (Math.abs(oldDuration - clamped) < 0.005) return;
+
+    this.duration = clamped;
+    const track = this.getActiveTrack();
+    if (track) {
+      if (scaleKeyframes && oldDuration > 0) {
+        const scale = clamped / oldDuration;
+        for (const kf of track.keyframes) {
+          kf.time = Math.round(kf.time * scale * 100) / 100;
+        }
+        track.keyframes.sort((a, b) => a.time - b.time);
+      }
+      track.duration = clamped;
+    }
+
+    if (this.currentTime > clamped) {
+      this.currentTime = clamped;
+    }
+
+    // Update DOM inputs and labels
+    const durInput = this.container.querySelector('.input-timeline-duration') as HTMLInputElement | null;
+    if (durInput) durInput.value = clamped.toFixed(2);
+    const durLabel = this.container.querySelector('#time-duration-label');
+    if (durLabel) durLabel.textContent = `${clamped.toFixed(2)}s`;
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+    this.evaluatePoseAtCurrentTime();
+
+    this.events.onDurationChanged?.(clamped);
+  }
+
+  /**
+   * Moves a keyframe at fromIndex to a new timestamp.
+   */
+  public moveKeyframe(fromIndex: number, newTime: number): boolean {
+    const track = this.getActiveTrack();
+    if (!track || !track.keyframes[fromIndex]) return false;
+
+    const clampedTime = Math.max(0, Math.min(this.duration, Math.round(newTime * 100) / 100));
+    const kf = track.keyframes[fromIndex];
+    const oldTime = kf.time;
+    if (Math.abs(oldTime - clampedTime) < 0.005) return false;
+
+    kf.time = clampedTime;
+    track.keyframes.sort((a, b) => a.time - b.time);
+    this.selectedKeyframeIndex = track.keyframes.indexOf(kf);
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+    this.evaluatePoseAtCurrentTime();
+
+    this.events.onKeyframeMoved?.(this.selectedKeyframeIndex, oldTime, clampedTime);
+    return true;
+  }
+
+  // Zoom options API
+  public getZoom(): number {
+    return this.zoomLevel;
+  }
+
+  public setZoom(zoom: number): void {
+    const clamped = Math.max(0.5, Math.min(5.0, Math.round(zoom * 100) / 100));
+    if (Math.abs(this.zoomLevel - clamped) < 0.01) return;
+    this.zoomLevel = clamped;
+
+    const resetBtn = this.container.querySelector('.btn-timeline-zoom-reset');
+    if (resetBtn) resetBtn.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+
+    const trackWidth = this.getTrackWidth();
+    const totalWidth = 200 + trackWidth;
+    const scrollContent = this.container.querySelector('.timeline-scroll-content') as HTMLElement | null;
+    if (scrollContent) scrollContent.style.minWidth = `${totalWidth}px`;
+
+    const rulerEl = this.container.querySelector('.timeline-ruler') as HTMLElement | null;
+    if (rulerEl) {
+      rulerEl.style.width = `${trackWidth}px`;
+      rulerEl.style.minWidth = `${trackWidth}px`;
+    }
+    const masterLane = this.container.querySelector('.master-track-lane') as HTMLElement | null;
+    if (masterLane) {
+      masterLane.style.width = `${trackWidth}px`;
+      masterLane.style.minWidth = `${trackWidth}px`;
+    }
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+
+    this.events.onZoomChanged?.(this.zoomLevel);
+  }
+
+  public zoomIn(): void {
+    const nextZoom = this.zoomLevel < 1.0 ? this.zoomLevel + 0.25 : this.zoomLevel + 0.5;
+    this.setZoom(nextZoom);
+  }
+
+  public zoomOut(): void {
+    const nextZoom = this.zoomLevel <= 1.0 ? this.zoomLevel - 0.25 : this.zoomLevel - 0.5;
+    this.setZoom(nextZoom);
+  }
+
+  public resetZoom(): void {
+    this.setZoom(1.0);
+  }
+
+  // Collapsible tracks API
+  public toggleElementTracks(expanded?: boolean): void {
+    this.isElementTracksExpanded = expanded !== undefined ? expanded : !this.isElementTracksExpanded;
+    this.renderElementTracks();
+  }
+
+  public toggleElementGroup(groupId: string, expanded?: boolean): void {
+    if (expanded === true) {
+      this.collapsedGroups.delete(groupId);
+    } else if (expanded === false) {
+      this.collapsedGroups.add(groupId);
+    } else {
+      if (this.collapsedGroups.has(groupId)) {
+        this.collapsedGroups.delete(groupId);
+      } else {
+        this.collapsedGroups.add(groupId);
+      }
+    }
+    this.renderElementTracks();
+  }
+
+  public expandAllElementGroups(): void {
+    this.isElementTracksExpanded = true;
+    this.collapsedGroups.clear();
+    this.renderElementTracks();
+  }
+
+  public collapseAllElementGroups(): void {
+    this.isElementTracksExpanded = true;
+    for (const g of ELEMENT_GROUPS) {
+      this.collapsedGroups.add(g.id);
+    }
+    this.renderElementTracks();
+  }
+
   public getIsPlaying(): boolean {
     return this.isPlaying;
   }
@@ -259,6 +474,7 @@ export class KeyframeTimeline {
 
     this.renderRuler();
     this.renderKeyframeTrack();
+    this.renderElementTracks();
     this.updatePlayheadPosition();
     this.events.onKeyframeAdded?.(t, clonedJoints);
     if (this.selectedKeyframeIndex !== null) {
@@ -292,6 +508,7 @@ export class KeyframeTimeline {
       this.selectedKeyframeIndex = null;
       this.renderRuler();
       this.renderKeyframeTrack();
+      this.renderElementTracks();
       this.evaluatePoseAtCurrentTime();
       return;
     }
@@ -304,6 +521,7 @@ export class KeyframeTimeline {
       this.events.onKeyframeDeleted?.(idx);
       this.renderRuler();
       this.renderKeyframeTrack();
+      this.renderElementTracks();
       this.evaluatePoseAtCurrentTime();
     }
   }
@@ -468,17 +686,17 @@ export class KeyframeTimeline {
   private syncActiveTrack(): void {
     const track = this.getActiveTrack();
     if (track) {
-      this.duration = Math.max(0.2, track.duration || 1.0);
+      this.duration = Math.max(0.1, track.duration || 1.0);
     } else {
       this.duration = 1.0;
     }
   }
 
   private getTrackWidth(): number {
-    const containerWidth = this.container.clientWidth || 600;
-    const minWidthByDuration = Math.round(this.duration * 240);
-    const minTrackWidth = Math.max(700, minWidthByDuration);
-    return Math.max(minTrackWidth, containerWidth - 220);
+    const containerWidth = (this.container.clientWidth || 600) - 220;
+    const basePixelsPerSec = 260 * this.zoomLevel;
+    const minWidthByDuration = Math.round(this.duration * basePixelsPerSec);
+    return Math.max(minWidthByDuration, Math.round(containerWidth * this.zoomLevel));
   }
 
   public render(): void {
@@ -499,8 +717,28 @@ export class KeyframeTimeline {
           <button class="tool-btn btn-timeline-step-fwd" title="Next Frame (1/30s)">⏭</button>
           <div class="tool-separator"></div>
           <span class="timeline-time-display">
-            <span id="time-current-label">${this.currentTime.toFixed(2)}s</span> / <span id="time-duration-label">${this.duration.toFixed(2)}s</span>
+            <span id="time-current-label">${this.currentTime.toFixed(2)}s</span>
           </span>
+          <div class="tool-separator"></div>
+          <div style="display:flex; align-items:center; gap:4px;" title="Set total animation length in seconds (Press Enter to apply)">
+            <span style="font-size:0.7rem; color:var(--studio-text-muted); font-weight:600;">Length:</span>
+            <input type="number" class="studio-input input-timeline-duration" min="0.1" max="60.0" step="0.1" value="${this.duration.toFixed(2)}" style="width:52px; padding:2px 4px; font-size:0.72rem; text-align:center; font-family:var(--studio-font-mono); background:#020617; border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:#f8fafc;" />
+            <span style="font-size:0.7rem; color:var(--studio-text-muted);">s</span>
+          </div>
+          <div class="tool-separator"></div>
+          <div class="timeline-zoom-controls" style="display:flex; align-items:center; gap:2px;">
+            <span style="font-size:0.7rem; color:var(--studio-text-muted); font-weight:600; margin-right:2px;">Zoom:</span>
+            <button class="tool-btn btn-timeline-zoom-out" title="Zoom Out Timeline (Ctrl + MouseWheel)">🔍−</button>
+            <button class="tool-btn btn-timeline-zoom-reset" title="Reset Zoom to 100%" style="font-size:0.65rem; font-family:var(--studio-font-mono); padding:2px 6px;">${Math.round(this.zoomLevel * 100)}%</button>
+            <button class="tool-btn btn-timeline-zoom-in" title="Zoom In Timeline (Ctrl + MouseWheel)">🔍＋</button>
+          </div>
+          <div class="tool-separator"></div>
+          <div class="timeline-height-controls" style="display:flex; align-items:center; gap:2px;" title="Adjust timeline panel height (S: 140px, M: 220px, L: 360px). You can also drag the top splitter bar!">
+            <span style="font-size:0.7rem; color:var(--studio-text-muted); font-weight:600; margin-right:2px;">Height:</span>
+            <button class="tool-btn btn-timeline-height-s" title="Compact Height (140px)" style="font-size:0.65rem; padding:2px 5px; font-weight:700;">S</button>
+            <button class="tool-btn btn-timeline-height-m" title="Default Height (220px)" style="font-size:0.65rem; padding:2px 5px; font-weight:700;">M</button>
+            <button class="tool-btn btn-timeline-height-l" title="Expanded Height (360px)" style="font-size:0.65rem; padding:2px 5px; font-weight:700;">L</button>
+          </div>
         </div>
 
         <div class="tool-group">
@@ -572,7 +810,7 @@ export class KeyframeTimeline {
             <div class="timeline-ruler" style="width:${trackWidth}px; min-width:${trackWidth}px;">
               <canvas id="ruler-canvas" style="display:block; width:100%; height:100%;"></canvas>
               <!-- Draggable Playhead Scrubber -->
-              <div id="playhead-line" style="position:absolute; top:0; bottom:-500px; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:0px;">
+              <div id="playhead-line" style="position:absolute; top:0; bottom:0; height:100%; min-height:100%; width:2px; background:#ef4444; z-index:50; pointer-events:none; left:0px;">
                 <div class="playhead-head"></div>
               </div>
             </div>
@@ -588,6 +826,11 @@ export class KeyframeTimeline {
                 <!-- Diamonds populated dynamically -->
               </div>
             </div>
+
+            <!-- Collapsible Bone & Element Tracks Container -->
+            <div class="timeline-element-tracks-container">
+              <!-- Element rows populated dynamically by renderElementTracks() -->
+            </div>
           </div>
         </div>
       </div>
@@ -595,6 +838,7 @@ export class KeyframeTimeline {
 
     this.renderRuler();
     this.renderKeyframeTrack();
+    this.renderElementTracks();
     this.bindDOMEvents();
     this.updatePlayheadPosition();
   }
@@ -616,10 +860,10 @@ export class KeyframeTimeline {
     ctx.fillStyle = '#94a3b8';
     ctx.font = '10px monospace';
 
-    // Step resolution based on width
-    const step = pixelsPerSec > 250 ? 0.05 : (pixelsPerSec > 120 ? 0.1 : 0.2);
+    // Step resolution based on zoom and duration
+    const step = pixelsPerSec > 400 ? 0.05 : (pixelsPerSec > 180 ? 0.1 : (pixelsPerSec > 80 ? 0.2 : 0.5));
 
-    for (let t = 0; t <= this.duration + 0.01; t += step) {
+    for (let t = 0; t <= this.duration + 0.001; t += step) {
       const x = Math.round(t * pixelsPerSec);
       const isMajor = Math.abs(t - Math.round(t)) < 0.01;
       const isHalf = Math.abs(t * 2 - Math.round(t * 2)) < 0.01;
@@ -653,7 +897,7 @@ export class KeyframeTimeline {
         <div class="keyframe-diamond ${isSelected ? 'selected' : ''}"
           data-index="${idx}"
           data-time="${k.time}"
-          title="${poseTitle} (Click to jump / Del to delete)"
+          title="${poseTitle} (Click to jump / Drag to move time / Del to delete)"
           style="left:${leftPx - 6}px;">
         </div>
         ${k.name ? `
@@ -664,20 +908,206 @@ export class KeyframeTimeline {
       `;
     }).join('');
 
-    // Bind keyframe clicks
+    // Bind mousedown for dragging & clicking master keyframe diamonds
     lane.querySelectorAll('.keyframe-diamond').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = parseInt(el.getAttribute('data-index')!, 10);
-        this.selectedKeyframeIndex = idx;
-        const k = keyframes[idx];
-        if (k) {
-          this.setTime(k.time);
-          this.renderKeyframeTrack();
-          this.events.onKeyframeSelected?.(idx, k);
+      el.addEventListener('mousedown', (e) => {
+        if ((e as MouseEvent).button === 0) {
+          this.startKeyframeDrag(e as MouseEvent, el as HTMLElement);
         }
       });
     });
+  }
+
+  private renderElementTracks(): void {
+    const container = this.container.querySelector('.timeline-element-tracks-container') as HTMLElement;
+    if (!container) return;
+
+    const track = this.getActiveTrack();
+    const keyframes = track?.keyframes || [];
+    const trackWidth = this.getTrackWidth();
+    const pixelsPerSec = trackWidth / this.duration;
+
+    // Evaluate pose at playhead time for realtime header badges
+    const currentPosed = interpolateJointPoses(
+      keyframes,
+      this.currentTime,
+      this.duration,
+      this.isLooping,
+      this.restJoints
+    );
+
+    let html = `
+      <div class="timeline-elements-header-row">
+        <div class="timeline-row-header btn-toggle-all-elements" style="justify-content:space-between; cursor:pointer;" title="Click to toggle all bone element tracks">
+          <span style="font-size:0.68rem; font-weight:700; color:#94a3b8; display:flex; align-items:center; gap:5px;">
+            <span>${this.isElementTracksExpanded ? '▼' : '▶'}</span>
+            <span>Bone & Element Tracks</span>
+          </span>
+          <div style="display:flex; gap:4px;" onclick="event.stopPropagation();">
+            <button class="btn-studio btn-timeline-collapse-all" style="font-size:0.56rem; padding:1px 5px;" title="Collapse all element groups">Collapse</button>
+            <button class="btn-studio btn-timeline-expand-all" style="font-size:0.56rem; padding:1px 5px;" title="Expand all element groups">Expand</button>
+          </div>
+        </div>
+        <div class="master-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px; border-bottom:1px solid rgba(148,163,184,0.1); background:rgba(2,6,23,0.3);"></div>
+      </div>
+    `;
+
+    if (this.isElementTracksExpanded) {
+      for (const group of ELEMENT_GROUPS) {
+        const isCollapsed = this.collapsedGroups.has(group.id);
+
+        // Count how many joints in this group are moved from rest at current playhead
+        let modifiedInGroupCount = 0;
+        for (const jId of group.jointIds) {
+          const rest = this.restJoints[jId] || { x: 0, y: 0 };
+          const cur = currentPosed[jId] || rest;
+          if (Math.hypot(cur.x - rest.x, cur.y - rest.y) >= 1) {
+            modifiedInGroupCount++;
+          }
+        }
+
+        html += `
+          <div class="timeline-group-row">
+            <div class="timeline-group-header btn-toggle-group" data-group="${group.id}">
+              <span style="display:flex; align-items:center; gap:5px;">
+                <span>${isCollapsed ? '▶' : '▼'}</span>
+                <span>${group.icon} ${group.name}</span>
+                <span style="font-size:0.55rem; color:#64748b; font-weight:500;">(${group.jointIds.length})</span>
+              </span>
+              <span style="font-size:0.55rem; color:${modifiedInGroupCount > 0 ? '#38bdf8' : '#64748b'}; font-weight:600;">
+                ${modifiedInGroupCount > 0 ? `${modifiedInGroupCount} active` : 'Rest'}
+              </span>
+            </div>
+            <div class="master-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px; background:rgba(15,23,42,0.3);"></div>
+          </div>
+        `;
+
+        if (!isCollapsed) {
+          for (const jointId of group.jointIds) {
+            const jointDef = ANATOMICAL_JOINTS.find(j => j.id === jointId) || {
+              id: jointId,
+              name: jointId,
+              color: '#38bdf8'
+            };
+
+            const rest = this.restJoints[jointId] || { x: 0, y: 0 };
+            const cur = currentPosed[jointId] || rest;
+            const curDx = Math.round(cur.x - rest.x);
+            const curDy = Math.round(cur.y - rest.y);
+            const curDist = Math.round(Math.hypot(curDx, curDy));
+            const isCurMoved = curDist >= 1;
+
+            html += `
+              <div class="timeline-element-row" data-joint="${jointId}">
+                <div class="timeline-element-header" title="${jointDef.name} (${jointId})">
+                  <span style="display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis;">
+                    <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${jointDef.color}; flex-shrink:0;"></span>
+                    <span style="overflow:hidden; text-overflow:ellipsis;">${jointDef.name}</span>
+                  </span>
+                  <span class="element-change-badge ${isCurMoved ? 'moved' : 'rest'}">
+                    ${isCurMoved ? `Δ ${curDx >= 0 ? '+' : ''}${curDx}, ${curDy >= 0 ? '+' : ''}${curDy}` : 'Rest'}
+                  </span>
+                </div>
+                <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                  ${keyframes.map((k, idx) => {
+                    const leftPx = Math.round(k.time * pixelsPerSec);
+                    const pos = k.joints[jointId] || rest;
+                    const dx = Math.round(pos.x - rest.x);
+                    const dy = Math.round(pos.y - rest.y);
+                    const dist = Math.round(Math.hypot(dx, dy));
+                    const isModified = dist >= 1;
+
+                    const prevK = idx > 0 ? keyframes[idx - 1] : undefined;
+                    const prevPos = prevK ? (prevK.joints[jointId] || rest) : undefined;
+                    const pdx = prevPos ? Math.round(pos.x - prevPos.x) : 0;
+                    const pdy = prevPos ? Math.round(pos.y - prevPos.y) : 0;
+
+                    const desc = `${jointDef.name} @ ${k.time.toFixed(2)}s:\n` +
+                      `• Pos: (${Math.round(pos.x)}, ${Math.round(pos.y)})\n` +
+                      `• Shift from Rest: X: ${dx >= 0 ? '+' : ''}${dx}px, Y: ${dy >= 0 ? '+' : ''}${dy}px (${isModified ? `${dist}px offset` : 'At Rest'})\n` +
+                      (prevPos ? `• Δ from Prev Keyframe: X: ${pdx >= 0 ? '+' : ''}${pdx}px, Y: ${pdy >= 0 ? '+' : ''}${pdy}px\n` : '') +
+                      `[Click to jump / Drag to move keyframe]`;
+
+                    return `
+                      <div class="element-key-marker ${isModified ? 'modified' : 'at-rest'}"
+                        data-index="${idx}"
+                        data-time="${k.time}"
+                        data-joint="${jointId}"
+                        title="${desc}"
+                        style="left:${leftPx - 5}px; background:${jointDef.color};">
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }
+        }
+      }
+    }
+
+    container.innerHTML = html;
+
+    // Bind element tracks toggle events
+    container.querySelector('.btn-toggle-all-elements')?.addEventListener('click', () => {
+      this.toggleElementTracks();
+    });
+
+    container.querySelector('.btn-timeline-collapse-all')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.collapseAllElementGroups();
+    });
+
+    container.querySelector('.btn-timeline-expand-all')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.expandAllElementGroups();
+    });
+
+    container.querySelectorAll('.btn-toggle-group').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const gid = btn.getAttribute('data-group')!;
+        this.toggleElementGroup(gid);
+      });
+    });
+
+    // Bind marker clicks / drag starts
+    container.querySelectorAll('.element-key-marker').forEach(marker => {
+      marker.addEventListener('mousedown', (e) => {
+        if ((e as MouseEvent).button === 0) {
+          this.startKeyframeDrag(e as MouseEvent, marker as HTMLElement);
+        }
+      });
+    });
+  }
+
+  private startKeyframeDrag(e: MouseEvent, targetEl: HTMLElement): void {
+    e.stopPropagation();
+    e.preventDefault();
+    const idx = parseInt(targetEl.getAttribute('data-index')!, 10);
+    const track = this.getActiveTrack();
+    if (!track || !track.keyframes[idx]) return;
+
+    this.isDraggingKeyframe = true;
+    this.draggedKeyframeIndex = idx;
+    this.dragStartClientX = e.clientX;
+    this.dragStartTime = track.keyframes[idx].time;
+    this.hasDraggedKeyframe = false;
+
+    this.selectedKeyframeIndex = idx;
+    targetEl.classList.add('dragging');
+
+    // Create or show drag badge
+    let badge = document.querySelector('.timeline-drag-badge') as HTMLElement | null;
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'timeline-drag-badge';
+      document.body.appendChild(badge);
+    }
+    badge.textContent = `${this.dragStartTime.toFixed(2)}s`;
+    badge.style.display = 'block';
+    badge.style.left = `${e.clientX}px`;
+    badge.style.top = `${e.clientY - 24}px`;
+    this.dragGhostElement = badge;
   }
 
   private updatePlayheadPosition(): void {
@@ -691,6 +1121,31 @@ export class KeyframeTimeline {
 
     playhead.style.left = `${Math.round(x)}px`;
     if (timeLabel) timeLabel.textContent = `${this.currentTime.toFixed(2)}s`;
+
+    // Realtime update of element track headers' change badges
+    const track = this.getActiveTrack();
+    if (track && this.isElementTracksExpanded) {
+      const currentPosed = interpolateJointPoses(
+        track.keyframes,
+        this.currentTime,
+        this.duration,
+        this.isLooping,
+        this.restJoints
+      );
+      this.container.querySelectorAll('.timeline-element-row').forEach(row => {
+        const jointId = row.getAttribute('data-joint') as AnatomicalJointId;
+        const badge = row.querySelector('.element-change-badge');
+        if (jointId && badge && currentPosed[jointId]) {
+          const rest = this.restJoints[jointId] || { x: 0, y: 0 };
+          const pos = currentPosed[jointId];
+          const dx = Math.round(pos.x - rest.x);
+          const dy = Math.round(pos.y - rest.y);
+          const isMoved = Math.hypot(dx, dy) >= 1;
+          badge.className = `element-change-badge ${isMoved ? 'moved' : 'rest'}`;
+          badge.textContent = isMoved ? `Δ ${dx >= 0 ? '+' : ''}${dx}, ${dy >= 0 ? '+' : ''}${dy}` : 'Rest';
+        }
+      });
+    }
   }
 
   private bindDOMEvents(): void {
@@ -711,6 +1166,57 @@ export class KeyframeTimeline {
     this.container.querySelector('.btn-timeline-step-back')?.addEventListener('click', () => {
       this.setTime(this.currentTime - 1 / 30);
     });
+
+    // Duration / Length Input
+    const durInput = this.container.querySelector('.input-timeline-duration') as HTMLInputElement | null;
+    durInput?.addEventListener('change', () => {
+      const val = parseFloat(durInput.value);
+      if (!isNaN(val) && val > 0) {
+        this.setDuration(val);
+      } else {
+        durInput.value = this.duration.toFixed(2);
+      }
+    });
+    durInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        durInput.blur();
+      }
+    });
+
+    // Zoom Controls
+    this.container.querySelector('.btn-timeline-zoom-in')?.addEventListener('click', () => {
+      this.zoomIn();
+    });
+    this.container.querySelector('.btn-timeline-zoom-out')?.addEventListener('click', () => {
+      this.zoomOut();
+    });
+    this.container.querySelector('.btn-timeline-zoom-reset')?.addEventListener('click', () => {
+      this.resetZoom();
+    });
+
+    // Height Presets (S / M / L)
+    this.container.querySelector('.btn-timeline-height-s')?.addEventListener('click', () => {
+      this.events.onHeightPresetRequested?.(140);
+    });
+    this.container.querySelector('.btn-timeline-height-m')?.addEventListener('click', () => {
+      this.events.onHeightPresetRequested?.(220);
+    });
+    this.container.querySelector('.btn-timeline-height-l')?.addEventListener('click', () => {
+      this.events.onHeightPresetRequested?.(360);
+    });
+
+    // MouseWheel Zooming (Ctrl / Meta + Wheel)
+    const viewport = this.container.querySelector('.timeline-viewport') as HTMLElement | null;
+    viewport?.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          this.zoomIn();
+        } else {
+          this.zoomOut();
+        }
+      }
+    }, { passive: false });
 
     // Clip Switcher
     const clipSelect = this.container.querySelector('.select-timeline-clip') as HTMLSelectElement;
@@ -786,11 +1292,77 @@ export class KeyframeTimeline {
     window.addEventListener('mousemove', (e) => {
       if (this.isDraggingPlayhead) {
         this.scrubFromEvent(e);
+      } else if (this.isDraggingKeyframe && this.draggedKeyframeIndex !== null) {
+        const dx = e.clientX - this.dragStartClientX;
+        if (Math.abs(dx) > 3) {
+          this.hasDraggedKeyframe = true;
+        }
+        if (this.hasDraggedKeyframe) {
+          const track = this.getActiveTrack();
+          if (track && track.keyframes[this.draggedKeyframeIndex]) {
+            const trackWidth = this.getTrackWidth();
+            const pixelsPerSec = trackWidth / this.duration;
+            const dt = dx / pixelsPerSec;
+            let newTime = Math.max(0, Math.min(this.duration, this.dragStartTime + dt));
+            newTime = Math.round(newTime * 100) / 100;
+
+            const kf = track.keyframes[this.draggedKeyframeIndex];
+            kf.time = newTime;
+            this.currentTime = newTime;
+
+            if (this.dragGhostElement) {
+              this.dragGhostElement.textContent = `${newTime.toFixed(2)}s`;
+              this.dragGhostElement.style.left = `${e.clientX}px`;
+              this.dragGhostElement.style.top = `${e.clientY - 24}px`;
+            }
+
+            // Visual feedback on playhead
+            this.updatePlayheadPosition();
+            this.evaluatePoseAtCurrentTime();
+          }
+        }
       }
     });
 
     window.addEventListener('mouseup', () => {
-      this.isDraggingPlayhead = false;
+      if (this.isDraggingPlayhead) {
+        this.isDraggingPlayhead = false;
+      }
+
+      if (this.isDraggingKeyframe) {
+        if (this.dragGhostElement) {
+          this.dragGhostElement.remove();
+          this.dragGhostElement = null;
+        }
+
+        const track = this.getActiveTrack();
+        if (track && this.draggedKeyframeIndex !== null && track.keyframes[this.draggedKeyframeIndex]) {
+          const kf = track.keyframes[this.draggedKeyframeIndex];
+          if (this.hasDraggedKeyframe) {
+            const oldTime = this.dragStartTime;
+            const newTime = kf.time;
+            track.keyframes.sort((a, b) => a.time - b.time);
+            this.selectedKeyframeIndex = track.keyframes.indexOf(kf);
+
+            this.events.onKeyframeMoved?.(this.selectedKeyframeIndex, oldTime, newTime);
+            this.renderRuler();
+            this.renderKeyframeTrack();
+            this.renderElementTracks();
+            this.updatePlayheadPosition();
+          } else {
+            // Click without dragging
+            this.setTime(kf.time);
+            this.renderKeyframeTrack();
+            this.renderElementTracks();
+            this.events.onKeyframeSelected?.(this.draggedKeyframeIndex, kf);
+          }
+        }
+
+        this.container.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+        this.isDraggingKeyframe = false;
+        this.draggedKeyframeIndex = null;
+        this.hasDraggedKeyframe = false;
+      }
     });
 
     // Global timeline keyboard shortcuts (Space: play/pause, Del: delete, Ctrl+C: copy, Ctrl+V: paste, K: kinematics)
@@ -854,5 +1426,6 @@ export class KeyframeTimeline {
 
   public destroy(): void {
     if (this.animTimerId) cancelAnimationFrame(this.animTimerId);
+    if (this.dragGhostElement) this.dragGhostElement.remove();
   }
 }

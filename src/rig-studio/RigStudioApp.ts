@@ -157,9 +157,31 @@ export class RigStudioApp {
   private readonly MAX_HISTORY_STEPS = 50;
   private isPerformingUndoRedo = false;
 
+  // Adjustable Panel Sizes & Dock State (Persisted)
+  private leftSidebarWidth = 240;
+  private rightSidebarWidth = 260;
+  private timelineHeight = 220;
+
   constructor(container: HTMLElement) {
     this.container = container;
     this.bridge = new RigStudioBridge();
+
+    // Restore saved panel dimensions
+    const savedLeftW = this.safeGetStorage('questforge_rig_left_sidebar_width');
+    if (savedLeftW) {
+      const val = parseInt(savedLeftW, 10);
+      if (!isNaN(val) && val >= 160 && val <= 600) this.leftSidebarWidth = val;
+    }
+    const savedRightW = this.safeGetStorage('questforge_rig_right_sidebar_width');
+    if (savedRightW) {
+      const val = parseInt(savedRightW, 10);
+      if (!isNaN(val) && val >= 180 && val <= 700) this.rightSidebarWidth = val;
+    }
+    const savedTimeH = this.safeGetStorage('questforge_rig_timeline_height');
+    if (savedTimeH) {
+      const val = parseInt(savedTimeH, 10);
+      if (!isNaN(val) && val >= 90 && val <= 600) this.timelineHeight = val;
+    }
 
     this.initAnimations();
     this.renderLayout();
@@ -169,7 +191,7 @@ export class RigStudioApp {
     if (!this.bridge.isEmbeddedMode) {
       let restored = false;
       try {
-        const saved = localStorage.getItem('questforge_rig_project_latest');
+        const saved = this.safeGetStorage('questforge_rig_project_latest');
         if (saved) {
           const project = JSON.parse(saved);
           if (project && (project.format === 'questforge-rig-project' || project.views)) {
@@ -278,14 +300,17 @@ export class RigStudioApp {
         <input type="file" id="input-load-rig-json" accept=".json" style="display:none;" />
 
         <!-- Left Panel: Import & Joint Tools -->
-        <aside class="studio-left-sidebar" id="left-sidebar">
+        <aside class="studio-left-sidebar" id="left-sidebar" style="width:${this.leftSidebarWidth}px;">
           <!-- Dynamically updated -->
         </aside>
+
+        <!-- Left Resizer Splitter -->
+        <div class="studio-resizer studio-resizer-x" id="resizer-left" title="Drag to adjust left panel width (Double-click to reset)"></div>
 
         <!-- Center Workspace Canvas -->
         <section class="studio-workspace" id="center-workspace" style="position:relative; overflow:hidden;">
           <!-- Viewport 1: Skeleton Rig Canvas -->
-          <div id="rig-viewport-container" style="position:absolute; inset:0; bottom:180px; display:block;">
+          <div id="rig-viewport-container" style="position:absolute; inset:0; bottom:${(this.activeStudioMode === 'rig' && this.isTimelineVisible) ? `${this.timelineHeight}px` : '0px'}; display:block;">
             <div class="workspace-hud">
               <span>View: <b id="hud-active-view" style="color:#38bdf8;">FRONT</b></span>
               <span>Tool: <b id="hud-active-tool">SELECT</b></span>
@@ -340,12 +365,20 @@ export class RigStudioApp {
             </div>
           </div>
 
-          <!-- Viewport 3: Animation Timeline Dock -->
-          <div id="animation-timeline-container" style="display:flex;"></div>
+          <!-- Viewport 3: Animation Timeline Dock with Draggable Top Resizer -->
+          <div id="animation-timeline-container" style="display:${(this.activeStudioMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none'}; height:${this.timelineHeight}px; flex-direction:column;">
+            <div class="studio-resizer studio-resizer-y" id="resizer-bottom" title="Drag up or down to adjust timeline height (Double-click to reset to 220px)">
+              <div class="resizer-grip-h"></div>
+            </div>
+            <div id="timeline-inner-host" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;"></div>
+          </div>
         </section>
 
+        <!-- Right Resizer Splitter -->
+        <div class="studio-resizer studio-resizer-x" id="resizer-right" title="Drag to adjust right panel width (Double-click to reset)"></div>
+
         <!-- Right Panel: Joints, Envelopes & Parts -->
-        <aside class="studio-right-sidebar" id="right-sidebar">
+        <aside class="studio-right-sidebar" id="right-sidebar" style="width:${this.rightSidebarWidth}px;">
           <!-- Dynamically updated -->
         </aside>
       </main>
@@ -396,6 +429,9 @@ export class RigStudioApp {
   }
 
   private bindDOMEvents(): void {
+    // Bind draggable splitters for left panel, right panel, and timeline dock
+    this.bindResizerEvents();
+
     // Initialize Animation Timeline Dock for all-in-one Rig & Animation workspace
     this.initTimelineIfNeeded();
 
@@ -967,10 +1003,13 @@ export class RigStudioApp {
 
     if (rigViewport) {
       rigViewport.style.display = (targetMode === 'rig') ? 'block' : 'none';
-      rigViewport.style.bottom = (targetMode === 'rig' && this.isTimelineVisible) ? '180px' : '0px';
+      rigViewport.style.bottom = (targetMode === 'rig' && this.isTimelineVisible) ? `${this.timelineHeight}px` : '0px';
     }
     if (slicerViewport) slicerViewport.style.display = targetMode === 'slicer' ? 'flex' : 'none';
-    if (timelineContainer) timelineContainer.style.display = (targetMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none';
+    if (timelineContainer) {
+      timelineContainer.style.display = (targetMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none';
+      timelineContainer.style.height = `${this.timelineHeight}px`;
+    }
 
     this.renderCanvasAlignmentBar();
 
@@ -1013,16 +1052,208 @@ export class RigStudioApp {
     const btn = this.container.querySelector('#btn-toggle-timeline');
 
     if (rigViewport) {
-      rigViewport.style.bottom = (this.activeStudioMode === 'rig' && this.isTimelineVisible) ? '180px' : '0px';
+      rigViewport.style.bottom = (this.activeStudioMode === 'rig' && this.isTimelineVisible) ? `${this.timelineHeight}px` : '0px';
     }
     if (timelineContainer) {
       timelineContainer.style.display = (this.activeStudioMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none';
+      timelineContainer.style.height = `${this.timelineHeight}px`;
     }
     if (btn) {
       btn.classList.toggle('active', this.isTimelineVisible);
     }
     this.canvas?.resizeCanvas();
     this.canvas?.render();
+  }
+
+  public setLeftSidebarWidth(width: number): void {
+    this.leftSidebarWidth = Math.max(160, Math.min(600, Math.round(width)));
+    const sidebar = this.container.querySelector('#left-sidebar') as HTMLElement | null;
+    if (sidebar) {
+      sidebar.style.width = `${this.leftSidebarWidth}px`;
+    }
+    this.canvas?.resizeCanvas();
+    this.canvas?.render();
+    this.slicer?.resizeCanvas();
+  }
+
+  public getLeftSidebarWidth(): number {
+    return this.leftSidebarWidth;
+  }
+
+  public setRightSidebarWidth(width: number): void {
+    this.rightSidebarWidth = Math.max(180, Math.min(700, Math.round(width)));
+    const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement | null;
+    if (sidebar) {
+      sidebar.style.width = `${this.rightSidebarWidth}px`;
+    }
+    this.canvas?.resizeCanvas();
+    this.canvas?.render();
+    this.slicer?.resizeCanvas();
+  }
+
+  public getRightSidebarWidth(): number {
+    return this.rightSidebarWidth;
+  }
+
+  public setTimelineHeight(height: number): void {
+    const maxHeight = typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 150) : 600;
+    this.timelineHeight = Math.max(90, Math.min(maxHeight, Math.round(height)));
+    const timelineContainer = this.container.querySelector('#animation-timeline-container') as HTMLElement | null;
+    const rigViewport = this.container.querySelector('#rig-viewport-container') as HTMLElement | null;
+
+    if (timelineContainer) {
+      timelineContainer.style.height = `${this.timelineHeight}px`;
+    }
+    if (rigViewport && this.isTimelineVisible && this.activeStudioMode === 'rig') {
+      rigViewport.style.bottom = `${this.timelineHeight}px`;
+    }
+    this.canvas?.resizeCanvas();
+    this.canvas?.render();
+  }
+
+  public getTimelineHeight(): number {
+    return this.timelineHeight;
+  }
+
+  private safeGetStorage(key: string): string | null {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+        return localStorage.getItem(key);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  private safeSetStorage(key: string, value: string): void {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+        localStorage.setItem(key, value);
+      }
+    } catch (e) {}
+  }
+
+  private bindResizerEvents(): void {
+    const resizerLeft = this.container.querySelector('#resizer-left') as HTMLElement | null;
+    const resizerRight = this.container.querySelector('#resizer-right') as HTMLElement | null;
+    const resizerBottom = this.container.querySelector('#resizer-bottom') as HTMLElement | null;
+
+    // 1. Left Sidebar Resizer
+    if (resizerLeft) {
+      let isDraggingLeft = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      resizerLeft.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isDraggingLeft = true;
+        startX = e.clientX;
+        startWidth = this.leftSidebarWidth;
+        resizerLeft.classList.add('is-dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      resizerLeft.addEventListener('dblclick', () => {
+        this.setLeftSidebarWidth(240);
+        this.safeSetStorage('questforge_rig_left_sidebar_width', '240');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingLeft) return;
+        const dx = e.clientX - startX;
+        const newWidth = Math.max(160, Math.min(600, startWidth + dx));
+        this.setLeftSidebarWidth(newWidth);
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDraggingLeft) return;
+        isDraggingLeft = false;
+        resizerLeft.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this.safeSetStorage('questforge_rig_left_sidebar_width', String(this.leftSidebarWidth));
+      });
+    }
+
+    // 2. Right Sidebar Resizer
+    if (resizerRight) {
+      let isDraggingRight = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      resizerRight.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isDraggingRight = true;
+        startX = e.clientX;
+        startWidth = this.rightSidebarWidth;
+        resizerRight.classList.add('is-dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      resizerRight.addEventListener('dblclick', () => {
+        this.setRightSidebarWidth(260);
+        this.safeSetStorage('questforge_rig_right_sidebar_width', '260');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingRight) return;
+        const dx = startX - e.clientX;
+        const newWidth = Math.max(180, Math.min(700, startWidth + dx));
+        this.setRightSidebarWidth(newWidth);
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDraggingRight) return;
+        isDraggingRight = false;
+        resizerRight.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this.safeSetStorage('questforge_rig_right_sidebar_width', String(this.rightSidebarWidth));
+      });
+    }
+
+    // 3. Bottom Timeline Resizer
+    if (resizerBottom) {
+      let isDraggingBottom = false;
+      let startY = 0;
+      let startHeight = 0;
+
+      resizerBottom.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isDraggingBottom = true;
+        startY = e.clientY;
+        startHeight = this.timelineHeight;
+        resizerBottom.classList.add('is-dragging');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      resizerBottom.addEventListener('dblclick', () => {
+        this.setTimelineHeight(220);
+        this.safeSetStorage('questforge_rig_timeline_height', '220');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingBottom) return;
+        const dy = startY - e.clientY;
+        const maxHeight = typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 150) : 600;
+        const newHeight = Math.max(90, Math.min(maxHeight, startHeight + dy));
+        this.setTimelineHeight(newHeight);
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDraggingBottom) return;
+        isDraggingBottom = false;
+        resizerBottom.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this.safeSetStorage('questforge_rig_timeline_height', String(this.timelineHeight));
+      });
+    }
   }
 
   public getIsTimelineVisible(): boolean {
@@ -1708,8 +1939,8 @@ export class RigStudioApp {
     try {
       const dataStr = JSON.stringify(this.savedElements);
       const key = `questforge_slicer_elements_${this.characterName || 'default'}`;
-      localStorage.setItem(key, dataStr);
-      localStorage.setItem('questforge_slicer_elements_latest', dataStr);
+      this.safeSetStorage(key, dataStr);
+      this.safeSetStorage('questforge_slicer_elements_latest', dataStr);
     } catch (e) {
       console.warn('Could not save elements to localStorage:', e);
     }
@@ -4290,8 +4521,8 @@ export class RigStudioApp {
     // Keep localStorage backup as well
     try {
       const key = `questforge_rig_project_${this.characterName || 'default'}`;
-      localStorage.setItem(key, jsonStr);
-      localStorage.setItem('questforge_rig_project_latest', jsonStr);
+      this.safeSetStorage(key, jsonStr);
+      this.safeSetStorage('questforge_rig_project_latest', jsonStr);
     } catch (e: any) {
       console.warn('Failed to save rig project to localStorage backup:', e);
     }
@@ -4900,8 +5131,8 @@ export class RigStudioApp {
       try {
         const data = this.buildRigProjectData();
         const jsonStr = JSON.stringify(data);
-        localStorage.setItem(`questforge_rig_project_${this.characterName || 'default'}`, jsonStr);
-        localStorage.setItem('questforge_rig_project_latest', jsonStr);
+        this.safeSetStorage(`questforge_rig_project_${this.characterName || 'default'}`, jsonStr);
+        this.safeSetStorage('questforge_rig_project_latest', jsonStr);
       } catch (e) {
         console.warn('Could not auto-persist rig project to localStorage:', e);
       }
@@ -5428,7 +5659,7 @@ export class RigStudioApp {
   }
 
   private initTimelineIfNeeded(): void {
-    const container = this.container.querySelector('#animation-timeline-container') as HTMLElement;
+    const container = (this.container.querySelector('#timeline-inner-host') || this.container.querySelector('#animation-timeline-container')) as HTMLElement;
     if (!container) return;
 
     if (!this.timeline) {
@@ -5462,6 +5693,16 @@ export class RigStudioApp {
             this.renderRightSidebar();
             this.showToast('Keyframe deleted', 'info');
           },
+          onKeyframeMoved: (index, oldTime, newTime) => {
+            this.recordHistory('Move Keyframe');
+            this.renderRightSidebar();
+            this.showToast(`Keyframe moved to ${newTime.toFixed(2)}s`, 'info');
+          },
+          onDurationChanged: (duration) => {
+            this.recordHistory('Change Animation Length');
+            this.renderRightSidebar();
+            this.showToast(`Timeline length set to ${duration.toFixed(2)}s`, 'info');
+          },
           onKeyframeCopied: (keyframe) => {
             this.showToast('📋 Keyframe pose copied to clipboard', 'info');
           },
@@ -5488,6 +5729,11 @@ export class RigStudioApp {
           },
           onEnableSideRequested: (animName, side) => {
             this.enableSideForAnimation(animName, side);
+          },
+          onHeightPresetRequested: (height: number) => {
+            this.setTimelineHeight(height);
+            this.safeSetStorage('questforge_rig_timeline_height', String(height));
+            this.showToast(`Timeline height set to ${height}px`, 'info');
           }
         }
       );
