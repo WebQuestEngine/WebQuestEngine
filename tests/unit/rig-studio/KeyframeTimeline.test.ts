@@ -281,5 +281,274 @@ describe('KeyframeTimeline - Copy, Paste, Close Cycle and Kinematics', () => {
 
     timeline.destroy();
   });
+
+  describe('Fine-Tuned Per-Track Keyframe Editing, Multi-Select, and Rubberband', () => {
+    it('adds keyframes to specific joint tracks without forcing full-body keying', () => {
+      let notifiedJoint: string | undefined;
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints,
+        {
+          onKeyframeAdded: (_time, _joints, jointId) => {
+            notifiedJoint = jointId;
+          }
+        }
+      );
+
+      const track = animations.walk.tracks.front!;
+      const initialCount = track.keyframes.length;
+
+      // Add a keyframe specifically to knee_r at 0.35s
+      timeline.addTrackKeyframe('knee_r', { x: 150, y: 320 }, 0.35);
+
+      expect(notifiedJoint).toBe('knee_r');
+      expect(track.keyframes.length).toBe(initialCount + 1);
+
+      const trackKey = track.keyframes.find(k => Math.abs(k.time - 0.35) < 0.01);
+      expect(trackKey).toBeDefined();
+      expect(trackKey?.joints.knee_r).toEqual({ x: 150, y: 320 });
+      // Only knee_r should be present on this track-specific keyframe
+      expect(trackKey?.joints.foot_l).toBeUndefined();
+
+      timeline.destroy();
+    });
+
+    it('interpolates each joint independently across its own keyed timestamps', () => {
+      const trackKeyframes = [
+        {
+          time: 0.0,
+          joints: {
+            foot_l: { x: 100, y: 400 },
+            knee_r: { x: 200, y: 300 }
+          }
+        },
+        {
+          time: 0.4,
+          joints: {
+            knee_r: { x: 220, y: 320 } // only knee_r keyed here
+          }
+        },
+        {
+          time: 1.0,
+          joints: {
+            foot_l: { x: 150, y: 400 },
+            knee_r: { x: 200, y: 300 }
+          }
+        }
+      ];
+
+      animations.walk.tracks.front!.keyframes = trackKeyframes as any;
+
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      // At t=0.2s:
+      // foot_l should interpolate between 0.0s (100) and 1.0s (150) -> ~110
+      // knee_r should interpolate between 0.0s (200) and 0.4s (220) -> ~210
+      timeline.setTime(0.2);
+      const posed = timeline.getCurrentPose();
+
+      expect(posed.foot_l.x).toBeCloseTo(105.2, 1);
+      expect(posed.knee_r.x).toBeCloseTo(210, 0);
+
+      // At t=0.7s:
+      // foot_l: alpha=0.7 with smooth easing -> ~139.2
+      // knee_r: alpha=0.5 between 0.4s (220) and 1.0s (200) -> 210
+      timeline.setTime(0.7);
+      const posedLater = timeline.getCurrentPose();
+
+      expect(posedLater.foot_l.x).toBeCloseTo(139.2, 1);
+      expect(posedLater.knee_r.x).toBeCloseTo(210, 0);
+
+      timeline.destroy();
+    });
+
+    it('supports multi-selection and select-all across various tracks', () => {
+      let notifiedCount = 0;
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints,
+        {
+          onSelectionChanged: (count) => {
+            notifiedCount = count;
+          }
+        }
+      );
+
+      // Add track keyframes
+      timeline.addTrackKeyframe('knee_r', { x: 110, y: 300 }, 0.2);
+      timeline.addTrackKeyframe('hand_l', { x: 80, y: 220 }, 0.4);
+
+      expect(timeline.getSelectedKeyframeKeys().length).toBeGreaterThan(0);
+
+      // Clear selection
+      timeline.clearSelection();
+      expect(timeline.getSelectedKeyframeKeys().length).toBe(0);
+
+      // Select all keyframes
+      timeline.selectAllKeyframes();
+      const allKeys = timeline.getSelectedKeyframeKeys();
+      expect(allKeys.length).toBeGreaterThanOrEqual(4);
+      expect(notifiedCount).toBe(allKeys.length);
+
+      timeline.destroy();
+    });
+
+    it('copies and pastes multi-selected track keys preserving relative timing', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const track = animations.walk.tracks.front!;
+      track.keyframes = [];
+
+      // Add two keys on different tracks with 0.2s offset
+      timeline.addTrackKeyframe('knee_r', { x: 150, y: 300 }, 0.1);
+      timeline.addTrackKeyframe('hand_r', { x: 90, y: 210 }, 0.3);
+
+      // Select both track keys specifically
+      timeline.clearSelection();
+      (timeline as any).selectedKeyframeKeys.add('joint:knee_r:0.100');
+      (timeline as any).selectedKeyframeKeys.add('joint:hand_r:0.300');
+      expect(timeline.getSelectedKeyframeKeys().length).toBe(2);
+
+      // Copy multi-selection
+      const copied = timeline.copyKeyframe();
+      expect(copied).toBe(true);
+
+      // Move playhead to 0.6s and paste
+      timeline.setTime(0.6);
+      const pasted = timeline.pasteKeyframe();
+      expect(pasted).toBe(true);
+
+      // Keyframes should now include keys at 0.6s (knee_r) and 0.8s (hand_r)
+      const kfAt06 = track.keyframes.find(k => Math.abs(k.time - 0.6) < 0.01);
+      const kfAt08 = track.keyframes.find(k => Math.abs(k.time - 0.8) < 0.01);
+
+      expect(kfAt06).toBeDefined();
+      expect(kfAt06?.joints.knee_r).toEqual({ x: 150, y: 300 });
+
+      expect(kfAt08).toBeDefined();
+      expect(kfAt08?.joints.hand_r).toEqual({ x: 90, y: 210 });
+
+      timeline.destroy();
+    });
+
+    it('deletes specific track keyframes without deleting other joints at the same timestamp', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const track = animations.walk.tracks.front!;
+      track.keyframes = [
+        {
+          time: 0.5,
+          joints: {
+            knee_r: { x: 120, y: 300 },
+            hand_l: { x: 80, y: 200 }
+          }
+        }
+      ];
+
+      // Re-render to generate DOM markers
+      timeline.renderElementTracks();
+
+      // Multi-select only the knee_r marker at 0.5s
+      timeline.clearSelection();
+      const kneeKeyId = 'joint:knee_r:0.500';
+      timeline.selectAllKeyframes();
+      // Remove all except kneeKeyId
+      timeline.clearSelection();
+      // Directly select knee_r key
+      (timeline as any).selectedKeyframeKeys.add(kneeKeyId);
+
+      // Delete selected
+      const deleted = timeline.deleteSelectedKeyframes();
+      expect(deleted).toBe(true);
+
+      // The keyframe at 0.5s should still exist with hand_l intact, but knee_r removed!
+      expect(track.keyframes.length).toBe(1);
+      expect(track.keyframes[0].joints.knee_r).toBeUndefined();
+      expect(track.keyframes[0].joints.hand_l).toEqual({ x: 80, y: 200 });
+
+      // Now delete hand_l at 0.5s -> keyframe should be removed completely
+      const handKeyId = 'joint:hand_l:0.500';
+      (timeline as any).selectedKeyframeKeys.add(handKeyId);
+      timeline.deleteSelectedKeyframes();
+      expect(track.keyframes.length).toBe(0);
+
+      timeline.destroy();
+    });
+
+    it('handles rubberband marquee selection element creation and destruction', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const tracksList = container.querySelector('.timeline-tracks-list') as HTMLElement;
+      expect(tracksList).not.toBeNull();
+
+      // Trigger mousedown on empty tracks list to start rubberband
+      const downEvent = new MouseEvent('mousedown', {
+        clientX: 100,
+        clientY: 100,
+        button: 0,
+        bubbles: true
+      });
+      tracksList.dispatchEvent(downEvent);
+
+      const rubberbandEl = document.querySelector('.timeline-rubberband-box') as HTMLElement;
+      expect(rubberbandEl).not.toBeNull();
+      expect(rubberbandEl.style.display).toBe('block');
+
+      // Trigger mousemove
+      const moveEvent = new MouseEvent('mousemove', {
+        clientX: 300,
+        clientY: 250,
+        bubbles: true
+      });
+      window.dispatchEvent(moveEvent);
+
+      expect(rubberbandEl.style.width).toBe('200px');
+      expect(rubberbandEl.style.height).toBe('150px');
+
+      // Trigger mouseup
+      const upEvent = new MouseEvent('mouseup', {
+        clientX: 300,
+        clientY: 250,
+        bubbles: true
+      });
+      window.dispatchEvent(upEvent);
+
+      expect(rubberbandEl.style.display).toBe('none');
+
+      timeline.destroy();
+      expect(document.querySelector('.timeline-rubberband-box')).toBeNull();
+    });
+  });
 });
+
 

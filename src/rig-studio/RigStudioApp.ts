@@ -389,12 +389,17 @@ export class RigStudioApp {
     this.canvas = new RigStudioCanvas(rigViewportEl, {
       onJointSelected: (jointId) => {
         this.selectedJointId = jointId;
+        this.timeline?.setSelectedJoint(jointId);
         this.renderRightSidebar();
         this.renderCanvasAlignmentBar();
       },
       onPreviewPoseChanged: (joints) => {
         if ((this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate') && this.timeline?.getIsAutoKey()) {
-          this.timeline.addKeyframe(joints);
+          if (this.selectedJointId && joints[this.selectedJointId]) {
+            this.timeline.addTrackKeyframe(this.selectedJointId, joints[this.selectedJointId]);
+          } else {
+            this.timeline.addKeyframe(joints);
+          }
           this.renderRightSidebar();
         }
       },
@@ -5683,20 +5688,27 @@ export class RigStudioApp {
               this.setToolMode('preview');
             }
           },
-          onKeyframeAdded: (time, joints) => {
+          onKeyframeAdded: (time, joints, jointId) => {
             this.recordHistory('Record Keyframe');
             this.renderRightSidebar();
-            this.showToast(`Keyframe saved at ${time.toFixed(2)}s for ${this.activeView.toUpperCase()}`, 'success');
+            if (jointId) {
+              this.showToast(`Keyframe for '${jointId}' saved at ${time.toFixed(2)}s`, 'success');
+            } else {
+              this.showToast(`Keyframe saved at ${time.toFixed(2)}s for ${this.activeView.toUpperCase()}`, 'success');
+            }
           },
-          onKeyframeDeleted: (index) => {
+          onKeyframeDeleted: () => {
             this.recordHistory('Delete Keyframe');
             this.renderRightSidebar();
-            this.showToast('Keyframe deleted', 'info');
+            this.showToast('Keyframe(s) deleted', 'info');
           },
-          onKeyframeMoved: (index, oldTime, newTime) => {
+          onKeyframeMoved: (_index, _oldTime, newTime) => {
             this.recordHistory('Move Keyframe');
             this.renderRightSidebar();
-            this.showToast(`Keyframe moved to ${newTime.toFixed(2)}s`, 'info');
+            this.showToast(`Keyframe(s) moved to ${newTime.toFixed(2)}s`, 'info');
+          },
+          onSelectionChanged: (count) => {
+            // Updated active keyframe selection count
           },
           onDurationChanged: (duration) => {
             this.recordHistory('Change Animation Length');

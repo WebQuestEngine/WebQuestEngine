@@ -11,9 +11,9 @@ export interface KeyframeTimelineEvents {
   onPoseInterpolated?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
   onTimeChange?: (time: number) => void;
   onPlayToggle?: (isPlaying: boolean) => void;
-  onKeyframeAdded?: (time: number, joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
-  onKeyframeDeleted?: (index: number) => void;
-  onKeyframeMoved?: (index: number, oldTime: number, newTime: number) => void;
+  onKeyframeAdded?: (time: number, joints: Record<AnatomicalJointId, { x: number; y: number }>, jointId?: AnatomicalJointId) => void;
+  onKeyframeDeleted?: (index: number, jointId?: AnatomicalJointId) => void;
+  onKeyframeMoved?: (index: number, oldTime: number, newTime: number, jointId?: AnatomicalJointId) => void;
   onKeyframeCopied?: (keyframe: { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> }) => void;
   onKeyframePasted?: (time: number, keyframe: StudioKeyframe) => void;
   onCycleClosed?: (duration: number) => void;
@@ -23,9 +23,27 @@ export interface KeyframeTimelineEvents {
   onEnableSideRequested?: (animName: string, side: StudioView) => void;
   onDurationChanged?: (duration: number) => void;
   onZoomChanged?: (zoom: number) => void;
-  onKeyframeSelected?: (index: number, keyframe: StudioKeyframe | null) => void;
+  onKeyframeSelected?: (index: number, keyframe: StudioKeyframe | null, jointId?: AnatomicalJointId) => void;
+  onSelectionChanged?: (selectedCount: number) => void;
   onKinematicsModeChanged?: (mode: 'ik' | 'fk') => void;
   onHeightPresetRequested?: (height: number) => void;
+}
+
+export interface MultiClipboardItem {
+  relTime: number;
+  jointId?: AnatomicalJointId;
+  pos?: { x: number; y: number };
+  joints?: Record<AnatomicalJointId, { x: number; y: number }>;
+  name?: string;
+}
+
+export interface DraggingKeyEntry {
+  keyId: string;
+  originalTime: number;
+  jointId?: AnatomicalJointId;
+  pos?: { x: number; y: number };
+  joints?: Record<AnatomicalJointId, { x: number; y: number }>;
+  name?: string;
 }
 
 export interface ElementGroupDef {
@@ -70,6 +88,8 @@ export const ELEMENT_GROUPS: ElementGroupDef[] = [
 
 /**
  * Interpolates joint positions smoothly between keyframes across time.
+ * Evaluates each joint independently against its own keyed timestamps,
+ * allowing fine-tuned independent track keyframing while seamlessly preserving full-body poses.
  */
 export function interpolateJointPoses(
   keyframes: StudioKeyframe[],
@@ -81,79 +101,107 @@ export function interpolateJointPoses(
   if (!keyframes || keyframes.length === 0) {
     return JSON.parse(JSON.stringify(fallbackJoints));
   }
-  if (keyframes.length === 1) {
-    return JSON.parse(JSON.stringify(keyframes[0].joints));
+
+  // Find all jointIds present in fallbackJoints and in any keyframe
+  const allJointIds = new Set<AnatomicalJointId>([
+    ...(Object.keys(fallbackJoints) as AnatomicalJointId[])
+  ]);
+  for (const kf of keyframes) {
+    if (kf.joints) {
+      for (const jId of Object.keys(kf.joints) as AnatomicalJointId[]) {
+        allJointIds.add(jId);
+      }
+    }
   }
 
-  const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+  const result: Record<AnatomicalJointId, { x: number; y: number }> = {} as any;
   const clampedTime = loop && duration > 0
     ? (time % duration)
     : Math.max(0, Math.min(duration, time));
 
-  // If time is before or at first keyframe
-  if (clampedTime <= sorted[0].time) {
-    if (!loop || sorted[sorted.length - 1].time <= sorted[0].time) {
-      return JSON.parse(JSON.stringify(sorted[0].joints));
+  for (const jId of allJointIds) {
+    // Find all keyframes containing this specific joint
+    const jKeys = keyframes
+      .filter(k => k.joints && k.joints[jId] !== undefined)
+      .sort((a, b) => a.time - b.time);
+
+    const fallbackPos = fallbackJoints[jId] || { x: 0, y: 0 };
+
+    if (jKeys.length === 0) {
+      result[jId] = { ...fallbackPos };
+      continue;
     }
-    const k0 = sorted[sorted.length - 1];
-    const k1 = sorted[0];
-    const segmentDuration = (duration - k0.time) + k1.time;
-    if (segmentDuration <= 0) return JSON.parse(JSON.stringify(sorted[0].joints));
-    const tInSeg = clampedTime + (duration - k0.time);
-    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
-    return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
-  }
 
-  // If time is after or at last keyframe
-  if (clampedTime >= sorted[sorted.length - 1].time) {
-    if (!loop) {
-      return JSON.parse(JSON.stringify(sorted[sorted.length - 1].joints));
+    if (jKeys.length === 1) {
+      result[jId] = { ...jKeys[0].joints[jId] };
+      continue;
     }
-    const k0 = sorted[sorted.length - 1];
-    const k1 = sorted[0];
-    const segmentDuration = (duration - k0.time) + k1.time;
-    if (segmentDuration <= 0) return JSON.parse(JSON.stringify(sorted[0].joints));
-    const tInSeg = clampedTime - k0.time;
-    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
-    return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
-  }
 
-  // Find bounding keyframes
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const k0 = sorted[i];
-    const k1 = sorted[i + 1];
-    if (clampedTime >= k0.time && clampedTime <= k1.time) {
-      const dt = k1.time - k0.time;
-      const alpha = dt > 0 ? (clampedTime - k0.time) / dt : 0;
-      return lerpJointDict(k0.joints, k1.joints, alpha, fallbackJoints);
+    // Multiple keyframes for this joint
+    if (clampedTime <= jKeys[0].time) {
+      if (!loop || jKeys[jKeys.length - 1].time <= jKeys[0].time) {
+        result[jId] = { ...jKeys[0].joints[jId] };
+      } else {
+        const k0 = jKeys[jKeys.length - 1];
+        const k1 = jKeys[0];
+        const segmentDuration = (duration - k0.time) + k1.time;
+        if (segmentDuration <= 0) {
+          result[jId] = { ...jKeys[0].joints[jId] };
+        } else {
+          const tInSeg = clampedTime + (duration - k0.time);
+          const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+          const ease = alpha * alpha * (3 - 2 * alpha);
+          result[jId] = {
+            x: k0.joints[jId].x + (k1.joints[jId].x - k0.joints[jId].x) * ease,
+            y: k0.joints[jId].y + (k1.joints[jId].y - k0.joints[jId].y) * ease
+          };
+        }
+      }
+      continue;
     }
-  }
 
-  return JSON.parse(JSON.stringify(sorted[0].joints));
-}
+    if (clampedTime >= jKeys[jKeys.length - 1].time) {
+      if (!loop) {
+        result[jId] = { ...jKeys[jKeys.length - 1].joints[jId] };
+      } else {
+        const k0 = jKeys[jKeys.length - 1];
+        const k1 = jKeys[0];
+        const segmentDuration = (duration - k0.time) + k1.time;
+        if (segmentDuration <= 0) {
+          result[jId] = { ...jKeys[jKeys.length - 1].joints[jId] };
+        } else {
+          const tInSeg = clampedTime - k0.time;
+          const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+          const ease = alpha * alpha * (3 - 2 * alpha);
+          result[jId] = {
+            x: k0.joints[jId].x + (k1.joints[jId].x - k0.joints[jId].x) * ease,
+            y: k0.joints[jId].y + (k1.joints[jId].y - k0.joints[jId].y) * ease
+          };
+        }
+      }
+      continue;
+    }
 
-function lerpJointDict(
-  j0: Record<string, { x: number; y: number }>,
-  j1: Record<string, { x: number; y: number }>,
-  alpha: number,
-  fallback: Record<string, { x: number; y: number }>
-): Record<AnatomicalJointId, { x: number; y: number }> {
-  // Smoothstep for organic, continuous motion
-  const ease = alpha * alpha * (3 - 2 * alpha);
-  const result: any = {};
-  const allKeys = new Set([
-    ...Object.keys(j0 || {}),
-    ...Object.keys(j1 || {}),
-    ...Object.keys(fallback || {})
-  ]);
-
-  for (const k of allKeys) {
-    const p0 = j0?.[k] || fallback[k] || { x: 0, y: 0 };
-    const p1 = j1?.[k] || fallback[k] || { x: 0, y: 0 };
-    result[k] = {
-      x: p0.x + (p1.x - p0.x) * ease,
-      y: p0.y + (p1.y - p0.y) * ease
-    };
+    // Between keyframes
+    let interpolated = false;
+    for (let i = 0; i < jKeys.length - 1; i++) {
+      const k0 = jKeys[i];
+      const k1 = jKeys[i + 1];
+      if (clampedTime >= k0.time && clampedTime <= k1.time) {
+        const dt = k1.time - k0.time;
+        const alpha = dt > 0 ? (clampedTime - k0.time) / dt : 0;
+        const ease = alpha * alpha * (3 - 2 * alpha);
+        result[jId] = {
+          x: k0.joints[jId].x + (k1.joints[jId].x - k0.joints[jId].x) * ease,
+          y: k0.joints[jId].y + (k1.joints[jId].y - k0.joints[jId].y) * ease
+        };
+        interpolated = true;
+        break;
+      }
+    }
+    if (!interpolated) {
+      result[jId] = { ...jKeys[0].joints[jId] };
+    }
   }
 
   return result;
@@ -181,19 +229,36 @@ export class KeyframeTimeline {
   private isElementTracksExpanded = true;
   private collapsedGroups: Set<string> = new Set();
 
-  // Keyframe dragging state
-  private isDraggingKeyframe = false;
-  private draggedKeyframeIndex: number | null = null;
+  // Selected joint/track
+  private selectedJointId: AnatomicalJointId | null = null;
+
+  // Multi-keyframe selection state
+  // Key ID formats:
+  // "joint:${jointId}:${time.toFixed(3)}" for individual track keyframes
+  // "master:${time.toFixed(3)}" for master full keyframes
+  private selectedKeyframeKeys = new Set<string>();
+
+  // Rubberband selection state
+  private isRubberbanding = false;
+  private rubberbandStartX = 0;
+  private rubberbandStartY = 0;
+  private rubberbandBoxEl: HTMLElement | null = null;
+  private rubberbandInitialKeys: Set<string> | null = null;
+
+  // Keyframe dragging state (supports multi-selection drag)
+  private isDraggingKeyframes = false;
   private dragStartClientX = 0;
   private dragStartTime = 0;
   private hasDraggedKeyframe = false;
+  private draggingEntries: DraggingKeyEntry[] = [];
   private dragGhostElement: HTMLElement | null = null;
 
-  // Static clipboard across animation clips and orientations
+  // Clipboard across animation clips and orientations (single and multi-select)
   private static clipboardKeyframe: {
     name?: string;
     joints: Record<AnatomicalJointId, { x: number; y: number }>;
   } | null = null;
+  private static multiClipboard: MultiClipboardItem[] = [];
 
   private selectedKeyframeIndex: number | null = null;
   private isDraggingPlayhead = false;
@@ -450,17 +515,23 @@ export class KeyframeTimeline {
     return this.isAutoKey;
   }
 
-  public addKeyframe(joints: Record<AnatomicalJointId, { x: number; y: number }>, name?: string): void {
+  public getCurrentPose(): Record<AnatomicalJointId, { x: number; y: number }> {
+    const track = this.getActiveTrack();
+    if (!track) return { ...this.restJoints };
+    return interpolateJointPoses(track.keyframes, this.currentTime, this.duration, this.isLooping, this.restJoints);
+  }
+
+  public addKeyframe(joints: Record<AnatomicalJointId, { x: number; y: number }>, name?: string, time?: number): void {
     const track = this.getActiveTrack();
     if (!track) return;
 
-    const t = Math.round(this.currentTime * 100) / 100;
+    const t = time !== undefined ? Math.round(time * 100) / 100 : Math.round(this.currentTime * 100) / 100;
     const clonedJoints = JSON.parse(JSON.stringify(joints));
 
     // Check if keyframe already exists near this timestamp (threshold 0.03s)
     const existingIndex = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.03);
     if (existingIndex >= 0) {
-      track.keyframes[existingIndex].joints = clonedJoints;
+      track.keyframes[existingIndex].joints = { ...track.keyframes[existingIndex].joints, ...clonedJoints };
       if (name) track.keyframes[existingIndex].name = name;
       this.selectedKeyframeIndex = existingIndex;
     } else {
@@ -472,6 +543,15 @@ export class KeyframeTimeline {
     this.duration = Math.max(this.duration, t);
     track.duration = this.duration;
 
+    this.clearSelection();
+    this.selectedKeyframeKeys.add(this.makeKeyId(t));
+    if (this.selectedKeyframeIndex !== null) {
+      const curKf = track.keyframes[this.selectedKeyframeIndex];
+      for (const jId of Object.keys(curKf.joints || {}) as AnatomicalJointId[]) {
+        this.selectedKeyframeKeys.add(this.makeKeyId(t, jId));
+      }
+    }
+
     this.renderRuler();
     this.renderKeyframeTrack();
     this.renderElementTracks();
@@ -480,6 +560,120 @@ export class KeyframeTimeline {
     if (this.selectedKeyframeIndex !== null) {
       this.events.onKeyframeSelected?.(this.selectedKeyframeIndex, track.keyframes[this.selectedKeyframeIndex]);
     }
+  }
+
+  /**
+   * Adds a keyframe for a specific track (joint) at the specified time or current playhead.
+   */
+  public addTrackKeyframe(jointId: AnatomicalJointId, pos?: { x: number; y: number }, time?: number): void {
+    const track = this.getActiveTrack();
+    if (!track) return;
+
+    const t = time !== undefined ? Math.round(time * 100) / 100 : Math.round(this.currentTime * 100) / 100;
+
+    let targetPos = pos;
+    if (!targetPos) {
+      const currentPosed = interpolateJointPoses(
+        track.keyframes,
+        t,
+        this.duration,
+        this.isLooping,
+        this.restJoints
+      );
+      targetPos = currentPosed[jointId] || this.restJoints[jointId] || { x: 0, y: 0 };
+    }
+
+    const clonedPos = { x: Math.round(targetPos.x), y: Math.round(targetPos.y) };
+
+    let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.03);
+    if (kf) {
+      if (!kf.joints) kf.joints = {} as any;
+      kf.joints[jointId] = clonedPos;
+    } else {
+      kf = {
+        time: t,
+        joints: {
+          [jointId]: clonedPos
+        } as any
+      };
+      track.keyframes.push(kf);
+      track.keyframes.sort((a, b) => a.time - b.time);
+    }
+
+    this.duration = Math.max(this.duration, t);
+    track.duration = this.duration;
+
+    this.clearSelection();
+    this.selectedKeyframeKeys.add(this.makeKeyId(t, jointId));
+    this.selectedKeyframeIndex = track.keyframes.indexOf(kf);
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+
+    this.events.onKeyframeAdded?.(t, kf.joints, jointId);
+    this.events.onKeyframeSelected?.(this.selectedKeyframeIndex, kf, jointId);
+  }
+
+  public makeKeyId(time: number, jointId?: AnatomicalJointId): string {
+    return jointId ? `joint:${jointId}:${time.toFixed(3)}` : `master:${time.toFixed(3)}`;
+  }
+
+  public isKeyframeSelected(jointId: AnatomicalJointId, time: number): boolean {
+    return this.selectedKeyframeKeys.has(this.makeKeyId(time, jointId)) ||
+           this.selectedKeyframeKeys.has(this.makeKeyId(time));
+  }
+
+  public isMasterKeyframeSelected(time: number): boolean {
+    return this.selectedKeyframeKeys.has(this.makeKeyId(time));
+  }
+
+  public clearSelection(): void {
+    this.selectedKeyframeKeys.clear();
+    this.selectedKeyframeIndex = null;
+    this.events.onSelectionChanged?.(0);
+  }
+
+  public getSelectedKeyframeKeys(): string[] {
+    return Array.from(this.selectedKeyframeKeys);
+  }
+
+  public setSelectedJoint(jointId: AnatomicalJointId | null): void {
+    if (this.selectedJointId === jointId) return;
+    this.selectedJointId = jointId;
+
+    this.container.querySelectorAll('.timeline-element-row').forEach(row => {
+      const rowJoint = row.getAttribute('data-joint');
+      row.classList.toggle('active-track', rowJoint === jointId);
+    });
+
+    const trackBtn = this.container.querySelector('.btn-timeline-add-track-key') as HTMLElement | null;
+    if (trackBtn) {
+      trackBtn.textContent = jointId ? `🦴 ＋${jointId}` : '🦴 ＋Track Key';
+      trackBtn.setAttribute('title', jointId ? `Add keyframe specifically for ${jointId} at current playhead time` : 'Select a joint or click "+" on any track row to add a keyframe');
+    }
+  }
+
+  public getSelectedJoint(): AnatomicalJointId | null {
+    return this.selectedJointId;
+  }
+
+  public selectAllKeyframes(): void {
+    const track = this.getActiveTrack();
+    if (!track) return;
+    this.selectedKeyframeKeys.clear();
+    for (const kf of track.keyframes) {
+      this.selectedKeyframeKeys.add(this.makeKeyId(kf.time));
+      if (kf.joints) {
+        for (const jId of Object.keys(kf.joints) as AnatomicalJointId[]) {
+          this.selectedKeyframeKeys.add(this.makeKeyId(kf.time, jId));
+        }
+      }
+    }
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
   }
 
   public setKeyframeName(index: number, name: string): void {
@@ -498,22 +692,57 @@ export class KeyframeTimeline {
     return null;
   }
 
-  public deleteSelectedKeyframe(): void {
+  public deleteSelectedKeyframes(): boolean {
     const track = this.getActiveTrack();
-    if (!track) return;
+    if (!track) return false;
+
+    if (this.selectedKeyframeKeys.size > 0) {
+      let deletedCount = 0;
+      for (const keyId of Array.from(this.selectedKeyframeKeys)) {
+        if (keyId.startsWith('joint:')) {
+          const parts = keyId.split(':');
+          const jId = parts[1] as AnatomicalJointId;
+          const t = parseFloat(parts[2]);
+          const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (kf && kf.joints) {
+            delete kf.joints[jId];
+            deletedCount++;
+            if (Object.keys(kf.joints).length === 0) {
+              const idx = track.keyframes.indexOf(kf);
+              if (idx >= 0) track.keyframes.splice(idx, 1);
+            }
+          }
+        } else if (keyId.startsWith('master:')) {
+          const t = parseFloat(keyId.split(':')[1]);
+          const idx = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.005);
+          if (idx >= 0) {
+            track.keyframes.splice(idx, 1);
+            deletedCount++;
+          }
+        }
+      }
+
+      this.clearSelection();
+      this.renderRuler();
+      this.renderKeyframeTrack();
+      this.renderElementTracks();
+      this.evaluatePoseAtCurrentTime();
+      this.events.onKeyframeDeleted?.(0);
+      return deletedCount > 0;
+    }
 
     if (this.selectedKeyframeIndex !== null && track.keyframes[this.selectedKeyframeIndex]) {
-      track.keyframes.splice(this.selectedKeyframeIndex, 1);
-      this.events.onKeyframeDeleted?.(this.selectedKeyframeIndex);
+      const idx = this.selectedKeyframeIndex;
+      track.keyframes.splice(idx, 1);
+      this.events.onKeyframeDeleted?.(idx);
       this.selectedKeyframeIndex = null;
       this.renderRuler();
       this.renderKeyframeTrack();
       this.renderElementTracks();
       this.evaluatePoseAtCurrentTime();
-      return;
+      return true;
     }
 
-    // Otherwise delete keyframe nearest to current playhead
     const t = this.currentTime;
     const idx = track.keyframes.findIndex(k => Math.abs(k.time - t) < 0.04);
     if (idx >= 0) {
@@ -523,7 +752,14 @@ export class KeyframeTimeline {
       this.renderKeyframeTrack();
       this.renderElementTracks();
       this.evaluatePoseAtCurrentTime();
+      return true;
     }
+
+    return false;
+  }
+
+  public deleteSelectedKeyframe(): void {
+    this.deleteSelectedKeyframes();
   }
 
   public static getClipboard(): { name?: string; joints: Record<AnatomicalJointId, { x: number; y: number }> } | null {
@@ -552,67 +788,177 @@ export class KeyframeTimeline {
   }
 
   /**
-   * Copies the keyframe at the given index, the currently selected keyframe,
+   * Copies the keyframe at the given index, the currently selected keyframe(s),
    * or a snapshot of the current pose at the playhead.
    */
   public copyKeyframe(index?: number): boolean {
     const track = this.getActiveTrack();
     if (!track) return false;
 
-    let targetKeyframe: StudioKeyframe | null = null;
+    // Explicit index passed (e.g. from tests or API)
     if (index !== undefined && track.keyframes[index]) {
-      targetKeyframe = track.keyframes[index];
-    } else if (this.selectedKeyframeIndex !== null && track.keyframes[this.selectedKeyframeIndex]) {
-      targetKeyframe = track.keyframes[this.selectedKeyframeIndex];
-    } else {
-      // Find keyframe near playhead
-      const t = this.currentTime;
-      const near = track.keyframes.find(k => Math.abs(k.time - t) < 0.04);
-      if (near) {
-        targetKeyframe = near;
-      } else {
-        // Snapshot pose at playhead time
-        const currentPosed = interpolateJointPoses(
-          track.keyframes,
-          this.currentTime,
-          this.duration,
-          this.isLooping,
-          this.restJoints
-        );
-        targetKeyframe = {
-          time: this.currentTime,
-          joints: currentPosed
+      const target = track.keyframes[index];
+      KeyframeTimeline.clipboardKeyframe = {
+        name: target.name,
+        joints: JSON.parse(JSON.stringify(target.joints))
+      };
+      KeyframeTimeline.multiClipboard = [{
+        relTime: 0,
+        joints: JSON.parse(JSON.stringify(target.joints)),
+        name: target.name
+      }];
+      this.events.onKeyframeCopied?.(target);
+      return true;
+    }
+
+    // Multi-selected keyframes
+    if (this.selectedKeyframeKeys.size > 0) {
+      const items: { time: number; jointId?: AnatomicalJointId; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
+      for (const keyId of this.selectedKeyframeKeys) {
+        if (keyId.startsWith('joint:')) {
+          const parts = keyId.split(':');
+          const jId = parts[1] as AnatomicalJointId;
+          const t = parseFloat(parts[2]);
+          const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (kf && kf.joints && kf.joints[jId]) {
+            items.push({
+              time: kf.time,
+              jointId: jId,
+              pos: { ...kf.joints[jId] }
+            });
+          }
+        } else if (keyId.startsWith('master:')) {
+          const t = parseFloat(keyId.split(':')[1]);
+          const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (kf) {
+            items.push({
+              time: kf.time,
+              joints: JSON.parse(JSON.stringify(kf.joints)),
+              name: kf.name
+            });
+          }
+        }
+      }
+
+      if (items.length > 0) {
+        const minTime = Math.min(...items.map(it => it.time));
+        KeyframeTimeline.multiClipboard = items.map(it => ({
+          relTime: Math.round((it.time - minTime) * 100) / 100,
+          jointId: it.jointId,
+          pos: it.pos,
+          joints: it.joints,
+          name: it.name
+        }));
+
+        const firstWithJoints = items.find(it => it.joints);
+        if (firstWithJoints && firstWithJoints.joints) {
+          KeyframeTimeline.clipboardKeyframe = {
+            name: firstWithJoints.name,
+            joints: JSON.parse(JSON.stringify(firstWithJoints.joints))
+          };
+        } else if (items.length > 0) {
+          const poseDict: any = {};
+          for (const it of items) {
+            if (it.jointId && it.pos) poseDict[it.jointId] = it.pos;
+          }
+          KeyframeTimeline.clipboardKeyframe = {
+            joints: poseDict
+          };
+        }
+
+        const notifyTarget = {
+          time: minTime,
+          joints: KeyframeTimeline.clipboardKeyframe?.joints || ({} as any)
         };
+        this.events.onKeyframeCopied?.(notifyTarget);
+        return true;
       }
     }
 
-    if (!targetKeyframe) return false;
-
-    KeyframeTimeline.clipboardKeyframe = {
-      name: targetKeyframe.name,
-      joints: JSON.parse(JSON.stringify(targetKeyframe.joints))
+    // Fallback: copy pose at playhead
+    const currentPosed = interpolateJointPoses(
+      track.keyframes,
+      this.currentTime,
+      this.duration,
+      this.isLooping,
+      this.restJoints
+    );
+    const targetKeyframe = {
+      time: this.currentTime,
+      joints: currentPosed
     };
+    KeyframeTimeline.clipboardKeyframe = {
+      joints: JSON.parse(JSON.stringify(currentPosed))
+    };
+    KeyframeTimeline.multiClipboard = [{
+      relTime: 0,
+      joints: JSON.parse(JSON.stringify(currentPosed))
+    }];
     this.events.onKeyframeCopied?.(targetKeyframe);
     return true;
   }
 
   /**
-   * Pastes the copied keyframe at targetTime (or current playhead position).
+   * Pastes the copied keyframe(s) at targetTime (or current playhead position).
+   * Supports multi-track keyframe pasting with relative timing preserved.
    */
   public pasteKeyframe(targetTime?: number): boolean {
     const track = this.getActiveTrack();
-    if (!track || !KeyframeTimeline.clipboardKeyframe) return false;
+    if (!track) return false;
 
-    const t = targetTime !== undefined ? targetTime : this.currentTime;
-    const roundedTime = Math.round(t * 100) / 100;
-    const clonedJoints = JSON.parse(JSON.stringify(KeyframeTimeline.clipboardKeyframe.joints));
-    const name = KeyframeTimeline.clipboardKeyframe.name;
+    const baseTime = targetTime !== undefined ? targetTime : this.currentTime;
+    const roundedBaseTime = Math.round(baseTime * 100) / 100;
 
-    this.currentTime = roundedTime;
-    this.addKeyframe(clonedJoints, name);
+    if (KeyframeTimeline.multiClipboard && KeyframeTimeline.multiClipboard.length > 0) {
+      const newSelected = new Set<string>();
+      for (const item of KeyframeTimeline.multiClipboard) {
+        const t = Math.max(0, Math.min(this.duration, Math.round((roundedBaseTime + item.relTime) * 100) / 100));
+        if (item.jointId && item.pos) {
+          let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (!kf) {
+            kf = { time: t, joints: {} as any };
+            track.keyframes.push(kf);
+          }
+          kf.joints[item.jointId] = { ...item.pos };
+          newSelected.add(this.makeKeyId(t, item.jointId));
+        } else if (item.joints) {
+          let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (!kf) {
+            kf = { time: t, joints: JSON.parse(JSON.stringify(item.joints)), name: item.name };
+            track.keyframes.push(kf);
+          } else {
+            kf.joints = { ...kf.joints, ...JSON.parse(JSON.stringify(item.joints)) };
+            if (item.name) kf.name = item.name;
+          }
+          newSelected.add(this.makeKeyId(t));
+        }
+      }
 
-    this.events.onKeyframePasted?.(roundedTime, { time: roundedTime, name, joints: clonedJoints });
-    return true;
+      track.keyframes.sort((a, b) => a.time - b.time);
+      this.currentTime = roundedBaseTime;
+      this.selectedKeyframeKeys = newSelected;
+
+      this.renderRuler();
+      this.renderKeyframeTrack();
+      this.renderElementTracks();
+      this.updatePlayheadPosition();
+      this.evaluatePoseAtCurrentTime();
+
+      const lastKf = track.keyframes.find(k => Math.abs(k.time - roundedBaseTime) < 0.01) || track.keyframes[0];
+      this.events.onKeyframePasted?.(roundedBaseTime, lastKf);
+      return true;
+    }
+
+    if (KeyframeTimeline.clipboardKeyframe) {
+      const clonedJoints = JSON.parse(JSON.stringify(KeyframeTimeline.clipboardKeyframe.joints));
+      const name = KeyframeTimeline.clipboardKeyframe.name;
+      this.currentTime = roundedBaseTime;
+      this.addKeyframe(clonedJoints, name, roundedBaseTime);
+      this.events.onKeyframePasted?.(roundedBaseTime, { time: roundedBaseTime, name, joints: clonedJoints });
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -760,19 +1106,22 @@ export class KeyframeTimeline {
         </div>
 
         <div class="tool-group">
-          <button class="tool-btn btn-timeline-add-key" title="Record Keyframe at current playhead time" ${!isRelevantForView ? 'disabled' : ''}>
+          <button class="tool-btn btn-timeline-add-key" title="Record full pose keyframe (all joints) at current playhead time" ${!isRelevantForView ? 'disabled' : ''}>
             🔑 ＋Key
           </button>
-          <button class="tool-btn btn-timeline-copy-key" title="Copy Keyframe (Ctrl+C)" ${!isRelevantForView ? 'disabled' : ''}>
+          <button class="tool-btn btn-timeline-add-track-key" title="${this.selectedJointId ? `Record keyframe for '${this.selectedJointId}' at current time` : 'Select a joint or click [+] on any track row to add a track key'}" ${!isRelevantForView ? 'disabled' : ''}>
+            🦴 ${this.selectedJointId ? `＋${this.selectedJointId}` : '＋Track Key'}
+          </button>
+          <button class="tool-btn btn-timeline-copy-key" title="Copy Keyframe(s) (Ctrl+C). Copies selected markers on any track, or full pose" ${!isRelevantForView ? 'disabled' : ''}>
             📋 Copy
           </button>
-          <button class="tool-btn btn-timeline-paste-key" title="Paste Keyframe at Playhead (Ctrl+V)" ${!isRelevantForView ? 'disabled' : ''}>
+          <button class="tool-btn btn-timeline-paste-key" title="Paste Keyframe(s) at Playhead (Ctrl+V)" ${!isRelevantForView ? 'disabled' : ''}>
             📄 Paste
           </button>
           <button class="tool-btn btn-timeline-close-cycle" title="Close Loop Cycle: Copy 0.00s initial pose to duration end (${this.duration.toFixed(2)}s) for seamless looping" ${!isRelevantForView ? 'disabled' : ''}>
             🔁 Close Cycle
           </button>
-          <button class="tool-btn btn-timeline-del-key" title="Delete Keyframe at current playhead time (Del)" ${!isRelevantForView ? 'disabled' : ''}>
+          <button class="tool-btn btn-timeline-del-key" title="Delete selected keyframe(s) or keyframe at current playhead (Del)" ${!isRelevantForView ? 'disabled' : ''}>
             🗑️ Del
           </button>
           <div class="tool-separator"></div>
@@ -890,14 +1239,16 @@ export class KeyframeTimeline {
 
     lane.innerHTML = keyframes.map((k, idx) => {
       const leftPx = Math.round(k.time * pixelsPerSec);
-      const isSelected = this.selectedKeyframeIndex === idx;
+      const keyId = this.makeKeyId(k.time);
+      const isSelected = this.selectedKeyframeKeys.has(keyId) || this.selectedKeyframeIndex === idx;
       const poseTitle = k.name ? `Pose "${k.name}" at ${k.time.toFixed(2)}s` : `Pose Keyframe at ${k.time.toFixed(2)}s`;
 
       return `
         <div class="keyframe-diamond ${isSelected ? 'selected' : ''}"
           data-index="${idx}"
           data-time="${k.time}"
-          title="${poseTitle} (Click to jump / Drag to move time / Del to delete)"
+          data-keyid="${keyId}"
+          title="${poseTitle} (Click: Select / Ctrl+Click: Toggle / Shift+Click: Multi-select / Drag: Move)"
           style="left:${leftPx - 6}px;">
         </div>
         ${k.name ? `
@@ -912,7 +1263,7 @@ export class KeyframeTimeline {
     lane.querySelectorAll('.keyframe-diamond').forEach(el => {
       el.addEventListener('mousedown', (e) => {
         if ((e as MouseEvent).button === 0) {
-          this.startKeyframeDrag(e as MouseEvent, el as HTMLElement);
+          this.handleMasterDiamondMouseDown(e as MouseEvent, el as HTMLElement);
         }
       });
     });
@@ -956,7 +1307,6 @@ export class KeyframeTimeline {
       for (const group of ELEMENT_GROUPS) {
         const isCollapsed = this.collapsedGroups.has(group.id);
 
-        // Count how many joints in this group are moved from rest at current playhead
         let modifiedInGroupCount = 0;
         for (const jId of group.jointIds) {
           const rest = this.restJoints[jId] || { x: 0, y: 0 };
@@ -997,42 +1347,44 @@ export class KeyframeTimeline {
             const curDist = Math.round(Math.hypot(curDx, curDy));
             const isCurMoved = curDist >= 1;
 
+            const jointKeyframes = keyframes.filter(k => k.joints && k.joints[jointId] !== undefined);
+            const isTrackActive = this.selectedJointId === jointId;
+
             html += `
-              <div class="timeline-element-row" data-joint="${jointId}">
-                <div class="timeline-element-header" title="${jointDef.name} (${jointId})">
+              <div class="timeline-element-row ${isTrackActive ? 'active-track' : ''}" data-joint="${jointId}">
+                <div class="timeline-element-header" data-joint="${jointId}" title="${jointDef.name} (${jointId}) - Click to select track">
                   <span style="display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis;">
                     <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${jointDef.color}; flex-shrink:0;"></span>
-                    <span style="overflow:hidden; text-overflow:ellipsis;">${jointDef.name}</span>
+                    <span style="overflow:hidden; text-overflow:ellipsis; font-weight:${isTrackActive ? '700' : '500'};">${jointDef.name}</span>
                   </span>
-                  <span class="element-change-badge ${isCurMoved ? 'moved' : 'rest'}">
-                    ${isCurMoved ? `Δ ${curDx >= 0 ? '+' : ''}${curDx}, ${curDy >= 0 ? '+' : ''}${curDy}` : 'Rest'}
-                  </span>
+                  <div style="display:flex; align-items:center; gap:3px;">
+                    <span class="element-change-badge ${isCurMoved ? 'moved' : 'rest'}">
+                      ${isCurMoved ? `Δ ${curDx >= 0 ? '+' : ''}${curDx}, ${curDy >= 0 ? '+' : ''}${curDy}` : 'Rest'}
+                    </span>
+                    <button class="btn-track-add-key" data-joint="${jointId}" title="Add keyframe specifically for ${jointDef.name} at playhead (${this.currentTime.toFixed(2)}s)">＋</button>
+                  </div>
                 </div>
-                <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
-                  ${keyframes.map((k, idx) => {
+                <div class="element-track-lane" data-joint="${jointId}" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                  ${jointKeyframes.map((k) => {
                     const leftPx = Math.round(k.time * pixelsPerSec);
+                    const keyId = this.makeKeyId(k.time, jointId);
+                    const isSelected = this.selectedKeyframeKeys.has(keyId) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time));
                     const pos = k.joints[jointId] || rest;
                     const dx = Math.round(pos.x - rest.x);
                     const dy = Math.round(pos.y - rest.y);
                     const dist = Math.round(Math.hypot(dx, dy));
                     const isModified = dist >= 1;
 
-                    const prevK = idx > 0 ? keyframes[idx - 1] : undefined;
-                    const prevPos = prevK ? (prevK.joints[jointId] || rest) : undefined;
-                    const pdx = prevPos ? Math.round(pos.x - prevPos.x) : 0;
-                    const pdy = prevPos ? Math.round(pos.y - prevPos.y) : 0;
-
                     const desc = `${jointDef.name} @ ${k.time.toFixed(2)}s:\n` +
                       `• Pos: (${Math.round(pos.x)}, ${Math.round(pos.y)})\n` +
                       `• Shift from Rest: X: ${dx >= 0 ? '+' : ''}${dx}px, Y: ${dy >= 0 ? '+' : ''}${dy}px (${isModified ? `${dist}px offset` : 'At Rest'})\n` +
-                      (prevPos ? `• Δ from Prev Keyframe: X: ${pdx >= 0 ? '+' : ''}${pdx}px, Y: ${pdy >= 0 ? '+' : ''}${pdy}px\n` : '') +
-                      `[Click to jump / Drag to move keyframe]`;
+                      `[Click: Select / Ctrl+Click: Toggle / Shift+Click: Multi-select / Drag: Move]`;
 
                     return `
-                      <div class="element-key-marker ${isModified ? 'modified' : 'at-rest'}"
-                        data-index="${idx}"
+                      <div class="element-key-marker ${isSelected ? 'selected' : ''} ${isModified ? 'modified' : 'at-rest'}"
                         data-time="${k.time}"
                         data-joint="${jointId}"
+                        data-keyid="${keyId}"
                         title="${desc}"
                         style="left:${leftPx - 5}px; background:${jointDef.color};">
                       </div>
@@ -1070,40 +1422,178 @@ export class KeyframeTimeline {
       });
     });
 
+    // Track row header clicks to set selected joint
+    container.querySelectorAll('.timeline-element-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('btn-track-add-key')) return;
+        const jointId = header.getAttribute('data-joint') as AnatomicalJointId;
+        if (jointId) {
+          this.setSelectedJoint(jointId);
+        }
+      });
+    });
+
+    // Track "+Key" buttons
+    container.querySelectorAll('.btn-track-add-key').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jointId = btn.getAttribute('data-joint') as AnatomicalJointId;
+        if (jointId) {
+          this.setSelectedJoint(jointId);
+          this.addTrackKeyframe(jointId);
+        }
+      });
+    });
+
     // Bind marker clicks / drag starts
     container.querySelectorAll('.element-key-marker').forEach(marker => {
       marker.addEventListener('mousedown', (e) => {
         if ((e as MouseEvent).button === 0) {
-          this.startKeyframeDrag(e as MouseEvent, marker as HTMLElement);
+          this.handleMarkerMouseDown(e as MouseEvent, marker as HTMLElement);
         }
       });
     });
   }
 
-  private startKeyframeDrag(e: MouseEvent, targetEl: HTMLElement): void {
+  private handleMarkerMouseDown(e: MouseEvent, targetEl: HTMLElement): void {
     e.stopPropagation();
     e.preventDefault();
-    const idx = parseInt(targetEl.getAttribute('data-index')!, 10);
-    const track = this.getActiveTrack();
-    if (!track || !track.keyframes[idx]) return;
 
-    this.isDraggingKeyframe = true;
-    this.draggedKeyframeIndex = idx;
+    const time = parseFloat(targetEl.getAttribute('data-time')!);
+    const jointId = targetEl.getAttribute('data-joint') as AnatomicalJointId;
+    const keyId = targetEl.getAttribute('data-keyid') || this.makeKeyId(time, jointId);
+
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+
+    if (isCtrl) {
+      if (this.selectedKeyframeKeys.has(keyId)) {
+        this.selectedKeyframeKeys.delete(keyId);
+        targetEl.classList.remove('selected');
+      } else {
+        this.selectedKeyframeKeys.add(keyId);
+        targetEl.classList.add('selected');
+      }
+      this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      return;
+    }
+
+    if (isShift) {
+      this.selectedKeyframeKeys.add(keyId);
+      targetEl.classList.add('selected');
+      this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      return;
+    }
+
+    if (!this.selectedKeyframeKeys.has(keyId)) {
+      this.clearSelection();
+      this.selectedKeyframeKeys.add(keyId);
+      this.container.querySelectorAll('.element-key-marker.selected, .keyframe-diamond.selected').forEach(el => el.classList.remove('selected'));
+      targetEl.classList.add('selected');
+    }
+
+    this.startMultiKeyframeDrag(e, time);
+  }
+
+  private handleMasterDiamondMouseDown(e: MouseEvent, targetEl: HTMLElement): void {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const time = parseFloat(targetEl.getAttribute('data-time')!);
+    const keyId = targetEl.getAttribute('data-keyid') || this.makeKeyId(time);
+    const idx = parseInt(targetEl.getAttribute('data-index') || '0', 10);
+
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+
+    if (isCtrl) {
+      if (this.selectedKeyframeKeys.has(keyId)) {
+        this.selectedKeyframeKeys.delete(keyId);
+        targetEl.classList.remove('selected');
+      } else {
+        this.selectedKeyframeKeys.add(keyId);
+        targetEl.classList.add('selected');
+      }
+      this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      return;
+    }
+
+    if (isShift) {
+      this.selectedKeyframeKeys.add(keyId);
+      targetEl.classList.add('selected');
+      this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      return;
+    }
+
+    if (!this.selectedKeyframeKeys.has(keyId)) {
+      this.clearSelection();
+      this.selectedKeyframeKeys.add(keyId);
+      this.selectedKeyframeIndex = idx;
+      this.container.querySelectorAll('.element-key-marker.selected, .keyframe-diamond.selected').forEach(el => el.classList.remove('selected'));
+      targetEl.classList.add('selected');
+    }
+
+    this.startMultiKeyframeDrag(e, time);
+  }
+
+  private startMultiKeyframeDrag(e: MouseEvent, referenceTime: number): void {
+    const track = this.getActiveTrack();
+    if (!track) return;
+
+    this.isDraggingKeyframes = true;
     this.dragStartClientX = e.clientX;
-    this.dragStartTime = track.keyframes[idx].time;
+    this.dragStartTime = referenceTime;
     this.hasDraggedKeyframe = false;
 
-    this.selectedKeyframeIndex = idx;
-    targetEl.classList.add('dragging');
+    this.draggingEntries = [];
+    for (const kId of this.selectedKeyframeKeys) {
+      if (kId.startsWith('joint:')) {
+        const parts = kId.split(':');
+        const jId = parts[1] as AnatomicalJointId;
+        const t = parseFloat(parts[2]);
+        const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+        if (kf && kf.joints && kf.joints[jId]) {
+          this.draggingEntries.push({
+            keyId: kId,
+            originalTime: kf.time,
+            jointId: jId,
+            pos: { ...kf.joints[jId] }
+          });
+        }
+      } else if (kId.startsWith('master:')) {
+        const t = parseFloat(kId.split(':')[1]);
+        const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+        if (kf) {
+          this.draggingEntries.push({
+            keyId: kId,
+            originalTime: kf.time,
+            joints: JSON.parse(JSON.stringify(kf.joints)),
+            name: kf.name
+          });
+        }
+      }
+    }
 
-    // Create or show drag badge
+    if (this.draggingEntries.length === 0) {
+      const nearKf = track.keyframes.find(k => Math.abs(k.time - referenceTime) < 0.005);
+      if (nearKf) {
+        this.draggingEntries.push({
+          keyId: this.makeKeyId(nearKf.time),
+          originalTime: nearKf.time,
+          joints: JSON.parse(JSON.stringify(nearKf.joints)),
+          name: nearKf.name
+        });
+      }
+    }
+
     let badge = document.querySelector('.timeline-drag-badge') as HTMLElement | null;
     if (!badge) {
       badge = document.createElement('div');
       badge.className = 'timeline-drag-badge';
       document.body.appendChild(badge);
     }
-    badge.textContent = `${this.dragStartTime.toFixed(2)}s`;
+    badge.textContent = `${referenceTime.toFixed(2)}s`;
     badge.style.display = 'block';
     badge.style.left = `${e.clientX}px`;
     badge.style.top = `${e.clientY - 24}px`;
@@ -1241,6 +1731,13 @@ export class KeyframeTimeline {
       this.events.onKeyframeAdded?.(this.currentTime, this.restJoints);
     });
 
+    // Add Track Keyframe button
+    this.container.querySelector('.btn-timeline-add-track-key')?.addEventListener('click', () => {
+      const jointId = this.selectedJointId || 'chest';
+      this.addTrackKeyframe(jointId);
+      this.events.onKeyframeAdded?.(this.currentTime, this.restJoints, jointId);
+    });
+
     // Copy Keyframe button
     this.container.querySelector('.btn-timeline-copy-key')?.addEventListener('click', () => {
       this.copyKeyframe();
@@ -1265,7 +1762,7 @@ export class KeyframeTimeline {
 
     // Delete Keyframe button
     this.container.querySelector('.btn-timeline-del-key')?.addEventListener('click', () => {
-      this.deleteSelectedKeyframe();
+      this.deleteSelectedKeyframes();
     });
 
     // Auto-Key toggle
@@ -1289,83 +1786,153 @@ export class KeyframeTimeline {
       }
     });
 
+    // Rubberband Box Selection on empty tracks area
+    const tracksList = this.container.querySelector('.timeline-tracks-list') as HTMLElement | null;
+    tracksList?.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('.keyframe-diamond') ||
+        target.closest('.element-key-marker') ||
+        target.closest('.timeline-row-header') ||
+        target.closest('.btn-track-add-key')
+      ) {
+        return;
+      }
+
+      this.isRubberbanding = true;
+      this.rubberbandStartX = e.clientX;
+      this.rubberbandStartY = e.clientY;
+      const isCtrl = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+      if (!isCtrl && !isShift) {
+        this.clearSelection();
+        this.container.querySelectorAll('.element-key-marker.selected, .keyframe-diamond.selected').forEach(el => el.classList.remove('selected'));
+      }
+      this.rubberbandInitialKeys = new Set(this.selectedKeyframeKeys);
+
+      if (!this.rubberbandBoxEl) {
+        this.rubberbandBoxEl = document.createElement('div');
+        this.rubberbandBoxEl.className = 'timeline-rubberband-box';
+        document.body.appendChild(this.rubberbandBoxEl);
+      }
+      this.rubberbandBoxEl.style.display = 'block';
+      this.rubberbandBoxEl.style.left = `${e.clientX}px`;
+      this.rubberbandBoxEl.style.top = `${e.clientY}px`;
+      this.rubberbandBoxEl.style.width = '0px';
+      this.rubberbandBoxEl.style.height = '0px';
+    });
+
     window.addEventListener('mousemove', (e) => {
       if (this.isDraggingPlayhead) {
         this.scrubFromEvent(e);
-      } else if (this.isDraggingKeyframe && this.draggedKeyframeIndex !== null) {
+      } else if (this.isRubberbanding && this.rubberbandBoxEl) {
+        const minX = Math.min(this.rubberbandStartX, e.clientX);
+        const maxX = Math.max(this.rubberbandStartX, e.clientX);
+        const minY = Math.min(this.rubberbandStartY, e.clientY);
+        const maxY = Math.max(this.rubberbandStartY, e.clientY);
+
+        this.rubberbandBoxEl.style.left = `${minX}px`;
+        this.rubberbandBoxEl.style.top = `${minY}px`;
+        this.rubberbandBoxEl.style.width = `${maxX - minX}px`;
+        this.rubberbandBoxEl.style.height = `${maxY - minY}px`;
+
+        const boxRect = { left: minX, right: maxX, top: minY, bottom: maxY };
+
+        const allKeyEls = this.container.querySelectorAll('.element-key-marker, .keyframe-diamond');
+        allKeyEls.forEach(el => {
+          const keyId = el.getAttribute('data-keyid');
+          if (!keyId) return;
+          const r = el.getBoundingClientRect();
+          const intersects = !(r.right < boxRect.left || r.left > boxRect.right || r.bottom < boxRect.top || r.top > boxRect.bottom);
+
+          if (intersects) {
+            this.selectedKeyframeKeys.add(keyId);
+            el.classList.add('selected');
+          } else if (!this.rubberbandInitialKeys?.has(keyId)) {
+            this.selectedKeyframeKeys.delete(keyId);
+            el.classList.remove('selected');
+          }
+        });
+
+        this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      } else if (this.isDraggingKeyframes) {
         const dx = e.clientX - this.dragStartClientX;
         if (Math.abs(dx) > 3) {
           this.hasDraggedKeyframe = true;
         }
         if (this.hasDraggedKeyframe) {
-          const track = this.getActiveTrack();
-          if (track && track.keyframes[this.draggedKeyframeIndex]) {
-            const trackWidth = this.getTrackWidth();
-            const pixelsPerSec = trackWidth / this.duration;
-            const dt = dx / pixelsPerSec;
-            let newTime = Math.max(0, Math.min(this.duration, this.dragStartTime + dt));
-            newTime = Math.round(newTime * 100) / 100;
+          const trackWidth = this.getTrackWidth();
+          const pixelsPerSec = trackWidth / this.duration;
+          const dt = dx / pixelsPerSec;
+          let newRefTime = Math.max(0, Math.min(this.duration, this.dragStartTime + dt));
+          newRefTime = Math.round(newRefTime * 100) / 100;
 
-            const kf = track.keyframes[this.draggedKeyframeIndex];
-            kf.time = newTime;
-            this.currentTime = newTime;
-
-            if (this.dragGhostElement) {
-              this.dragGhostElement.textContent = `${newTime.toFixed(2)}s`;
-              this.dragGhostElement.style.left = `${e.clientX}px`;
-              this.dragGhostElement.style.top = `${e.clientY - 24}px`;
-            }
-
-            // Visual feedback on playhead
-            this.updatePlayheadPosition();
-            this.evaluatePoseAtCurrentTime();
+          if (this.dragGhostElement) {
+            const count = this.draggingEntries.length;
+            this.dragGhostElement.textContent = count > 1 ? `${newRefTime.toFixed(2)}s (${count} keys)` : `${newRefTime.toFixed(2)}s`;
+            this.dragGhostElement.style.left = `${e.clientX}px`;
+            this.dragGhostElement.style.top = `${e.clientY - 24}px`;
           }
+
+          this.currentTime = newRefTime;
+          this.updatePlayheadPosition();
+          this.evaluatePoseAtCurrentTime();
         }
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
       if (this.isDraggingPlayhead) {
         this.isDraggingPlayhead = false;
       }
 
-      if (this.isDraggingKeyframe) {
+      if (this.isRubberbanding) {
+        this.isRubberbanding = false;
+        if (this.rubberbandBoxEl) {
+          this.rubberbandBoxEl.style.display = 'none';
+        }
+        this.events.onSelectionChanged?.(this.selectedKeyframeKeys.size);
+      }
+
+      if (this.isDraggingKeyframes) {
         if (this.dragGhostElement) {
           this.dragGhostElement.remove();
           this.dragGhostElement = null;
         }
 
         const track = this.getActiveTrack();
-        if (track && this.draggedKeyframeIndex !== null && track.keyframes[this.draggedKeyframeIndex]) {
-          const kf = track.keyframes[this.draggedKeyframeIndex];
-          if (this.hasDraggedKeyframe) {
-            const oldTime = this.dragStartTime;
-            const newTime = kf.time;
-            track.keyframes.sort((a, b) => a.time - b.time);
-            this.selectedKeyframeIndex = track.keyframes.indexOf(kf);
+        if (track && this.hasDraggedKeyframe && this.draggingEntries.length > 0) {
+          const trackWidth = this.getTrackWidth();
+          const pixelsPerSec = trackWidth / this.duration;
+          const dx = e.clientX - this.dragStartClientX;
+          const dt = dx / pixelsPerSec;
+          const oldRefTime = this.dragStartTime;
+          const newRefTime = Math.max(0, Math.min(this.duration, Math.round((oldRefTime + dt) * 100) / 100));
+          const effectiveDt = newRefTime - oldRefTime;
 
-            this.events.onKeyframeMoved?.(this.selectedKeyframeIndex, oldTime, newTime);
-            this.renderRuler();
-            this.renderKeyframeTrack();
-            this.renderElementTracks();
-            this.updatePlayheadPosition();
-          } else {
-            // Click without dragging
-            this.setTime(kf.time);
-            this.renderKeyframeTrack();
-            this.renderElementTracks();
-            this.events.onKeyframeSelected?.(this.draggedKeyframeIndex, kf);
-          }
+          this.applyKeyframeMovement(track, this.draggingEntries, effectiveDt);
+
+          this.events.onKeyframeMoved?.(-1, oldRefTime, newRefTime);
+          this.renderRuler();
+          this.renderKeyframeTrack();
+          this.renderElementTracks();
+          this.updatePlayheadPosition();
+          this.evaluatePoseAtCurrentTime();
+        } else if (!this.hasDraggedKeyframe) {
+          this.setTime(this.dragStartTime);
+          this.renderKeyframeTrack();
+          this.renderElementTracks();
         }
 
         this.container.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
-        this.isDraggingKeyframe = false;
-        this.draggedKeyframeIndex = null;
+        this.isDraggingKeyframes = false;
         this.hasDraggedKeyframe = false;
+        this.draggingEntries = [];
       }
     });
 
-    // Global timeline keyboard shortcuts (Space: play/pause, Del: delete, Ctrl+C: copy, Ctrl+V: paste, K: kinematics)
+    // Global timeline keyboard shortcuts (Space: play/pause, Del: delete, Ctrl+C: copy, Ctrl+V: paste, Ctrl+A: select all, K: kinematics)
     window.addEventListener('keydown', (e) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -1375,7 +1942,10 @@ export class KeyframeTimeline {
         e.preventDefault();
         this.togglePlay();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        this.deleteSelectedKeyframe();
+        this.deleteSelectedKeyframes();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        this.selectAllKeyframes();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         this.copyKeyframe();
@@ -1389,6 +1959,78 @@ export class KeyframeTimeline {
         this.events.onKinematicsModeChanged?.(newMode);
       }
     });
+  }
+
+  private applyKeyframeMovement(track: StudioSideTrack, entries: DraggingKeyEntry[], dt: number): void {
+    if (entries.length === 0) return;
+
+    // 1. Remove/detach all moved joint or master entries from their original keyframes
+    const newItems: { time: number; jointId?: AnatomicalJointId; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
+
+    for (const entry of entries) {
+      const newTime = Math.max(0, Math.min(this.duration, Math.round((entry.originalTime + dt) * 100) / 100));
+
+      if (entry.jointId && entry.pos) {
+        const origKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - entry.originalTime) < 0.005);
+        if (origKf && origKf.joints) {
+          delete origKf.joints[entry.jointId];
+          if (Object.keys(origKf.joints).length === 0) {
+            const idx = track.keyframes.indexOf(origKf);
+            if (idx >= 0) track.keyframes.splice(idx, 1);
+          }
+        }
+        newItems.push({
+          time: newTime,
+          jointId: entry.jointId,
+          pos: { ...entry.pos }
+        });
+      } else if (entry.joints) {
+        const origIdx = track.keyframes.findIndex((k: StudioKeyframe) => Math.abs(k.time - entry.originalTime) < 0.005);
+        if (origIdx >= 0) {
+          track.keyframes.splice(origIdx, 1);
+        }
+        newItems.push({
+          time: newTime,
+          joints: JSON.parse(JSON.stringify(entry.joints)),
+          name: entry.name
+        });
+      }
+    }
+
+    // 2. Re-insert items at their new timestamps, merging with any existing keyframe at that timestamp
+    this.clearSelection();
+
+    for (const item of newItems) {
+      let destKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - item.time) < 0.005);
+      if (item.jointId && item.pos) {
+        if (!destKf) {
+          destKf = {
+            time: item.time,
+            joints: { [item.jointId]: { ...item.pos } } as any
+          };
+          track.keyframes.push(destKf);
+        } else {
+          if (!destKf.joints) destKf.joints = {} as any;
+          destKf.joints[item.jointId] = { ...item.pos };
+        }
+        this.selectedKeyframeKeys.add(`joint:${item.jointId}:${item.time.toFixed(3)}`);
+      } else if (item.joints) {
+        if (!destKf) {
+          destKf = {
+            time: item.time,
+            name: item.name,
+            joints: { ...item.joints }
+          };
+          track.keyframes.push(destKf);
+        } else {
+          destKf.joints = { ...destKf.joints, ...item.joints };
+          if (item.name) destKf.name = item.name;
+        }
+        this.selectedKeyframeKeys.add(this.makeKeyId(item.time));
+      }
+    }
+
+    track.keyframes.sort((a: StudioKeyframe, b: StudioKeyframe) => a.time - b.time);
   }
 
   private scrubFromEvent(e: MouseEvent): void {
@@ -1427,5 +2069,6 @@ export class KeyframeTimeline {
   public destroy(): void {
     if (this.animTimerId) cancelAnimationFrame(this.animTimerId);
     if (this.dragGhostElement) this.dragGhostElement.remove();
+    if (this.rubberbandBoxEl) this.rubberbandBoxEl.remove();
   }
 }

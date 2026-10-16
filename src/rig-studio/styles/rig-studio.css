@@ -1703,6 +1703,67 @@ body.rig-studio-body {
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
+.element-key-marker.selected {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 1px;
+  box-shadow: 0 0 10px #f59e0b, 0 0 4px #ffffff !important;
+  transform: scale(1.4) !important;
+  z-index: 30 !important;
+}
+
+.element-key-marker.dragging {
+  cursor: grabbing !important;
+  transform: scale(1.5) !important;
+  box-shadow: 0 0 14px #38bdf8 !important;
+  z-index: 60 !important;
+}
+
+.btn-track-add-key {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #94a3b8;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  min-width: 16px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.btn-track-add-key:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+
+.timeline-element-row.active-track {
+  background: rgba(56, 189, 248, 0.14) !important;
+  border-left: 2px solid #38bdf8;
+}
+
+.timeline-element-row.active-track .timeline-element-header {
+  background: #101d36;
+  color: #38bdf8;
+}
+
+.timeline-rubberband-box {
+  position: fixed;
+  border: 1px solid #38bdf8;
+  background: rgba(56, 189, 248, 0.22);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
+  pointer-events: none;
+  z-index: 300;
+  border-radius: 2px;
+}
+
 .element-change-badge {
   font-size: 0.58rem;
   font-family: var(--studio-font-mono);
