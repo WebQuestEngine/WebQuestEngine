@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:player": "vite --open /player.html",
+    "dev:rig-studio": "vite --open /rig-studio.html",
     "build": "tsc && vite build",
     "build:game": "tsc && vite build",
     "preview": "vite preview",

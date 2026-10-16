@@ -169,6 +169,7 @@ export class SkeletalImporter {
       type: 'skeletal',
       format: 'spine',
       textureUrl,
+      spineDoc: json,
       skeleton: {
         bones,
         slots,
