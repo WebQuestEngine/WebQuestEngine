@@ -22,7 +22,13 @@ import {
   DEFAULT_ENVELOPES,
   convertJointsToSpineBones,
   copyJointsFromFront,
-  getDefaultJointPositions
+  getDefaultJointPositions,
+  mirrorJointPositions,
+  mirrorAttachedParts,
+  mirrorBoneLayerOrder,
+  mirrorEnvelopes,
+  suggestMirroredPoseName,
+  suggestMirroredPoseId
 } from './rigging/AnatomicalRig';
 import { RigStudioCanvas } from './rigging/RigStudioCanvas';
 import { VectorElementSlicer, SlicerToolMode } from './slicer/VectorElementSlicer';
@@ -754,6 +760,11 @@ export class RigStudioApp {
               `).join('')}
             </select>
           </div>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:#e2e8f0; cursor:pointer; margin-top:2px;">
+            <input type="checkbox" id="modal-new-pose-mirror" />
+            <span>🪞 Mirror horizontally (swap left/right limbs & graphics)</span>
+          </label>
         </div>
         <div class="studio-modal-footer">
           <button class="btn-studio modal-cancel-btn">Cancel</button>
@@ -767,8 +778,20 @@ export class RigStudioApp {
     document.body.appendChild(overlay);
 
     const inputName = overlay.querySelector('#modal-new-pose-name') as HTMLInputElement;
+    const selectTemplate = overlay.querySelector('#modal-new-pose-template') as HTMLSelectElement;
+    const chkMirror = overlay.querySelector('#modal-new-pose-mirror') as HTMLInputElement;
+
     inputName?.focus();
     inputName?.select();
+
+    chkMirror?.addEventListener('change', () => {
+      if (chkMirror.checked) {
+        const curTmpl = this.views[selectTemplate.value];
+        if (curTmpl) {
+          inputName.value = suggestMirroredPoseName(curTmpl.label);
+        }
+      }
+    });
 
     const closeModal = () => overlay.remove();
     overlay.querySelector('.modal-close-btn')?.addEventListener('click', closeModal);
@@ -780,8 +803,9 @@ export class RigStudioApp {
         this.showToast('Please enter a valid pose name', 'warning');
         return;
       }
-      const templateId = (overlay.querySelector('#modal-new-pose-template') as HTMLSelectElement).value;
-      this.createPose(name, templateId);
+      const templateId = selectTemplate.value;
+      const shouldMirror = chkMirror?.checked || false;
+      this.createPose(name, templateId, shouldMirror);
       closeModal();
     };
 
@@ -792,8 +816,8 @@ export class RigStudioApp {
     });
   }
 
-  public createPose(name: string, templateViewId = 'front'): string {
-    const safeId = name.toLowerCase().replace(/[^a-z0-9_]/g, '_') || `pose_${Date.now()}`;
+  public createPose(name: string, templateViewId = 'front', mirror = false): string {
+    const safeId = mirror ? suggestMirroredPoseId(name.toLowerCase().replace(/[^a-z0-9_]/g, '_')) : (name.toLowerCase().replace(/[^a-z0-9_]/g, '_') || `pose_${Date.now()}`);
     let poseId = safeId;
     let counter = 1;
     while (this.views[poseId]) {
@@ -802,6 +826,16 @@ export class RigStudioApp {
 
     const template = this.views[templateViewId] || this.views.front;
 
+    const baseJoints = JSON.parse(JSON.stringify(template.joints));
+    const baseParts = JSON.parse(JSON.stringify(template.parts || {}));
+    const baseEnvelopes = { ...(template.envelopes || {}) };
+    const baseBoneOrder = template.boneOrder ? [...template.boneOrder] : undefined;
+
+    const finalJoints = mirror ? mirrorJointPositions(baseJoints, 'horizontal') : baseJoints;
+    const finalParts = mirror && Object.keys(baseParts).length > 0 ? mirrorAttachedParts(baseParts) : baseParts;
+    const finalEnvelopes = mirror && Object.keys(baseEnvelopes).length > 0 ? (mirrorEnvelopes(baseEnvelopes) as Record<string, number>) : baseEnvelopes;
+    const finalBoneOrder = mirror && baseBoneOrder ? mirrorBoneLayerOrder(baseBoneOrder) : baseBoneOrder;
+
     this.views[poseId] = {
       viewId: poseId,
       label: name,
@@ -809,16 +843,16 @@ export class RigStudioApp {
       imageUrl: template.imageUrl,
       fileName: template.fileName,
       fileSize: template.fileSize,
-      joints: JSON.parse(JSON.stringify(template.joints)),
-      envelopes: { ...template.envelopes },
-      parts: { ...template.parts },
-      boneOrder: template.boneOrder ? [...template.boneOrder] : undefined,
+      joints: finalJoints,
+      envelopes: finalEnvelopes,
+      parts: finalParts,
+      boneOrder: finalBoneOrder,
       visible: true
     };
 
     this.renderViewsBar();
     this.switchView(poseId);
-    this.showToast(`✓ Created pose "${name}"`, 'success');
+    this.showToast(`✓ Created ${mirror ? 'mirrored ' : ''}pose "${name}"`, 'success');
     return poseId;
   }
 
@@ -856,7 +890,51 @@ export class RigStudioApp {
   public duplicatePose(viewId: string): void {
     const cur = this.views[viewId];
     if (!cur) return;
-    this.createPose(`${cur.label} Copy`, viewId);
+    this.createPose(`${cur.label} Copy`, viewId, false);
+  }
+
+  public duplicateAndMirrorPose(viewId: string): string {
+    const cur = this.views[viewId];
+    if (!cur) return '';
+    const newName = suggestMirroredPoseName(cur.label);
+    return this.createPose(newName, viewId, true);
+  }
+
+  public mirrorActivePose(mode: 'horizontal' | 'swap_limbs' = 'horizontal'): void {
+    const cur = this.views[this.activeView];
+    if (!cur) return;
+
+    this.recordHistory(`Mirror Pose "${cur.label}"`);
+
+    // 1. Mirror joints
+    cur.joints = mirrorJointPositions(cur.joints, mode);
+
+    // 2. Mirror attached parts
+    if (cur.parts && Object.keys(cur.parts).length > 0) {
+      cur.parts = mirrorAttachedParts(cur.parts);
+    }
+
+    // 3. Mirror envelopes
+    if (cur.envelopes && Object.keys(cur.envelopes).length > 0) {
+      cur.envelopes = mirrorEnvelopes(cur.envelopes) as Record<string, number>;
+    }
+
+    // 4. Mirror bone order
+    if (cur.boneOrder && cur.boneOrder.length > 0) {
+      cur.boneOrder = mirrorBoneLayerOrder(cur.boneOrder);
+    }
+
+    // 5. Update canvas
+    if (this.canvas) {
+      this.canvas.setView(this.activeView, cur.joints, cur.envelopes, cur.parts, cur.boneOrder);
+      this.canvas.render();
+    }
+
+    this.renderLeftSidebar();
+    this.renderRightSidebar();
+    this.renderCanvasAlignmentBar();
+    this.persistRigStateToLocalStorage();
+    this.showToast(`🪞 Mirrored pose "${cur.label}"`, 'success');
   }
 
   public switchStudioMode(mode: 'rig' | 'slicer' | 'animate'): void {
@@ -2409,6 +2487,7 @@ export class RigStudioApp {
         <div style="display:flex; gap:4px; align-items:center;">
           <input type="text" id="input-active-pose-label" value="${currentArt.label}" placeholder="Pose Name..." style="flex:1; min-width:0; background:#020617; border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:3px 6px; font-size:0.75rem; font-weight:600; color:#f8fafc;" title="Rename active pose (e.g. Front, Idle, Crouch, Attack)" />
           <button class="btn-studio" id="btn-pose-duplicate-left" style="font-size:0.65rem; padding:3px 6px;" title="Duplicate this pose to create a new variant">📋</button>
+          <button class="btn-studio" id="btn-pose-duplicate-mirror-left" style="font-size:0.65rem; padding:3px 6px; color:#c084fc;" title="Duplicate & Mirror this pose to create an opposite side variant">🪞📋</button>
           ${!['front', 'back', 'left', 'right'].includes(currentArt.viewId) ? `
             <button class="btn-studio" id="btn-pose-delete-left" style="font-size:0.65rem; padding:3px 6px; color:#ef4444;" title="Delete this custom pose">🗑️</button>
           ` : ''}
@@ -2513,6 +2592,18 @@ export class RigStudioApp {
           </div>
 
           <!-- Additional Actions (Step 4 & 5) -->
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">
+            <div style="font-size:0.65rem; color:#94a3b8; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">Pose Mirroring</div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn-studio" id="btn-mirror-active-pose" style="justify-content:center; flex:1; font-size:0.7rem; color:#38bdf8;" title="Mirror skeleton joints and graphics horizontally in place">
+                🪞 Mirror Pose
+              </button>
+              <button class="btn-studio" id="btn-duplicate-mirror-pose" style="justify-content:center; flex:1; font-size:0.7rem; color:#c084fc;" title="Duplicate pose to a new mirrored view so you can edit it independently">
+                🪞＋ As New
+              </button>
+            </div>
+          </div>
+
           ${this.toolMode === 'preview' ? `
             <button class="btn-studio" id="btn-reset-pose" style="justify-content:center; margin-top:6px;">
               🔄 Reset Pose
@@ -2545,6 +2636,18 @@ export class RigStudioApp {
 
     sidebar.querySelector('#btn-pose-duplicate-left')?.addEventListener('click', () => {
       this.duplicatePose(this.activeView);
+    });
+
+    sidebar.querySelector('#btn-pose-duplicate-mirror-left')?.addEventListener('click', () => {
+      this.duplicateAndMirrorPose(this.activeView);
+    });
+
+    sidebar.querySelector('#btn-mirror-active-pose')?.addEventListener('click', () => {
+      this.mirrorActivePose('horizontal');
+    });
+
+    sidebar.querySelector('#btn-duplicate-mirror-pose')?.addEventListener('click', () => {
+      this.duplicateAndMirrorPose(this.activeView);
     });
 
     sidebar.querySelector('#btn-pose-delete-left')?.addEventListener('click', () => {
@@ -5628,20 +5731,27 @@ export class RigStudioApp {
                 <button class="btn-studio btn-anim-record-current" style="font-size:0.72rem; justify-content:center; color:#38bdf8; border-color:rgba(56,189,248,0.4);" title="Capture current canvas joint positions as a keyframe at playhead time">
                   🔑 ＋ Record Keyframe at Playhead
                 </button>
-                <div style="display:flex; gap:6px;">
+                <div style="display:flex; gap:4px; flex-wrap:wrap;">
                   <button class="btn-studio btn-anim-reset-pose" style="font-size:0.68rem; justify-content:center; flex:1;" title="Reset pose to character rest pose">
-                    ↺ Rest Pose
+                    ↺ Rest
                   </button>
                   ${this.activeView !== 'front' ? `
                     <button class="btn-studio btn-anim-copy-front" style="font-size:0.68rem; justify-content:center; flex:1;" title="Copy keyframe pose from Front view">
-                      📋 Copy Front
+                      📋 Front
                     </button>
                   ` : ''}
                   ${(this.activeView === 'left' || this.activeView === 'right') ? `
-                    <button class="btn-studio btn-anim-mirror-pose" style="font-size:0.68rem; justify-content:center; flex:1;" title="Mirror pose across Left and Right sides">
+                    <button class="btn-studio btn-anim-mirror-pose" data-mode="swap_limbs" style="font-size:0.68rem; justify-content:center; flex:1;" title="Mirror walk/run stride by swapping Left & Right limbs">
+                      🪞 Stride
+                    </button>
+                    <button class="btn-studio btn-anim-mirror-pose" data-mode="horizontal" style="font-size:0.68rem; justify-content:center; flex:1;" title="Flip pose horizontally across X axis">
+                      ↔️ Flip X
+                    </button>
+                  ` : `
+                    <button class="btn-studio btn-anim-mirror-pose" data-mode="horizontal" style="font-size:0.68rem; justify-content:center; flex:1;" title="Mirror pose across Left and Right sides">
                       🪞 Mirror Pose
                     </button>
-                  ` : ''}
+                  `}
                 </div>
               </div>
             ` : `
@@ -5796,8 +5906,11 @@ export class RigStudioApp {
     });
 
     // Mirror Pose
-    sidebar.querySelector('.btn-anim-mirror-pose')?.addEventListener('click', () => {
-      this.mirrorPoseLeftRight();
+    sidebar.querySelectorAll('.btn-anim-mirror-pose').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = (btn.getAttribute('data-mode') as 'horizontal' | 'swap_limbs') || undefined;
+        this.mirrorPoseLeftRight(mode);
+      });
     });
 
     // Enable Side button
@@ -5840,10 +5953,19 @@ export class RigStudioApp {
             </button>
           ` : ''}
           ${(this.activeView === 'left' || this.activeView === 'right') ? `
-            <button class="btn-studio btn-left-mirror-pose" style="font-size:0.7rem; justify-content:center;">
+            <div style="display:flex; gap:4px;">
+              <button class="btn-studio btn-left-mirror-pose" data-mode="swap_limbs" style="font-size:0.7rem; justify-content:center; flex:1;" title="Swap Left and Right limbs to mirror walk/run stride">
+                🪞 Mirror Stride
+              </button>
+              <button class="btn-studio btn-left-mirror-pose" data-mode="horizontal" style="font-size:0.7rem; justify-content:center; flex:1;" title="Flip pose horizontally across X axis">
+                ↔️ Flip X
+              </button>
+            </div>
+          ` : `
+            <button class="btn-studio btn-left-mirror-pose" data-mode="horizontal" style="font-size:0.7rem; justify-content:center;" title="Mirror pose across Left and Right sides">
               🪞 Mirror Pose (Left ↔ Right)
             </button>
-          ` : ''}
+          `}
         </div>
 
         <!-- Presets Generator -->
@@ -5891,8 +6013,11 @@ export class RigStudioApp {
       this.copyPoseFromFront();
     });
 
-    sidebar.querySelector('.btn-left-mirror-pose')?.addEventListener('click', () => {
-      this.mirrorPoseLeftRight();
+    sidebar.querySelectorAll('.btn-left-mirror-pose').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = (btn.getAttribute('data-mode') as 'horizontal' | 'swap_limbs') || undefined;
+        this.mirrorPoseLeftRight(mode);
+      });
     });
 
     sidebar.querySelector('.btn-gen-walk')?.addEventListener('click', () => {
@@ -5928,28 +6053,24 @@ export class RigStudioApp {
     this.showToast(`✓ Copied pose from Front to ${this.activeView.toUpperCase()}`, 'success');
   }
 
-  public mirrorPoseLeftRight(): void {
+  public mirrorPoseLeftRight(mode?: 'horizontal' | 'swap_limbs'): void {
     const currentJoints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
-    const mirrored: Record<AnatomicalJointId, { x: number; y: number }> = JSON.parse(JSON.stringify(currentJoints));
-
-    // Swap symmetrical limbs and invert X
-    for (const joint of ANATOMICAL_JOINTS) {
-      if (joint.isCenter) {
-        mirrored[joint.id].x = -mirrored[joint.id].x;
-      } else if (joint.symmetricWith) {
-        const otherJoint = currentJoints[joint.symmetricWith];
-        if (otherJoint) {
-          mirrored[joint.id] = { x: -otherJoint.x, y: otherJoint.y };
-        }
-      }
-    }
+    const isSide = this.activeView === 'left' || this.activeView === 'right';
+    const chosenMode = mode || (isSide ? 'swap_limbs' : 'horizontal');
+    const mirrored = mirrorJointPositions(currentJoints, chosenMode);
 
     this.canvas?.setPreviewJoints(mirrored);
-    if (this.timeline?.getIsAutoKey()) {
-      this.timeline.addKeyframe(mirrored);
-      this.renderRightSidebar();
+    if (this.timeline) {
+      if (this.timeline.getIsAutoKey() || this.timeline.getSelectedKeyframe() !== null) {
+        this.timeline.addKeyframe(mirrored);
+        this.renderRightSidebar();
+        this.showToast(`🪞 Mirrored pose & recorded keyframe at ${this.timeline.getTime().toFixed(2)}s`, 'success');
+      } else {
+        this.showToast('🪞 Mirrored pose! Drag joints to adjust, or click 🔑 to record keyframe', 'info');
+      }
+    } else {
+      this.showToast('🪞 Mirrored pose across left/right axis', 'success');
     }
-    this.showToast('🪞 Mirrored pose across left/right axis', 'success');
   }
 
   public generatePresetCycle(preset: 'walk' | 'idle'): void {

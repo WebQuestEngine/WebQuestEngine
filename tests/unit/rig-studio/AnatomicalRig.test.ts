@@ -8,8 +8,15 @@ import {
   copyJointsFromFront,
   convertJointsToSpineBones,
   poseJointPreservingBones,
-  pathCapsule
+  pathCapsule,
+  mirrorJointPositions,
+  mirrorAttachedParts,
+  mirrorBoneLayerOrder,
+  mirrorEnvelopes,
+  suggestMirroredPoseName,
+  suggestMirroredPoseId
 } from '../../../src/rig-studio/rigging/AnatomicalRig';
+import { BonePartAttachment } from '../../../src/rig-studio/types';
 
 describe('AnatomicalRig', () => {
   it('defines the anatomical joints and draggable bone edges', () => {
@@ -254,5 +261,137 @@ describe('AnatomicalRig', () => {
     expect(newThighLen).toBeCloseTo(origThighLen, 1);
     expect(newCalfLen).toBeCloseTo(origCalfLen, 1);
     expect(newFootLen).toBeCloseTo(origFootLen, 1);
+  });
+
+  describe('Pose Mirroring', () => {
+    it('mirrors joints horizontally, swapping symmetrical counterparts and reflecting X coordinates', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      // Create an asymmetrical pose: raise left hand high to the right, tilt head right
+      const asymmetrical = {
+        ...rest,
+        head: { x: 15, y: rest.head.y },
+        hand_l: { x: 95, y: -250 },
+        hand_r: { x: -60, y: -100 }
+      };
+
+      const mirrored = mirrorJointPositions(asymmetrical, 'horizontal');
+
+      // Center joints invert X
+      expect(mirrored.head.x).toBe(-15);
+      expect(mirrored.head.y).toBe(asymmetrical.head.y);
+
+      // Hand L should receive Hand R's position with negated X
+      expect(mirrored.hand_l.x).toBe(60); // -(-60)
+      expect(mirrored.hand_l.y).toBe(-100);
+
+      // Hand R should receive Hand L's position with negated X
+      expect(mirrored.hand_r.x).toBe(-95); // -(95)
+      expect(mirrored.hand_r.y).toBe(-250);
+
+      // Shoulder L and R should swap and reflect X
+      expect(mirrored.shoulder_l.x).toBeCloseTo(-asymmetrical.shoulder_r.x, 1);
+      expect(mirrored.shoulder_r.x).toBeCloseTo(-asymmetrical.shoulder_l.x, 1);
+    });
+
+    it('mirrors side view stride by swapping limbs without inverting X', () => {
+      const side = getDefaultJointPositions('left', 200, 400);
+      // Left leg is forward (x < 0), right leg is back (x > 0)
+      const stridePose = {
+        ...side,
+        foot_l: { x: -30, y: 0 },
+        foot_r: { x: 25, y: 0 }
+      };
+
+      const mirroredStride = mirrorJointPositions(stridePose, 'swap_limbs');
+
+      // Head should stay facing the same side direction
+      expect(mirroredStride.head.x).toBe(side.head.x);
+
+      // Foot L should now take Foot R's position (backwards)
+      expect(mirroredStride.foot_l.x).toBe(25);
+      expect(mirroredStride.foot_l.y).toBe(0);
+
+      // Foot R should now take Foot L's position (forwards)
+      expect(mirroredStride.foot_r.x).toBe(-30);
+      expect(mirroredStride.foot_r.y).toBe(0);
+    });
+
+    it('mirrors attached parts across counterpart bones with flipped X and negated offsets', () => {
+      const parts: Record<string, BonePartAttachment> = {
+        shoulder_l: {
+          boneId: 'shoulder_l',
+          originJointId: 'shoulder_l',
+          targetJointId: 'elbow_l',
+          image: null as any,
+          imageUrl: 'test_arm_l.png',
+          fileName: 'test_arm_l.png',
+          offsetX: 12,
+          offsetY: -5,
+          rotation: 0.2,
+          pivotX: 0.3,
+          pivotY: 0.5,
+          flipX: false
+        }
+      };
+
+      const mirroredParts = mirrorAttachedParts(parts);
+
+      expect(mirroredParts.shoulder_r).toBeDefined();
+      expect(mirroredParts.shoulder_l).toBeUndefined();
+
+      const rPart = mirroredParts.shoulder_r;
+      expect(rPart.boneId).toBe('shoulder_r');
+      expect(rPart.originJointId).toBe('shoulder_r');
+      expect(rPart.targetJointId).toBe('elbow_r');
+      expect(rPart.offsetX).toBe(-12);
+      expect(rPart.offsetY).toBe(-5);
+      expect(rPart.rotation).toBeCloseTo(-0.2, 2);
+      expect(rPart.pivotX).toBeCloseTo(0.7, 2); // 1 - 0.3
+      expect(rPart.flipX).toBe(true);
+    });
+
+    it('mirrors bone layer draw order preserving far-to-near limb hierarchy', () => {
+      const originalOrder = ['shoulder_r', 'elbow_r', 'chest', 'shoulder_l', 'elbow_l'];
+      const mirroredOrder = mirrorBoneLayerOrder(originalOrder as any);
+
+      expect(mirroredOrder).toEqual(['shoulder_l', 'elbow_l', 'chest', 'shoulder_r', 'elbow_r']);
+    });
+
+    it('mirrors joint envelope radii across symmetrical pairs', () => {
+      const envelopes = {
+        shoulder_l: 35,
+        shoulder_r: 20,
+        chest: 50
+      };
+
+      const mirroredEnvelopes = mirrorEnvelopes(envelopes as any);
+
+      expect(mirroredEnvelopes.shoulder_l).toBe(20);
+      expect(mirroredEnvelopes.shoulder_r).toBe(35);
+      expect(mirroredEnvelopes.chest).toBe(50);
+    });
+
+    it('suggests intelligent mirrored names for poses', () => {
+      expect(suggestMirroredPoseName('Front-Right')).toBe('Front-Left');
+      expect(suggestMirroredPoseName('Back-Right')).toBe('Back-Left');
+      expect(suggestMirroredPoseName('Right Side')).toBe('Left Side');
+      expect(suggestMirroredPoseName('Walk_Left')).toBe('Walk_Right');
+      expect(suggestMirroredPoseName('Walk_R')).toBe('Walk_L');
+      expect(suggestMirroredPoseName('Crouch')).toBe('Crouch (Mirrored)');
+    });
+
+    it('allows making changes on a mirrored pose using IK bone solver smoothly', () => {
+      const rest = getDefaultJointPositions('front', 200, 400);
+      // Mirror the pose
+      const mirrored = mirrorJointPositions(rest, 'horizontal');
+
+      // Now drag wrist_r on the mirrored pose to a reachable position
+      const changed = poseJointPreservingBones('wrist_r', -60, -170, mirrored, mirrored);
+
+      expect(changed.wrist_r.x).toBeCloseTo(-60, 0);
+      expect(changed.wrist_r.y).toBeCloseTo(-170, 0);
+      expect(Number.isFinite(changed.elbow_r.x)).toBe(true);
+      expect(Number.isFinite(changed.elbow_r.y)).toBe(true);
+    });
   });
 });

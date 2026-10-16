@@ -1,4 +1,4 @@
-import { AnatomicalJointDef, AnatomicalJointId, StudioView, SpineDocument, SpineBoneData } from '../types';
+import { AnatomicalJointDef, AnatomicalJointId, StudioView, SpineDocument, SpineBoneData, BonePartAttachment } from '../types';
 
 export const ANATOMICAL_JOINTS: AnatomicalJointDef[] = [
   { id: 'head', name: 'Head', color: '#22c55e', parentId: 'neck', isCenter: true },
@@ -179,7 +179,7 @@ export function solveTwoBoneIK(
   mid: { x: number; y: number },
   end: { x: number; y: number },
   target: { x: number; y: number },
-  bendPositive = true
+  bendPositive: boolean | 'auto' = true
 ): { mid: { x: number; y: number }; end: { x: number; y: number } } {
   const l1 = Math.hypot(mid.x - root.x, mid.y - root.y) || 60;
   const l2 = Math.hypot(end.x - mid.x, end.y - mid.y) || 55;
@@ -199,7 +199,15 @@ export function solveTwoBoneIK(
   const cosAlpha = (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist);
   const alpha = Math.acos(Math.max(-1, Math.min(1, cosAlpha)));
 
-  const bendSign = bendPositive ? 1 : -1;
+  let useBendPositive: boolean;
+  if (bendPositive === 'auto') {
+    const cross = (end.x - root.x) * (mid.y - root.y) - (end.y - root.y) * (mid.x - root.x);
+    useBendPositive = Math.abs(cross) > 1e-2 ? cross < 0 : true;
+  } else {
+    useBendPositive = bendPositive;
+  }
+
+  const bendSign = useBendPositive ? 1 : -1;
   const bone1Angle = targetAngle + bendSign * alpha;
 
   const newMid = {
@@ -207,14 +215,9 @@ export function solveTwoBoneIK(
     y: root.y + Math.sin(bone1Angle) * l1
   };
 
-  // Law of Cosines for angle at mid (cos beta)
-  const cosBeta = (l1 * l1 + l2 * l2 - dist * dist) / (2 * l1 * l2);
-  const beta = Math.acos(Math.max(-1, Math.min(1, cosBeta)));
-  const bone2Angle = bone1Angle + Math.PI - bendSign * beta;
-
   const newEnd = {
-    x: newMid.x + Math.cos(bone2Angle) * l2,
-    y: newMid.y + Math.sin(bone2Angle) * l2
+    x: root.x + Math.cos(targetAngle) * dist,
+    y: root.y + Math.sin(targetAngle) * dist
   };
 
   return { mid: newMid, end: newEnd };
@@ -284,7 +287,9 @@ export function poseJointPreservingBones(
     const root = result.shoulder_l;
     const mid = result.elbow_l;
     const end = result.wrist_l;
-    const ik = solveTwoBoneIK(root, mid, end, target, true);
+    const cross = (end.x - root.x) * (mid.y - root.y) - (end.y - root.y) * (mid.x - root.x);
+    const bendDir = Math.abs(cross) > 2 ? cross < 0 : true;
+    const ik = solveTwoBoneIK(root, mid, end, target, bendDir);
     result.elbow_l = ik.mid;
     result.wrist_l = ik.end;
     if (result.hand_l && restJoints.hand_l && restJoints.wrist_l) {
@@ -299,7 +304,9 @@ export function poseJointPreservingBones(
     const root = result.shoulder_r;
     const mid = result.elbow_r;
     const end = result.wrist_r;
-    const ik = solveTwoBoneIK(root, mid, end, target, false);
+    const cross = (end.x - root.x) * (mid.y - root.y) - (end.y - root.y) * (mid.x - root.x);
+    const bendDir = Math.abs(cross) > 2 ? cross < 0 : false;
+    const ik = solveTwoBoneIK(root, mid, end, target, bendDir);
     result.elbow_r = ik.mid;
     result.wrist_r = ik.end;
     if (result.hand_r && restJoints.hand_r && restJoints.wrist_r) {
@@ -316,7 +323,9 @@ export function poseJointPreservingBones(
     const root = result.hip_l;
     const mid = result.knee_l;
     const end = result.ankle_l;
-    const ik = solveTwoBoneIK(root, mid, end, target, false);
+    const cross = (end.x - root.x) * (mid.y - root.y) - (end.y - root.y) * (mid.x - root.x);
+    const bendDir = Math.abs(cross) > 2 ? cross < 0 : false;
+    const ik = solveTwoBoneIK(root, mid, end, target, bendDir);
     result.knee_l = ik.mid;
     result.ankle_l = ik.end;
     if (result.foot_l && restJoints.foot_l && restJoints.ankle_l) {
@@ -331,7 +340,9 @@ export function poseJointPreservingBones(
     const root = result.hip_r;
     const mid = result.knee_r;
     const end = result.ankle_r;
-    const ik = solveTwoBoneIK(root, mid, end, target, true);
+    const cross = (end.x - root.x) * (mid.y - root.y) - (end.y - root.y) * (mid.x - root.x);
+    const bendDir = Math.abs(cross) > 2 ? cross < 0 : true;
+    const ik = solveTwoBoneIK(root, mid, end, target, bendDir);
     result.knee_r = ik.mid;
     result.ankle_r = ik.end;
     if (result.foot_r && restJoints.foot_r && restJoints.ankle_r) {
@@ -658,12 +669,168 @@ export function copyJointsFromFront(
     return res;
   }
 
-  // Side view adaptation
+// Side view adaptation
   for (const joint of ANATOMICAL_JOINTS) {
     const orig = frontJoints[joint.id] || { x: 0, y: 0 };
     res[joint.id] = { x: orig.x * 0.35, y: orig.y };
   }
   return res;
+}
+
+/**
+ * Mirrors joint positions across Left and Right sides.
+ * - 'horizontal': Mirrors symmetrically across center X axis (swaps symmetrical limbs & negates X, negates center joints X).
+ * - 'swap_limbs': Swaps symmetrical limbs' positions without negating X (ideal for walk/run strides on a single side view).
+ */
+export function mirrorJointPositions(
+  joints: Record<AnatomicalJointId, { x: number; y: number }>,
+  mode: 'horizontal' | 'swap_limbs' = 'horizontal'
+): Record<AnatomicalJointId, { x: number; y: number }> {
+  const result = {} as Record<AnatomicalJointId, { x: number; y: number }>;
+
+  for (const joint of ANATOMICAL_JOINTS) {
+    const current = joints[joint.id] || { x: 0, y: 0 };
+    if (mode === 'swap_limbs') {
+      if (joint.isCenter) {
+        result[joint.id] = { x: current.x, y: current.y };
+      } else if (joint.symmetricWith) {
+        const other = joints[joint.symmetricWith] || current;
+        result[joint.id] = { x: other.x, y: other.y };
+      } else {
+        result[joint.id] = { x: current.x, y: current.y };
+      }
+    } else {
+      // Horizontal reflection across center X=0
+      if (joint.isCenter) {
+        result[joint.id] = { x: -current.x, y: current.y };
+      } else if (joint.symmetricWith) {
+        const other = joints[joint.symmetricWith] || current;
+        result[joint.id] = { x: -other.x, y: other.y };
+      } else {
+        result[joint.id] = { x: -current.x, y: current.y };
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Mirrors attached bone parts to their symmetrical bone counterparts with flipped X alignment.
+ */
+export function mirrorAttachedParts(
+  parts: Record<string, BonePartAttachment>
+): Record<string, BonePartAttachment> {
+  const mirroredParts: Record<string, BonePartAttachment> = {};
+
+  for (const [boneIdStr, part] of Object.entries(parts)) {
+    const boneId = boneIdStr as AnatomicalJointId;
+    const jointDef = ANATOMICAL_JOINTS.find(j => j.id === boneId);
+    const targetBoneId = (jointDef?.symmetricWith || boneId) as AnatomicalJointId;
+
+    let targetOrigin = part.originJointId;
+    if (targetOrigin && targetOrigin !== 'hip_mid') {
+      const origDef = ANATOMICAL_JOINTS.find(j => j.id === targetOrigin);
+      if (origDef?.symmetricWith) {
+        targetOrigin = origDef.symmetricWith;
+      }
+    }
+
+    let targetTarget = part.targetJointId;
+    if (targetTarget) {
+      const tgtDef = ANATOMICAL_JOINTS.find(j => j.id === targetTarget);
+      if (tgtDef?.symmetricWith) {
+        targetTarget = tgtDef.symmetricWith;
+      }
+    }
+
+    mirroredParts[targetBoneId] = {
+      ...part,
+      boneId: targetBoneId,
+      originJointId: targetOrigin,
+      targetJointId: targetTarget,
+      offsetX: part.offsetX !== undefined ? -part.offsetX : 0,
+      offsetY: part.offsetY ?? 0,
+      rotation: part.rotation !== undefined ? -part.rotation : 0,
+      pivotX: part.pivotX !== undefined ? Math.round((1 - part.pivotX) * 100) / 100 : undefined,
+      flipX: !part.flipX
+    };
+  }
+
+  return mirroredParts;
+}
+
+/**
+ * Mirrors the bone layer rendering order, swapping symmetrical bone indices.
+ */
+export function mirrorBoneLayerOrder(boneOrder: AnatomicalJointId[]): AnatomicalJointId[] {
+  return boneOrder.map(bId => {
+    const def = ANATOMICAL_JOINTS.find(j => j.id === bId);
+    return (def?.symmetricWith || bId) as AnatomicalJointId;
+  });
+}
+
+/**
+ * Mirrors envelope radii across symmetrical joints.
+ */
+export function mirrorEnvelopes(
+  envelopes: Partial<Record<AnatomicalJointId, number>>
+): Partial<Record<AnatomicalJointId, number>> {
+  const result: Partial<Record<AnatomicalJointId, number>> = {};
+  for (const joint of ANATOMICAL_JOINTS) {
+    if (joint.symmetricWith && envelopes[joint.symmetricWith] !== undefined) {
+      result[joint.id] = envelopes[joint.symmetricWith];
+    } else if (envelopes[joint.id] !== undefined) {
+      result[joint.id] = envelopes[joint.id];
+    }
+  }
+  return result;
+}
+
+/**
+ * Suggests an intelligent mirrored name for a character pose (e.g. Front-Right -> Front-Left).
+ */
+export function suggestMirroredPoseName(currentLabel: string): string {
+  const trimmed = currentLabel.trim();
+  if (/right/i.test(trimmed)) {
+    return trimmed.replace(/right/i, match => (match[0] === 'R' ? 'Left' : 'left'));
+  }
+  if (/left/i.test(trimmed)) {
+    return trimmed.replace(/left/i, match => (match[0] === 'L' ? 'Right' : 'right'));
+  }
+  if (/_r\b/i.test(trimmed)) {
+    return trimmed.replace(/_r\b/i, match => (match[1] === 'R' ? '_L' : '_l'));
+  }
+  if (/_l\b/i.test(trimmed)) {
+    return trimmed.replace(/_l\b/i, match => (match[1] === 'L' ? '_R' : '_r'));
+  }
+  if (/ r\b/i.test(trimmed)) {
+    return trimmed.replace(/ r\b/i, match => (match[1] === 'R' ? ' L' : ' l'));
+  }
+  if (/ l\b/i.test(trimmed)) {
+    return trimmed.replace(/ l\b/i, match => (match[1] === 'L' ? ' R' : ' r'));
+  }
+  return `${trimmed} (Mirrored)`;
+}
+
+/**
+ * Suggests an intelligent mirrored identifier for a pose view.
+ */
+export function suggestMirroredPoseId(currentId: string): string {
+  const lower = currentId.toLowerCase();
+  if (lower.includes('right')) {
+    return lower.replace('right', 'left');
+  }
+  if (lower.includes('left')) {
+    return lower.replace('left', 'right');
+  }
+  if (lower.endsWith('_r')) {
+    return lower.slice(0, -2) + '_l';
+  }
+  if (lower.endsWith('_l')) {
+    return lower.slice(0, -2) + '_r';
+  }
+  return `${lower}_mirrored`;
 }
 
 /**
