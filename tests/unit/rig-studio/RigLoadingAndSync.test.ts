@@ -133,4 +133,31 @@ describe('RigStudioApp - Rig Loading and Graphic Synchronization', () => {
     expect(activeArt.fileName).toBe('orc_sheet.png');
     expect(activeArt.imageUrl).toBe('data:image/png;base64,mockNewOrc');
   });
+
+  it('merges rig and animation into an all-in-one workspace with active canvas and timeline', () => {
+    // Mode switcher buttons must have Rig & Animation and Slicer
+    const modeBtns = container.querySelectorAll('.studio-mode-btn');
+    expect(modeBtns.length).toBe(2);
+    expect(modeBtns[0].textContent).toContain('Rig & Animation');
+    expect(modeBtns[1].textContent).toContain('Slicer');
+
+    // Both rig viewport and timeline dock must be active in rig mode
+    const rigViewport = container.querySelector('#rig-viewport-container') as HTMLElement;
+    const timelineContainer = container.querySelector('#animation-timeline-container') as HTMLElement;
+    expect(rigViewport.style.display).toBe('block');
+    expect(timelineContainer.style.display).toBe('flex');
+    expect(rigViewport.style.bottom).toBe('180px');
+
+    // Toggle timeline visibility collapses timeline dock and expands canvas
+    app.toggleTimelineVisibility();
+    expect(app.getIsTimelineVisible()).toBe(false);
+    expect(rigViewport.style.bottom).toBe('0px');
+    expect(timelineContainer.style.display).toBe('none');
+
+    // Toggle back
+    app.toggleTimelineVisibility();
+    expect(app.getIsTimelineVisible()).toBe(true);
+    expect(rigViewport.style.bottom).toBe('180px');
+    expect(timelineContainer.style.display).toBe('flex');
+  });
 });

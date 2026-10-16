@@ -84,6 +84,7 @@ export class RigStudioApp {
 
   private toolMode: JointToolMode = 'select';
   private kinematicsMode: 'ik' | 'fk' = 'ik';
+  private isTimelineVisible = true;
   private symmetryEnabled = true;
   private showBonesEnabled = true;
   private showEnvelopesEnabled = true;
@@ -217,14 +218,11 @@ export class RigStudioApp {
         </nav>
 
         <div class="studio-mode-switcher">
-          <button class="studio-mode-btn ${this.activeStudioMode === 'rig' ? 'active' : ''}" data-mode="rig" title="Setup skeleton joints and pose bones">
-            🦴 Rig & Bones
+          <button class="studio-mode-btn ${(this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate') ? 'active' : ''}" data-mode="rig" title="All-in-one workspace: Setup skeleton joints, attach graphics, and author animation keyframes">
+            🦴 Rig & Animation
           </button>
           <button class="studio-mode-btn ${this.activeStudioMode === 'slicer' ? 'active' : ''}" data-mode="slicer" title="Load image, mark elements and assign them to bones">
             ✂️ Slicer & Element Marking
-          </button>
-          <button class="studio-mode-btn ${this.activeStudioMode === 'animate' ? 'active' : ''}" data-mode="animate" title="Define animation clips, configure relevant sides and author unique keyframes">
-            🎬 Animations & Timeline
           </button>
         </div>
 
@@ -287,12 +285,13 @@ export class RigStudioApp {
         <!-- Center Workspace Canvas -->
         <section class="studio-workspace" id="center-workspace" style="position:relative; overflow:hidden;">
           <!-- Viewport 1: Skeleton Rig Canvas -->
-          <div id="rig-viewport-container" style="position:absolute; inset:0; display:block;">
+          <div id="rig-viewport-container" style="position:absolute; inset:0; bottom:180px; display:block;">
             <div class="workspace-hud">
               <span>View: <b id="hud-active-view" style="color:#38bdf8;">FRONT</b></span>
               <span>Tool: <b id="hud-active-tool">SELECT</b></span>
               <button class="btn-hud-fit" id="btn-fit-view">Fit</button>
               <button class="btn-hud-fit" id="btn-reset-view">Center</button>
+              <button class="btn-hud-fit active" id="btn-toggle-timeline" title="Toggle Animation Timeline dock (T)">🎬 Timeline</button>
             </div>
             <!-- Floating WYSIWYG Alignment Toolbar for Selected Bone Graphic -->
             <div id="canvas-part-alignment-bar" class="canvas-part-alignment-bar" style="display:none;"></div>
@@ -342,7 +341,7 @@ export class RigStudioApp {
           </div>
 
           <!-- Viewport 3: Animation Timeline Dock -->
-          <div id="animation-timeline-container" style="display:none;"></div>
+          <div id="animation-timeline-container" style="display:flex;"></div>
         </section>
 
         <!-- Right Panel: Joints, Envelopes & Parts -->
@@ -361,7 +360,7 @@ export class RigStudioApp {
         this.renderCanvasAlignmentBar();
       },
       onPreviewPoseChanged: (joints) => {
-        if (this.activeStudioMode === 'animate' && this.timeline?.getIsAutoKey()) {
+        if ((this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate') && this.timeline?.getIsAutoKey()) {
           this.timeline.addKeyframe(joints);
           this.renderRightSidebar();
         }
@@ -397,6 +396,14 @@ export class RigStudioApp {
   }
 
   private bindDOMEvents(): void {
+    // Initialize Animation Timeline Dock for all-in-one Rig & Animation workspace
+    this.initTimelineIfNeeded();
+
+    // Toggle Timeline Dock button
+    this.container.querySelector('#btn-toggle-timeline')?.addEventListener('click', () => {
+      this.toggleTimelineVisibility();
+    });
+
     // Undo & Redo Header Buttons
     this.container.querySelector('#btn-studio-undo')?.addEventListener('click', () => {
       this.undo();
@@ -433,6 +440,13 @@ export class RigStudioApp {
           this.slicer?.moveElementDown(selected.id);
           return;
         }
+      }
+
+      // Toggle Timeline Dock visibility (T key) in Rig & Animation Mode
+      if ((this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate') && !isInput && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        this.toggleTimelineVisibility();
+        return;
       }
 
       // Reorder Layers in Rig & Bones Mode and Animate Mode (Inkscape shortcuts: PageUp / PageDown / Home / End, or [ / ] / Ctrl+[ / Ctrl+])
@@ -939,10 +953,12 @@ export class RigStudioApp {
   }
 
   public switchStudioMode(mode: 'rig' | 'slicer' | 'animate'): void {
-    this.activeStudioMode = mode;
+    const targetMode = mode === 'animate' ? 'rig' : mode;
+    this.activeStudioMode = targetMode;
 
     this.container.querySelectorAll('.studio-mode-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+      const btnMode = btn.getAttribute('data-mode');
+      btn.classList.toggle('active', btnMode === targetMode || (btnMode === 'rig' && targetMode === 'rig'));
     });
 
     const rigViewport = this.container.querySelector('#rig-viewport-container') as HTMLElement;
@@ -950,32 +966,27 @@ export class RigStudioApp {
     const timelineContainer = this.container.querySelector('#animation-timeline-container') as HTMLElement;
 
     if (rigViewport) {
-      rigViewport.style.display = (mode === 'rig' || mode === 'animate') ? 'block' : 'none';
-      rigViewport.style.bottom = mode === 'animate' ? '180px' : '0px';
+      rigViewport.style.display = (targetMode === 'rig') ? 'block' : 'none';
+      rigViewport.style.bottom = (targetMode === 'rig' && this.isTimelineVisible) ? '180px' : '0px';
     }
-    if (slicerViewport) slicerViewport.style.display = mode === 'slicer' ? 'flex' : 'none';
-    if (timelineContainer) timelineContainer.style.display = mode === 'animate' ? 'flex' : 'none';
+    if (slicerViewport) slicerViewport.style.display = targetMode === 'slicer' ? 'flex' : 'none';
+    if (timelineContainer) timelineContainer.style.display = (targetMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none';
 
     this.renderCanvasAlignmentBar();
 
-    if (mode === 'slicer') {
+    if (targetMode === 'slicer') {
       this.timeline?.togglePlay(false);
       this.initSlicerIfNeeded();
       this.renderSlicerLeftSidebar();
       this.renderSlicerRightSidebar();
       this.slicer?.resizeCanvas();
-    } else if (mode === 'animate') {
-      this.syncPresetAnimationsWithRestJoints(this.activeView);
-      this.canvas?.setToolMode('preview');
-      this.initTimelineIfNeeded();
-      this.activeRightTab = 'animations';
-      this.renderLeftSidebar();
-      this.renderRightSidebar();
-      this.canvas?.resizeCanvas();
-      this.canvas?.render();
     } else {
+      // All-in-one Rig & Animation workspace
       this.timeline?.togglePlay(false);
+      this.syncPresetAnimationsWithRestJoints(this.activeView);
+      this.initTimelineIfNeeded();
       this.canvas?.setToolMode(this.toolMode);
+
       // Synchronize slicer image to active rig view and canvas if slicer image was loaded/changed
       if (this.slicerImage) {
         const currentArt = this.views[this.activeView];
@@ -986,11 +997,36 @@ export class RigStudioApp {
           this.canvas?.setSourceImage(this.slicerImage, this.slicerImageFileName, false);
         }
       }
+
       this.renderLeftSidebar();
       this.renderRightSidebar();
       this.canvas?.resizeCanvas();
       this.canvas?.render();
+      this.timeline?.evaluatePoseAtCurrentTime();
     }
+  }
+
+  public toggleTimelineVisibility(visible?: boolean): void {
+    this.isTimelineVisible = visible !== undefined ? visible : !this.isTimelineVisible;
+    const rigViewport = this.container.querySelector('#rig-viewport-container') as HTMLElement | null;
+    const timelineContainer = this.container.querySelector('#animation-timeline-container') as HTMLElement | null;
+    const btn = this.container.querySelector('#btn-toggle-timeline');
+
+    if (rigViewport) {
+      rigViewport.style.bottom = (this.activeStudioMode === 'rig' && this.isTimelineVisible) ? '180px' : '0px';
+    }
+    if (timelineContainer) {
+      timelineContainer.style.display = (this.activeStudioMode === 'rig' && this.isTimelineVisible) ? 'flex' : 'none';
+    }
+    if (btn) {
+      btn.classList.toggle('active', this.isTimelineVisible);
+    }
+    this.canvas?.resizeCanvas();
+    this.canvas?.render();
+  }
+
+  public getIsTimelineVisible(): boolean {
+    return this.isTimelineVisible;
   }
 
   private initSlicerIfNeeded(): void {
@@ -1037,9 +1073,11 @@ export class RigStudioApp {
         if (this.savedElements.length > 0 && this.slicer?.getElements().length === 0) {
           this.slicer.setElements(this.savedElements);
         }
-        this.renderSlicerLeftSidebar();
-        this.renderSlicerRightSidebar();
-        this.updateSlicerHUD();
+        if (this.activeStudioMode === 'slicer') {
+          this.renderSlicerLeftSidebar();
+          this.renderSlicerRightSidebar();
+          this.updateSlicerHUD();
+        }
       }
     });
 
@@ -1203,9 +1241,11 @@ export class RigStudioApp {
         this.slicer.resetView();
       }
       this.renderSlicerSheetsBar();
-      this.renderSlicerLeftSidebar();
-      this.renderSlicerRightSidebar();
-      this.updateSlicerHUD();
+      if (this.activeStudioMode === 'slicer') {
+        this.renderSlicerLeftSidebar();
+        this.renderSlicerRightSidebar();
+        this.updateSlicerHUD();
+      }
     };
 
     if (nextSheet.image) {
@@ -1725,9 +1765,11 @@ export class RigStudioApp {
       this.canvas.render();
     }
 
-    this.renderSlicerLeftSidebar();
-    this.renderSlicerRightSidebar();
-    this.updateSlicerHUD();
+    if (this.activeStudioMode === 'slicer') {
+      this.renderSlicerLeftSidebar();
+      this.renderSlicerRightSidebar();
+      this.updateSlicerHUD();
+    }
   }
 
   public loadSlicerImageFromUrl(url: string, fileName: string, fileSize = ''): void {
@@ -1750,6 +1792,7 @@ export class RigStudioApp {
   }
 
   private renderSlicerLeftSidebar(): void {
+    if (this.activeStudioMode !== 'slicer') return;
     const sidebar = this.container.querySelector('#left-sidebar') as HTMLElement;
     if (!sidebar) return;
 
@@ -1861,6 +1904,7 @@ export class RigStudioApp {
   }
 
   private renderSlicerRightSidebar(): void {
+    if (this.activeStudioMode !== 'slicer') return;
     const sidebar = this.container.querySelector('#right-sidebar') as HTMLElement;
     if (!sidebar || !this.slicer) return;
 
@@ -2453,9 +2497,11 @@ export class RigStudioApp {
         this.slicer.setElements(elements);
         this.savedElements = elements;
         this.persistElementsToStorage();
-        this.renderSlicerLeftSidebar();
-        this.renderSlicerRightSidebar();
-        this.updateSlicerHUD();
+        if (this.activeStudioMode === 'slicer') {
+          this.renderSlicerLeftSidebar();
+          this.renderSlicerRightSidebar();
+          this.updateSlicerHUD();
+        }
       }
     };
     img.src = demoUrl;
@@ -2467,11 +2513,6 @@ export class RigStudioApp {
 
     if (this.activeStudioMode === 'slicer') {
       this.renderSlicerLeftSidebar();
-      return;
-    }
-
-    if (this.activeStudioMode === 'animate') {
-      this.renderAnimateLeftSidebar();
       return;
     }
 
@@ -2589,6 +2630,37 @@ export class RigStudioApp {
                 <input type="checkbox" id="toggle-show-refart" ${this.canvas?.isShowReferenceArtwork() ? 'checked' : ''} />
                 <span class="switch-slider"></span>
               </label>
+            </div>
+          </div>
+
+          <!-- Animation & Posing Tools (All-in-one Rig & Animation Workspace) -->
+          <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px; background:#080e1a; padding:8px 10px; border-radius:6px; border:1px solid rgba(56, 189, 248, 0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.68rem; color:#38bdf8; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Animation & Keyframes</span>
+              <span style="font-size:0.62rem; color:#94a3b8;">Clip: <b style="color:#7dd3fc;">${this.activeAnimationName}</b></span>
+            </div>
+
+            <button class="btn-studio btn-left-toggle-kinematics" style="font-size:0.7rem; justify-content:center; font-weight:700; color:${this.kinematicsMode === 'fk' ? '#38bdf8' : '#eab308'};" title="Toggle between IK and FK (No-IK) posing. Hotkey: K or hold Shift/Alt while dragging.">
+              ${this.kinematicsMode === 'fk' ? '🦴 Kinematics: FK (No-IK)' : '⚡ Kinematics: IK Mode'}
+            </button>
+
+            <button class="btn-studio btn-left-add-kf" style="font-size:0.72rem; justify-content:center; color:#38bdf8; border-color:rgba(56,189,248,0.4);" title="Capture current canvas joint positions as a keyframe at playhead time">
+              🔑 ＋ Record Keyframe at Playhead
+            </button>
+
+            <button class="btn-studio btn-left-reset-pose" style="font-size:0.7rem; justify-content:center;" title="Reset character to rest pose">
+              ↺ Reset to Rest Pose
+            </button>
+
+            <!-- Presets Generator -->
+            <div style="font-size:0.62rem; color:#94a3b8; font-weight:600; text-transform:uppercase; margin-top:4px;">Presets Generator</div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn-studio btn-gen-walk" style="font-size:0.68rem; justify-content:center; flex:1; color:#10b981;" title="Generate natural walk cycle keyframes on this side">
+                ⚡ Walk Cycle
+              </button>
+              <button class="btn-studio btn-gen-idle" style="font-size:0.68rem; justify-content:center; flex:1; color:#a855f7;" title="Generate breathing idle cycle keyframes on this side">
+                ⚡ Idle Breathing
+              </button>
             </div>
           </div>
 
@@ -2724,6 +2796,33 @@ export class RigStudioApp {
 
     sidebar.querySelector('#btn-copy-joints-front')?.addEventListener('click', () => {
       this.copyJointsFromFrontView();
+    });
+
+    sidebar.querySelector('.btn-left-toggle-kinematics')?.addEventListener('click', () => {
+      this.setKinematicsMode(this.kinematicsMode === 'fk' ? 'ik' : 'fk');
+    });
+
+    sidebar.querySelector('.btn-left-add-kf')?.addEventListener('click', () => {
+      const joints = this.canvas?.getPreviewJoints() || this.views[this.activeView].joints;
+      this.timeline?.addKeyframe(joints);
+      this.renderRightSidebar();
+      this.showToast(`✓ Keyframe captured for ${this.activeView.toUpperCase()}`, 'success');
+    });
+
+    sidebar.querySelector('.btn-left-reset-pose')?.addEventListener('click', () => {
+      this.canvas?.resetPose();
+      if (this.timeline?.getIsAutoKey()) {
+        this.timeline.addKeyframe(this.views[this.activeView].joints);
+      }
+      this.showToast('Pose reset to rest pose', 'info');
+    });
+
+    sidebar.querySelector('.btn-gen-walk')?.addEventListener('click', () => {
+      this.generatePresetCycle('walk');
+    });
+
+    sidebar.querySelector('.btn-gen-idle')?.addEventListener('click', () => {
+      this.generatePresetCycle('idle');
     });
   }
 
@@ -3353,15 +3452,7 @@ export class RigStudioApp {
         const tab = btn.getAttribute('data-tab') as 'bones' | 'parts' | 'layers' | 'animations';
         if (tab) {
           this.activeRightTab = tab;
-          if (tab === 'animations') {
-            if (this.activeStudioMode !== 'animate') {
-              this.switchStudioMode('animate');
-            } else {
-              this.renderRightSidebar();
-            }
-          } else {
-            this.renderRightSidebar();
-          }
+          this.renderRightSidebar();
         }
       });
     });
@@ -4096,6 +4187,8 @@ export class RigStudioApp {
     if (this.timeline) {
       this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, this.views[this.activeView].joints);
     }
+    this.renderLeftSidebar();
+    this.renderRightSidebar();
   }
 
   public buildRigProjectData(): RigProjectData {
@@ -5326,7 +5419,7 @@ export class RigStudioApp {
       }
     }
 
-    if (this.timeline && this.activeStudioMode === 'animate') {
+    if (this.timeline && (this.activeStudioMode === 'rig' || this.activeStudioMode === 'animate')) {
       const activeArt = this.views[this.activeView];
       if (activeArt) {
         this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, activeArt.joints);
@@ -5348,6 +5441,16 @@ export class RigStudioApp {
         {
           onPoseInterpolated: (joints) => {
             this.canvas?.setPreviewJoints(joints);
+          },
+          onPlayToggle: (isPlaying) => {
+            if (isPlaying && this.toolMode !== 'preview') {
+              this.setToolMode('preview');
+            }
+          },
+          onTimeChange: () => {
+            if (this.toolMode !== 'preview') {
+              this.setToolMode('preview');
+            }
           },
           onKeyframeAdded: (time, joints) => {
             this.recordHistory('Record Keyframe');
