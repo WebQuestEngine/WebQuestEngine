@@ -129,7 +129,7 @@ This document tracks upcoming tasks, feature enhancements, and polish items for 
 ## 🛡️ 18. Tooling, Guardrails & Documentation
 - [ ] **ESLint & Prettier Setup**: Configure linters and mechanical boundary checks ensuring clean imports and enforcing architectural invariants (e.g. engine never importing from editor).
 - [ ] **Unified Check Script**: Add a unified `npm run check` script (`tsc --noEmit`, ESLint, Vitest) and wire it into GitHub Actions CI.
-- [ ] **Agent & Architectural Documentation**: Create `AGENTS.md` (and a `CLAUDE.md` pointer) detailing repository architecture rules, scoped event bus lifecycles, and design patterns.
+- [x] **Agent & Architectural Documentation**: Create `AGENTS.md` (and a `CLAUDE.md` pointer) detailing repository architecture rules, scoped event bus lifecycles, and design patterns.
 - [ ] **Documentation Drift Cleanup**: Consolidate product naming across docs (`WebQuestEngine` / `QuestForge 2D`) and sync `REQUIREMENTS.md` matrix with implemented features.
 
 ---
