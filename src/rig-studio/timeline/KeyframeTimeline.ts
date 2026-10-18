@@ -86,6 +86,24 @@ export const ELEMENT_GROUPS: ElementGroupDef[] = [
   }
 ];
 
+export const JOINT_LIMB_ALIASES: Partial<Record<AnatomicalJointId, string>> = {
+  hip_l: 'Hip L (Thigh)',
+  hip_r: 'Hip R (Thigh)',
+  knee_l: 'Knee L (Calf)',
+  knee_r: 'Knee R (Calf)',
+  shoulder_l: 'Shoulder L (Arm)',
+  shoulder_r: 'Shoulder R (Arm)',
+  elbow_l: 'Elbow L (Forearm)',
+  elbow_r: 'Elbow R (Forearm)',
+  wrist_l: 'Wrist L (Hand)',
+  wrist_r: 'Wrist R (Hand)',
+  chest: 'Chest (Torso)',
+  ankle_l: 'Ankle L (Foot)',
+  ankle_r: 'Ankle R (Foot)',
+  foot_l: 'Foot L (Tip)',
+  foot_r: 'Foot R (Tip)'
+};
+
 /**
  * Interpolates joint positions smoothly between keyframes across time.
  * Evaluates each joint independently against its own keyed timestamps,
@@ -650,8 +668,16 @@ export class KeyframeTimeline {
 
     const trackBtn = this.container.querySelector('.btn-timeline-add-track-key') as HTMLElement | null;
     if (trackBtn) {
-      trackBtn.textContent = jointId ? `🦴 ＋${jointId}` : '🦴 ＋Track Key';
-      trackBtn.setAttribute('title', jointId ? `Add keyframe specifically for ${jointId} at current playhead time` : 'Select a joint or click "+" on any track row to add a keyframe');
+      const alias = jointId ? (JOINT_LIMB_ALIASES[jointId] || jointId) : 'Track Key';
+      trackBtn.textContent = `🦴 ＋${alias}`;
+      trackBtn.setAttribute('title', jointId ? `Add keyframe specifically for ${alias} at current playhead time` : 'Select a joint or click "+" on any track row to add a keyframe');
+    }
+
+    const resetBtn = this.container.querySelector('.btn-timeline-reset-rest') as HTMLElement | null;
+    if (resetBtn) {
+      const alias = jointId ? (JOINT_LIMB_ALIASES[jointId] || jointId) : 'Rest';
+      resetBtn.textContent = jointId ? `↺ Reset ${alias}` : '↺ Reset Pose';
+      resetBtn.setAttribute('title', jointId ? `Reset ${alias} to rest pose position at current playhead time` : 'Reset all joints to rest pose position at playhead');
     }
   }
 
@@ -1109,8 +1135,11 @@ export class KeyframeTimeline {
           <button class="tool-btn btn-timeline-add-key" title="Record full pose keyframe (all joints) at current playhead time" ${!isRelevantForView ? 'disabled' : ''}>
             🔑 ＋Key
           </button>
-          <button class="tool-btn btn-timeline-add-track-key" title="${this.selectedJointId ? `Record keyframe for '${this.selectedJointId}' at current time` : 'Select a joint or click [+] on any track row to add a track key'}" ${!isRelevantForView ? 'disabled' : ''}>
-            🦴 ${this.selectedJointId ? `＋${this.selectedJointId}` : '＋Track Key'}
+          <button class="tool-btn btn-timeline-add-track-key" title="${this.selectedJointId ? `Record keyframe for '${JOINT_LIMB_ALIASES[this.selectedJointId] || this.selectedJointId}' at current time` : 'Select a joint or click [+] on any track row to add a track key'}" ${!isRelevantForView ? 'disabled' : ''}>
+            🦴 ${this.selectedJointId ? `＋${JOINT_LIMB_ALIASES[this.selectedJointId] || this.selectedJointId}` : '＋Track Key'}
+          </button>
+          <button class="tool-btn btn-timeline-reset-rest" title="${this.selectedJointId ? `Reset '${JOINT_LIMB_ALIASES[this.selectedJointId] || this.selectedJointId}' to rest position at playhead` : 'Reset all joints to rest position at playhead'}" ${!isRelevantForView ? 'disabled' : ''}>
+            ↺ ${this.selectedJointId ? `Reset ${JOINT_LIMB_ALIASES[this.selectedJointId] || this.selectedJointId}` : 'Reset to Rest'}
           </button>
           <button class="tool-btn btn-timeline-copy-key" title="Copy Keyframe(s) (Ctrl+C). Copies selected markers on any track, or full pose" ${!isRelevantForView ? 'disabled' : ''}>
             📋 Copy
@@ -1339,6 +1368,7 @@ export class KeyframeTimeline {
               name: jointId,
               color: '#38bdf8'
             };
+            const displayName = JOINT_LIMB_ALIASES[jointId] || jointDef.name;
 
             const rest = this.restJoints[jointId] || { x: 0, y: 0 };
             const cur = currentPosed[jointId] || rest;
@@ -1352,16 +1382,17 @@ export class KeyframeTimeline {
 
             html += `
               <div class="timeline-element-row ${isTrackActive ? 'active-track' : ''}" data-joint="${jointId}">
-                <div class="timeline-element-header" data-joint="${jointId}" title="${jointDef.name} (${jointId}) - Click to select track">
+                <div class="timeline-element-header" data-joint="${jointId}" title="${displayName} (${jointId}) - Click to select track">
                   <span style="display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis;">
                     <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${jointDef.color}; flex-shrink:0;"></span>
-                    <span style="overflow:hidden; text-overflow:ellipsis; font-weight:${isTrackActive ? '700' : '500'};">${jointDef.name}</span>
+                    <span style="overflow:hidden; text-overflow:ellipsis; font-weight:${isTrackActive ? '700' : '500'};">${displayName}</span>
                   </span>
                   <div style="display:flex; align-items:center; gap:3px;">
-                    <span class="element-change-badge ${isCurMoved ? 'moved' : 'rest'}">
+                    <span class="element-change-badge ${isCurMoved ? 'moved' : 'rest'}" title="${isCurMoved ? `Offset from rest: X ${curDx >= 0 ? '+' : ''}${curDx}px, Y ${curDy >= 0 ? '+' : ''}${curDy}px` : 'At rest position'}">
                       ${isCurMoved ? `Δ ${curDx >= 0 ? '+' : ''}${curDx}, ${curDy >= 0 ? '+' : ''}${curDy}` : 'Rest'}
                     </span>
-                    <button class="btn-track-add-key" data-joint="${jointId}" title="Add keyframe specifically for ${jointDef.name} at playhead (${this.currentTime.toFixed(2)}s)">＋</button>
+                    <button class="btn-track-reset-key" data-joint="${jointId}" title="Reset ${displayName} to rest position at playhead (${this.currentTime.toFixed(2)}s)" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border:none; background:#334155; color:#94a3b8; border-radius:3px; font-size:0.65rem; cursor:pointer; line-height:1;" onmouseover="this.style.background='#dc2626';this.style.color='#fff';" onmouseout="this.style.background='#334155';this.style.color='#94a3b8';">↺</button>
+                    <button class="btn-track-add-key" data-joint="${jointId}" title="Add keyframe specifically for ${displayName} at playhead (${this.currentTime.toFixed(2)}s)">＋</button>
                   </div>
                 </div>
                 <div class="element-track-lane" data-joint="${jointId}" style="width:${trackWidth}px; min-width:${trackWidth}px;">
@@ -1375,7 +1406,7 @@ export class KeyframeTimeline {
                     const dist = Math.round(Math.hypot(dx, dy));
                     const isModified = dist >= 1;
 
-                    const desc = `${jointDef.name} @ ${k.time.toFixed(2)}s:\n` +
+                    const desc = `${displayName} @ ${k.time.toFixed(2)}s:\n` +
                       `• Pos: (${Math.round(pos.x)}, ${Math.round(pos.y)})\n` +
                       `• Shift from Rest: X: ${dx >= 0 ? '+' : ''}${dx}px, Y: ${dy >= 0 ? '+' : ''}${dy}px (${isModified ? `${dist}px offset` : 'At Rest'})\n` +
                       `[Click: Select / Ctrl+Click: Toggle / Shift+Click: Multi-select / Drag: Move]`;
@@ -1426,10 +1457,25 @@ export class KeyframeTimeline {
     container.querySelectorAll('.timeline-element-header').forEach(header => {
       header.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        if (target.classList.contains('btn-track-add-key')) return;
+        if (target.classList.contains('btn-track-add-key') || target.classList.contains('btn-track-reset-key')) return;
         const jointId = header.getAttribute('data-joint') as AnatomicalJointId;
         if (jointId) {
           this.setSelectedJoint(jointId);
+        }
+      });
+    });
+
+    // Track "Reset" buttons (resets joint to rest position at playhead)
+    container.querySelectorAll('.btn-track-reset-key').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jointId = btn.getAttribute('data-joint') as AnatomicalJointId;
+        if (jointId && this.restJoints[jointId]) {
+          this.setSelectedJoint(jointId);
+          this.addTrackKeyframe(jointId, this.restJoints[jointId]);
+          this.evaluatePoseAtCurrentTime();
+          this.renderElementTracks();
+          this.renderKeyframeTrack();
         }
       });
     });
@@ -1736,6 +1782,20 @@ export class KeyframeTimeline {
       const jointId = this.selectedJointId || 'chest';
       this.addTrackKeyframe(jointId);
       this.events.onKeyframeAdded?.(this.currentTime, this.restJoints, jointId);
+    });
+
+    // Reset to Rest button (resets selected track joint or full pose to rest position)
+    this.container.querySelector('.btn-timeline-reset-rest')?.addEventListener('click', () => {
+      const jointId = this.selectedJointId;
+      if (jointId && this.restJoints[jointId]) {
+        this.addTrackKeyframe(jointId, this.restJoints[jointId]);
+        this.evaluatePoseAtCurrentTime();
+        this.renderElementTracks();
+        this.renderKeyframeTrack();
+      } else {
+        const fullRest = { ...this.restJoints };
+        this.addKeyframe(fullRest);
+      }
     });
 
     // Copy Keyframe button
