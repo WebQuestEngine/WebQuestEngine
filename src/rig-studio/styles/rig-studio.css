@@ -1650,6 +1650,63 @@ body.rig-studio-body {
   background: rgba(30, 41, 59, 0.45);
 }
 
+.timeline-element-row.property-subtrack {
+  height: 20px;
+  background: rgba(8, 12, 22, 0.45);
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.05);
+}
+
+.timeline-element-row.property-subtrack:hover {
+  background: rgba(22, 32, 48, 0.55);
+}
+
+.timeline-element-row.property-subtrack .timeline-element-header {
+  padding-left: 28px;
+  font-size: 0.58rem;
+  background: #060912;
+  color: #94a3b8;
+}
+
+.btn-toggle-bone-props {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.55rem;
+  padding: 0 3px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s;
+}
+
+.btn-toggle-bone-props:hover {
+  color: #38bdf8;
+}
+
+.prop-marker {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%) !important;
+  border-radius: 0 !important;
+  width: 9px !important;
+  height: 9px !important;
+}
+
+.prop-marker.prop-x {
+  background: #ef4444 !important;
+}
+
+.prop-marker.prop-y {
+  background: #22c55e !important;
+}
+
+.prop-marker.prop-rotation {
+  background: #3b82f6 !important;
+}
+
+.prop-marker.prop-scale {
+  background: #f97316 !important;
+}
+
 .timeline-element-header {
   position: sticky;
   left: 0;
@@ -2134,6 +2191,101 @@ body.rig-studio-body {
   background: rgba(16, 185, 129, 0.25);
   border-color: #10b981;
   color: #ffffff;
+}
+
+/* ============================================================
+   FACIAL RIGGING & SETUP WIZARDS
+   ============================================================ */
+.studio-modal.wizard-modal {
+  max-width: 620px;
+}
+
+.wizard-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.wizard-mode-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.wizard-mode-card:hover {
+  border-color: #38bdf8;
+  background: rgba(30, 41, 59, 0.7);
+  transform: translateY(-2px);
+}
+
+.wizard-mode-card.selected {
+  border-color: #38bdf8;
+  background: rgba(14, 116, 144, 0.25);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.wizard-mode-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.wizard-mode-card-subtitle {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.wizard-mode-card-features {
+  font-size: 0.65rem;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding-left: 14px;
+}
+
+.wizard-warning-box {
+  background: rgba(180, 83, 9, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 0.75rem;
+  color: #fef3c7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.viseme-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #38bdf8;
+  font-size: 0.62rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.viseme-chip:hover {
+  background: #38bdf8;
+  color: #0f172a;
 }
 
 

@@ -68,6 +68,7 @@ export interface SpineQuestForgeMetadata {
   poseBones?: Record<string, SpineBoneData[]>;
   poseSlots?: Record<string, string[]>;
   animations?: Record<string, StudioAnimationDefinition>;
+  facialRig?: FacialRigConfig;
 }
 
 /**
@@ -245,6 +246,19 @@ export interface BonePartAttachment {
   flipY?: boolean;
 }
 
+export interface RigPartItem {
+  id: string;
+  name: string;
+  imageUrl: string;
+  image: HTMLImageElement;
+  width: number;
+  height: number;
+  assignedBoneId?: AnatomicalJointId | null;
+  pivotX?: number;
+  pivotY?: number;
+}
+
+
 export interface ViewArtworkData {
   viewId: StudioView;
   label: string;
@@ -318,6 +332,132 @@ export interface RigProjectData {
   };
   animations?: Record<string, StudioAnimationDefinition>;
   activeAnimation?: string;
+  facialRig?: FacialRigConfig;
+}
+
+export type BonePropertyKey = 'x' | 'y' | 'rotation' | 'scale';
+
+export interface BonePropertyValues {
+  x?: number;        // Position X (px)
+  y?: number;        // Position Y (px)
+  rotation?: number; // Forward Kinematics angle (degrees)
+  scale?: number;    // Bone stretch / compression factor (1.0 = rest length)
+  offsetX?: number;  // Fine-tuning graphic attachment offset X
+  offsetY?: number;  // Fine-tuning graphic attachment offset Y
+}
+
+export type VisemePreset =
+  | 'rest'
+  | 'smile'
+  | 'frown'
+  | 'ah'
+  | 'ee'
+  | 'oh'
+  | 'ooh'
+  | 'fv'
+  | 'l'
+  | 'mbp'
+  | 'wq';
+
+export interface FacialPoseData {
+  // Eyebrows
+  browHeightL?: number;
+  browHeightR?: number;
+  browAngleL?: number;
+  browAngleR?: number;
+  browFurrow?: number;
+  eyebrows_height_l?: number;
+  eyebrows_height_r?: number;
+  eyebrows_angle_l?: number;
+  eyebrows_angle_r?: number;
+  eyebrows_furrow?: number;
+
+  // Eyelids
+  blinkL?: number;
+  blinkR?: number;
+  squint?: number;
+  eyelids_blink_l?: number;
+  eyelids_blink_r?: number;
+  eyelids_squint?: number;
+
+  // Mouth & Visemes
+  viseme?: VisemePreset;
+  mouthOpen?: number;
+  mouthWidth?: number;
+  mouthSmile?: number;
+  mouthPucker?: number;
+  lips_open?: number;
+  lips_wide?: number;
+  lips_smile?: number;
+  lips_pucker?: number;
+  lips_jaw_drop?: number;
+  teethUpper?: boolean;
+  teethLower?: boolean;
+  tongue?: boolean;
+}
+
+export type EyeRigMode = 'sprite_swap' | 'sclera_window' | 'procedural';
+export type MouthRigMode = 'viseme_library' | 'cavity_sandwich' | 'mesh_warp' | 'procedural';
+
+export interface EyeRigConfig {
+  mode: EyeRigMode;
+  // Sliced sprite assignments for frame-by-frame sprite swap
+  eyeOpenSlot?: string;
+  eyeHalfSlot?: string;
+  eyeClosedSlot?: string;
+  leftEyePartId?: string;
+  rightEyePartId?: string;
+  // Sliced sprite assignments for sclera window
+  eyeballSlot?: string;
+  scleraPartId?: string;
+  eyelidUpperSlot?: string;
+  eyelidUpperPartId?: string;
+  eyelidLowerSlot?: string;
+  eyelidLowerPartId?: string;
+  pupilPartId?: string;
+  // Sliced Eyebrows
+  browLSlot?: string;
+  browRSlot?: string;
+  browLeftPartId?: string;
+  browRightPartId?: string;
+  sprites?: Record<string, string>;
+}
+
+export interface EyebrowRigConfig {
+  leftBrowPartId?: string;
+  rightBrowPartId?: string;
+  color?: string;
+  thickness?: number;
+}
+
+export interface MouthRigConfig {
+  mode: MouthRigMode;
+  // Sliced sprite assignments for viseme library
+  visemeSlots?: Partial<Record<VisemePreset, string>>;
+  visemePartIds?: Partial<Record<VisemePreset, string>>;
+  // Sliced sprite assignments for cavity sandwich
+  upperLipSlot?: string;
+  lowerLipSlot?: string;
+  cavitySlot?: string;
+  cavityPartId?: string;
+  teethUpperPartId?: string;
+  tonguePartId?: string;
+  lipUpperPartId?: string;
+  lipLowerPartId?: string;
+  // Sliced sprite assignment for single-sprite mesh warp
+  mouthSpriteSlot?: string;
+  mouthPartId?: string;
+  baseMouthPartId?: string;
+  // Procedural styling
+  lipColor?: string;
+  cavityColor?: string;
+  teethColor?: string;
+}
+
+export interface FacialRigConfig {
+  eyebrows?: EyebrowRigConfig;
+  eyes?: EyeRigConfig;
+  mouth?: MouthRigConfig;
 }
 
 /**
@@ -327,6 +467,8 @@ export interface StudioKeyframe {
   time: number; // in seconds (e.g. 0.0, 0.4)
   name?: string; // Optional pose name (e.g. "Contact", "Pass", "Apex", "Down")
   joints: Record<AnatomicalJointId, { x: number; y: number }>;
+  boneProps?: Partial<Record<AnatomicalJointId, BonePropertyValues>>;
+  face?: FacialPoseData;
 }
 
 /**

@@ -3,7 +3,11 @@ import {
   StudioAnimationDefinition,
   StudioKeyframe,
   StudioSideTrack,
-  StudioView
+  StudioView,
+  BonePropertyKey,
+  BonePropertyValues,
+  FacialPoseData,
+  VisemePreset
 } from '../types';
 import { ANATOMICAL_JOINTS } from '../rigging/AnatomicalRig';
 
@@ -27,11 +31,15 @@ export interface KeyframeTimelineEvents {
   onSelectionChanged?: (selectedCount: number) => void;
   onKinematicsModeChanged?: (mode: 'ik' | 'fk') => void;
   onHeightPresetRequested?: (height: number) => void;
+  onRequestEyeSetupWizard?: () => void;
+  onRequestMouthSetupWizard?: () => void;
 }
 
 export interface MultiClipboardItem {
   relTime: number;
   jointId?: AnatomicalJointId;
+  propKey?: BonePropertyKey;
+  propValue?: number;
   pos?: { x: number; y: number };
   joints?: Record<AnatomicalJointId, { x: number; y: number }>;
   name?: string;
@@ -41,6 +49,8 @@ export interface DraggingKeyEntry {
   keyId: string;
   originalTime: number;
   jointId?: AnatomicalJointId;
+  propKey?: BonePropertyKey;
+  propValue?: number;
   pos?: { x: number; y: number };
   joints?: Record<AnatomicalJointId, { x: number; y: number }>;
   name?: string;
@@ -105,6 +115,114 @@ export const JOINT_LIMB_ALIASES: Partial<Record<AnatomicalJointId, string>> = {
 };
 
 /**
+ * Helper to interpolate a single scalar channel (e.g. Position X, Position Y, Rotation, Scale) across keyframe markers.
+ */
+export function interpolateScalarChannel(
+  keys: { time: number; val: number }[],
+  time: number,
+  duration: number,
+  loop = true,
+  fallbackVal = 0
+): number {
+  if (!keys || keys.length === 0) return fallbackVal;
+  if (keys.length === 1) return keys[0].val;
+
+  const clampedTime = loop && duration > 0
+    ? (time % duration)
+    : Math.max(0, Math.min(duration, time));
+
+  if (clampedTime <= keys[0].time) {
+    if (!loop || keys[keys.length - 1].time <= keys[0].time) {
+      return keys[0].val;
+    }
+    const k0 = keys[keys.length - 1];
+    const k1 = keys[0];
+    const segmentDuration = (duration - k0.time) + k1.time;
+    if (segmentDuration <= 0) return keys[0].val;
+    const tInSeg = clampedTime + (duration - k0.time);
+    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+    const ease = alpha * alpha * (3 - 2 * alpha);
+    return k0.val + (k1.val - k0.val) * ease;
+  }
+
+  if (clampedTime >= keys[keys.length - 1].time) {
+    if (!loop) return keys[keys.length - 1].val;
+    const k0 = keys[keys.length - 1];
+    const k1 = keys[0];
+    const segmentDuration = (duration - k0.time) + k1.time;
+    if (segmentDuration <= 0) return keys[keys.length - 1].val;
+    const tInSeg = clampedTime - k0.time;
+    const alpha = Math.max(0, Math.min(1, tInSeg / segmentDuration));
+    const ease = alpha * alpha * (3 - 2 * alpha);
+    return k0.val + (k1.val - k0.val) * ease;
+  }
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k0 = keys[i];
+    const k1 = keys[i + 1];
+    if (clampedTime >= k0.time && clampedTime <= k1.time) {
+      const dt = k1.time - k0.time;
+      const alpha = dt > 0 ? (clampedTime - k0.time) / dt : 0;
+      const ease = alpha * alpha * (3 - 2 * alpha);
+      return k0.val + (k1.val - k0.val) * ease;
+    }
+  }
+
+  return keys[0].val;
+}
+
+/**
+ * Computes rotation angle (relative to rest pose) and bone stretch factor.
+ */
+export function getBoneMetrics(
+  jointId: AnatomicalJointId,
+  joints: Record<string, { x: number; y: number }>,
+  restJoints: Record<string, { x: number; y: number }>
+): { rotDeg: number; scale: number } {
+  const targetMap: Partial<Record<AnatomicalJointId, AnatomicalJointId>> = {
+    hip_l: 'knee_l',
+    knee_l: 'ankle_l',
+    ankle_l: 'foot_l',
+    hip_r: 'knee_r',
+    knee_r: 'ankle_r',
+    ankle_r: 'foot_r',
+    shoulder_l: 'elbow_l',
+    elbow_l: 'wrist_l',
+    wrist_l: 'hand_l',
+    shoulder_r: 'elbow_r',
+    elbow_r: 'wrist_r',
+    wrist_r: 'hand_r',
+    neck: 'head',
+    chest: 'neck',
+  };
+
+  const tgtId = targetMap[jointId];
+  const p1 = joints[jointId];
+  const p2 = tgtId ? joints[tgtId] : undefined;
+  const r1 = restJoints[jointId];
+  const r2 = tgtId ? restJoints[tgtId] : undefined;
+
+  if (!p1 || !p2 || !r1 || !r2) {
+    return { rotDeg: 0, scale: 1.0 };
+  }
+
+  const curAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  const restAngle = Math.atan2(r2.y - r1.y, r2.x - r1.x);
+  let diff = (curAngle - restAngle) * (180 / Math.PI);
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+
+  const curLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const restLen = Math.hypot(r2.x - r1.x, r2.y - r1.y) || 1;
+  const scale = Math.round((curLen / restLen) * 100) / 100;
+
+  return {
+    rotDeg: Math.round(diff * 10) / 10,
+    scale
+  };
+}
+
+/**
  * Interpolates joint positions smoothly between keyframes across time.
  * Evaluates each joint independently against its own keyed timestamps,
  * allowing fine-tuned independent track keyframing while seamlessly preserving full-body poses.
@@ -138,12 +256,42 @@ export function interpolateJointPoses(
     : Math.max(0, Math.min(duration, time));
 
   for (const jId of allJointIds) {
+    const fallbackPos = fallbackJoints[jId] || { x: 0, y: 0 };
+
+    // Check if property-level channel keyframes exist for this joint
+    const hasCustomProps = keyframes.some(k => k.boneProps?.[jId] !== undefined);
+    if (hasCustomProps) {
+      const xKeys = keyframes
+        .filter(k => {
+          if (k.boneProps && k.boneProps[jId] !== undefined) {
+            return k.boneProps[jId]!.x !== undefined;
+          }
+          return k.joints && k.joints[jId] !== undefined;
+        })
+        .map(k => ({ time: k.time, val: (k.boneProps?.[jId]?.x !== undefined) ? k.boneProps[jId]!.x! : k.joints[jId].x }))
+        .sort((a, b) => a.time - b.time);
+
+      const yKeys = keyframes
+        .filter(k => {
+          if (k.boneProps && k.boneProps[jId] !== undefined) {
+            return k.boneProps[jId]!.y !== undefined;
+          }
+          return k.joints && k.joints[jId] !== undefined;
+        })
+        .map(k => ({ time: k.time, val: (k.boneProps?.[jId]?.y !== undefined) ? k.boneProps[jId]!.y! : k.joints[jId].y }))
+        .sort((a, b) => a.time - b.time);
+
+      const posX = interpolateScalarChannel(xKeys, clampedTime, duration, loop, fallbackPos.x);
+      const posY = interpolateScalarChannel(yKeys, clampedTime, duration, loop, fallbackPos.y);
+
+      result[jId] = { x: posX, y: posY };
+      continue;
+    }
+
     // Find all keyframes containing this specific joint
     const jKeys = keyframes
       .filter(k => k.joints && k.joints[jId] !== undefined)
       .sort((a, b) => a.time - b.time);
-
-    const fallbackPos = fallbackJoints[jId] || { x: 0, y: 0 };
 
     if (jKeys.length === 0) {
       result[jId] = { ...fallbackPos };
@@ -225,6 +373,68 @@ export function interpolateJointPoses(
   return result;
 }
 
+/**
+ * Smoothly interpolates facial controls (eyebrows, eyelids, and lips) across timeline keyframes.
+ */
+export function interpolateFacialPose(
+  keyframes: StudioKeyframe[],
+  time: number,
+  duration: number,
+  loop = true
+): FacialPoseData {
+  const result: FacialPoseData = {};
+  if (!keyframes || keyframes.length === 0) return result;
+
+  const clampedTime = loop && duration > 0
+    ? (time % duration)
+    : Math.max(0, Math.min(duration, time));
+
+  const scalarProps: (keyof FacialPoseData)[] = [
+    'eyebrows_height_l', 'eyebrows_height_r', 'eyebrows_angle_l', 'eyebrows_angle_r', 'eyebrows_furrow',
+    'eyelids_blink_l', 'eyelids_blink_r', 'eyelids_squint',
+    'lips_open', 'lips_wide', 'lips_smile', 'lips_pucker', 'lips_jaw_drop',
+    'browHeightL', 'browHeightR', 'browAngleL', 'browAngleR', 'browFurrow',
+    'blinkL', 'blinkR', 'squint',
+    'mouthOpen', 'mouthWidth', 'mouthSmile', 'mouthPucker'
+  ];
+
+  for (const prop of scalarProps) {
+    const keys = keyframes
+      .filter(k => k.face && (k.face as any)[prop] !== undefined)
+      .map(k => ({ time: k.time, val: (k.face as any)[prop] as number }))
+      .sort((a, b) => a.time - b.time);
+
+    if (keys.length > 0) {
+      (result as any)[prop] = interpolateScalarChannel(keys, clampedTime, duration, loop, 0);
+    }
+  }
+
+  // Viseme is discrete: take the nearest preceding or current keyframe
+  const visemeKeys = keyframes
+    .filter(k => k.face && k.face.viseme !== undefined)
+    .sort((a, b) => a.time - b.time);
+
+  if (visemeKeys.length > 0) {
+    if (clampedTime < visemeKeys[0].time) {
+      result.viseme = loop ? visemeKeys[visemeKeys.length - 1].face!.viseme : visemeKeys[0].face!.viseme;
+    } else {
+      let activeViseme = visemeKeys[0].face!.viseme;
+      for (const vk of visemeKeys) {
+        if (clampedTime >= vk.time) {
+          activeViseme = vk.face!.viseme;
+        } else {
+          break;
+        }
+      }
+      result.viseme = activeViseme;
+    }
+  } else {
+    result.viseme = 'rest';
+  }
+
+  return result;
+}
+
 export class KeyframeTimeline {
   private container: HTMLElement;
   private animations: Record<string, StudioAnimationDefinition> = {};
@@ -232,7 +442,7 @@ export class KeyframeTimeline {
   private activeView: StudioView = 'front';
   private restJoints: Record<AnatomicalJointId, { x: number; y: number }> = {} as any;
 
-  private currentTime = 0;
+  public currentTime = 0;
   private duration = 1.0;
   private isPlaying = false;
   private isLooping = true;
@@ -246,6 +456,13 @@ export class KeyframeTimeline {
   // Collapsible tracks state
   private isElementTracksExpanded = true;
   private collapsedGroups: Set<string> = new Set();
+  private expandedBoneTracks: Set<AnatomicalJointId> = new Set();
+
+  // Facial tracks state
+  private isFacialTracksExpanded = true;
+  private isEyebrowsExpanded = false;
+  private isEyesExpanded = false;
+  private isMouthExpanded = false;
 
   // Selected joint/track
   private selectedJointId: AnatomicalJointId | null = null;
@@ -498,6 +715,7 @@ export class KeyframeTimeline {
   public expandAllElementGroups(): void {
     this.isElementTracksExpanded = true;
     this.collapsedGroups.clear();
+    this.isFacialTracksExpanded = true;
     this.renderElementTracks();
   }
 
@@ -506,7 +724,28 @@ export class KeyframeTimeline {
     for (const g of ELEMENT_GROUPS) {
       this.collapsedGroups.add(g.id);
     }
+    this.isFacialTracksExpanded = false;
+    this.expandedBoneTracks.clear();
     this.renderElementTracks();
+  }
+
+  public toggleBoneExpanded(jointId: AnatomicalJointId, expanded?: boolean): void {
+    if (expanded === true) {
+      this.expandedBoneTracks.add(jointId);
+    } else if (expanded === false) {
+      this.expandedBoneTracks.delete(jointId);
+    } else {
+      if (this.expandedBoneTracks.has(jointId)) {
+        this.expandedBoneTracks.delete(jointId);
+      } else {
+        this.expandedBoneTracks.add(jointId);
+      }
+    }
+    this.renderElementTracks();
+  }
+
+  public isBoneExpanded(jointId: AnatomicalJointId): boolean {
+    return this.expandedBoneTracks.has(jointId);
   }
 
   public getIsPlaying(): boolean {
@@ -634,11 +873,186 @@ export class KeyframeTimeline {
     this.events.onKeyframeSelected?.(this.selectedKeyframeIndex, kf, jointId);
   }
 
-  public makeKeyId(time: number, jointId?: AnatomicalJointId): string {
+  /**
+   * Adds or updates a specific property keyframe (Position X, Position Y, Rotation, Scale) for a bone.
+   */
+  public addTrackPropertyKeyframe(
+    jointId: AnatomicalJointId,
+    propKey: BonePropertyKey,
+    val?: number,
+    time?: number
+  ): void {
+    const track = this.getActiveTrack();
+    if (!track) return;
+
+    const t = time !== undefined ? Math.round(time * 100) / 100 : Math.round(this.currentTime * 100) / 100;
+    const currentPosed = interpolateJointPoses(
+      track.keyframes,
+      t,
+      this.duration,
+      this.isLooping,
+      this.restJoints
+    );
+
+    let targetVal = val;
+    if (targetVal === undefined) {
+      if (propKey === 'x') targetVal = currentPosed[jointId]?.x ?? this.restJoints[jointId]?.x ?? 0;
+      else if (propKey === 'y') targetVal = currentPosed[jointId]?.y ?? this.restJoints[jointId]?.y ?? 0;
+      else if (propKey === 'rotation') {
+        const metrics = getBoneMetrics(jointId, currentPosed, this.restJoints);
+        targetVal = metrics.rotDeg;
+      } else if (propKey === 'scale') {
+        const metrics = getBoneMetrics(jointId, currentPosed, this.restJoints);
+        targetVal = metrics.scale;
+      }
+    }
+
+    const roundedVal = Math.round((targetVal ?? 0) * 100) / 100;
+
+    let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.03);
+    if (!kf) {
+      const curPos = currentPosed[jointId] || this.restJoints[jointId] || { x: 0, y: 0 };
+      kf = {
+        time: t,
+        joints: {
+          [jointId]: { ...curPos }
+        } as any,
+        boneProps: {
+          [jointId]: {
+            [propKey]: roundedVal
+          }
+        }
+      };
+      track.keyframes.push(kf);
+      track.keyframes.sort((a, b) => a.time - b.time);
+    } else {
+      if (!kf.boneProps) kf.boneProps = {};
+      if (!kf.boneProps[jointId]) kf.boneProps[jointId] = {};
+      kf.boneProps[jointId]![propKey] = roundedVal;
+    }
+
+    if (propKey === 'x' || propKey === 'y') {
+      if (!kf.joints) kf.joints = {} as any;
+      if (!kf.joints[jointId]) {
+        kf.joints[jointId] = { ...(currentPosed[jointId] || this.restJoints[jointId] || { x: 0, y: 0 }) };
+      }
+      kf.joints[jointId][propKey] = Math.round(roundedVal);
+    }
+
+    this.duration = Math.max(this.duration, t);
+    track.duration = this.duration;
+
+    this.clearSelection();
+    this.selectedKeyframeKeys.add(this.makeKeyId(t, jointId, propKey));
+    this.selectedKeyframeIndex = track.keyframes.indexOf(kf);
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+
+    this.events.onKeyframeAdded?.(t, kf.joints, jointId);
+    this.events.onKeyframeSelected?.(this.selectedKeyframeIndex, kf, jointId);
+  }
+
+  public getCurrentFacialPose(): FacialPoseData {
+    const track = this.getActiveTrack();
+    if (!track) return {};
+    return interpolateFacialPose(track.keyframes, this.currentTime, this.duration, this.isLooping);
+  }
+
+  public addFacialKeyframe(
+    timeOrFaceValues: number | Partial<FacialPoseData>,
+    maybeFaceValuesOrTime?: Partial<FacialPoseData> | number
+  ): void {
+    const track = this.getActiveTrack();
+    if (!track) return;
+
+    let faceValues: Partial<FacialPoseData> = {};
+    let targetTime: number = this.currentTime;
+
+    if (typeof timeOrFaceValues === 'number') {
+      targetTime = timeOrFaceValues;
+      if (typeof maybeFaceValuesOrTime === 'object' && maybeFaceValuesOrTime !== null) {
+        faceValues = maybeFaceValuesOrTime;
+      }
+    } else {
+      faceValues = timeOrFaceValues || {};
+      if (typeof maybeFaceValuesOrTime === 'number') {
+        targetTime = maybeFaceValuesOrTime;
+      }
+    }
+
+    const t = Math.round(targetTime * 100) / 100;
+    let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.03);
+    if (!kf) {
+      const currentPosed = interpolateJointPoses(
+        track.keyframes,
+        t,
+        this.duration,
+        this.isLooping,
+        this.restJoints
+      );
+      kf = {
+        time: t,
+        joints: { ...currentPosed },
+        face: { ...faceValues }
+      };
+      track.keyframes.push(kf);
+      track.keyframes.sort((a, b) => a.time - b.time);
+    } else {
+      if (!kf.face) kf.face = {};
+      Object.assign(kf.face, faceValues);
+    }
+
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+  }
+
+  public renderTimeline(): void {
+    this.renderRuler();
+    this.renderKeyframeTrack();
+    this.renderElementTracks();
+    this.updatePlayheadPosition();
+  }
+
+  public getCurrentTime(): number {
+    return this.currentTime;
+  }
+
+  public toggleFacialTracks(expanded?: boolean): void {
+    this.isFacialTracksExpanded = expanded !== undefined ? expanded : !this.isFacialTracksExpanded;
+    this.renderElementTracks();
+  }
+
+  public toggleEyebrowsExpanded(expanded?: boolean): void {
+    this.isEyebrowsExpanded = expanded !== undefined ? expanded : !this.isEyebrowsExpanded;
+    this.renderElementTracks();
+  }
+
+  public toggleEyesExpanded(expanded?: boolean): void {
+    this.isEyesExpanded = expanded !== undefined ? expanded : !this.isEyesExpanded;
+    this.renderElementTracks();
+  }
+
+  public toggleMouthExpanded(expanded?: boolean): void {
+    this.isMouthExpanded = expanded !== undefined ? expanded : !this.isMouthExpanded;
+    this.renderElementTracks();
+  }
+
+  public makeKeyId(time: number, jointId?: AnatomicalJointId, propKey?: BonePropertyKey): string {
+    if (jointId && propKey) return `prop:${jointId}:${propKey}:${time.toFixed(3)}`;
     return jointId ? `joint:${jointId}:${time.toFixed(3)}` : `master:${time.toFixed(3)}`;
   }
 
-  public isKeyframeSelected(jointId: AnatomicalJointId, time: number): boolean {
+  public isKeyframeSelected(jointId: AnatomicalJointId, time: number, propKey?: BonePropertyKey): boolean {
+    if (propKey) {
+      return this.selectedKeyframeKeys.has(this.makeKeyId(time, jointId, propKey)) ||
+             this.selectedKeyframeKeys.has(this.makeKeyId(time, jointId)) ||
+             this.selectedKeyframeKeys.has(this.makeKeyId(time));
+    }
     return this.selectedKeyframeKeys.has(this.makeKeyId(time, jointId)) ||
            this.selectedKeyframeKeys.has(this.makeKeyId(time));
   }
@@ -696,6 +1110,13 @@ export class KeyframeTimeline {
           this.selectedKeyframeKeys.add(this.makeKeyId(kf.time, jId));
         }
       }
+      if (kf.boneProps) {
+        for (const jId of Object.keys(kf.boneProps) as AnatomicalJointId[]) {
+          for (const pKey of Object.keys(kf.boneProps[jId] || {}) as BonePropertyKey[]) {
+            this.selectedKeyframeKeys.add(this.makeKeyId(kf.time, jId, pKey));
+          }
+        }
+      }
     }
     this.renderKeyframeTrack();
     this.renderElementTracks();
@@ -725,7 +1146,20 @@ export class KeyframeTimeline {
     if (this.selectedKeyframeKeys.size > 0) {
       let deletedCount = 0;
       for (const keyId of Array.from(this.selectedKeyframeKeys)) {
-        if (keyId.startsWith('joint:')) {
+        if (keyId.startsWith('prop:')) {
+          const parts = keyId.split(':');
+          const jId = parts[1] as AnatomicalJointId;
+          const pKey = parts[2] as BonePropertyKey;
+          const t = parseFloat(parts[3]);
+          const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (kf && kf.boneProps?.[jId]?.[pKey] !== undefined) {
+            delete kf.boneProps[jId]![pKey];
+            deletedCount++;
+            if (Object.keys(kf.boneProps[jId]!).length === 0) {
+              delete kf.boneProps[jId];
+            }
+          }
+        } else if (keyId.startsWith('joint:')) {
           const parts = keyId.split(':');
           const jId = parts[1] as AnatomicalJointId;
           const t = parseFloat(parts[2]);
@@ -839,9 +1273,23 @@ export class KeyframeTimeline {
 
     // Multi-selected keyframes
     if (this.selectedKeyframeKeys.size > 0) {
-      const items: { time: number; jointId?: AnatomicalJointId; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
+      const items: { time: number; jointId?: AnatomicalJointId; propKey?: BonePropertyKey; propValue?: number; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
       for (const keyId of this.selectedKeyframeKeys) {
-        if (keyId.startsWith('joint:')) {
+        if (keyId.startsWith('prop:')) {
+          const parts = keyId.split(':');
+          const jId = parts[1] as AnatomicalJointId;
+          const pKey = parts[2] as BonePropertyKey;
+          const t = parseFloat(parts[3]);
+          const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (kf && kf.boneProps?.[jId]?.[pKey] !== undefined) {
+            items.push({
+              time: kf.time,
+              jointId: jId,
+              propKey: pKey,
+              propValue: kf.boneProps[jId]![pKey]
+            });
+          }
+        } else if (keyId.startsWith('joint:')) {
           const parts = keyId.split(':');
           const jId = parts[1] as AnatomicalJointId;
           const t = parseFloat(parts[2]);
@@ -871,6 +1319,8 @@ export class KeyframeTimeline {
         KeyframeTimeline.multiClipboard = items.map(it => ({
           relTime: Math.round((it.time - minTime) * 100) / 100,
           jointId: it.jointId,
+          propKey: it.propKey,
+          propValue: it.propValue,
           pos: it.pos,
           joints: it.joints,
           name: it.name
@@ -939,7 +1389,29 @@ export class KeyframeTimeline {
       const newSelected = new Set<string>();
       for (const item of KeyframeTimeline.multiClipboard) {
         const t = Math.max(0, Math.min(this.duration, Math.round((roundedBaseTime + item.relTime) * 100) / 100));
-        if (item.jointId && item.pos) {
+        if (item.jointId && item.propKey && item.propValue !== undefined) {
+          let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+          if (!kf) {
+            kf = {
+              time: t,
+              joints: {} as any,
+              boneProps: { [item.jointId]: { [item.propKey]: item.propValue } }
+            };
+            track.keyframes.push(kf);
+          } else {
+            if (!kf.boneProps) kf.boneProps = {};
+            if (!kf.boneProps[item.jointId]) kf.boneProps[item.jointId] = {};
+            kf.boneProps[item.jointId]![item.propKey] = item.propValue;
+          }
+          if (item.propKey === 'x' || item.propKey === 'y') {
+            if (!kf.joints) kf.joints = {} as any;
+            if (!kf.joints[item.jointId]) {
+              kf.joints[item.jointId] = { ...(this.restJoints[item.jointId] || { x: 0, y: 0 }) };
+            }
+            kf.joints[item.jointId][item.propKey] = Math.round(item.propValue);
+          }
+          newSelected.add(this.makeKeyId(t, item.jointId, item.propKey));
+        } else if (item.jointId && item.pos) {
           let kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
           if (!kf) {
             kf = { time: t, joints: {} as any };
@@ -1377,13 +1849,15 @@ export class KeyframeTimeline {
             const curDist = Math.round(Math.hypot(curDx, curDy));
             const isCurMoved = curDist >= 1;
 
-            const jointKeyframes = keyframes.filter(k => k.joints && k.joints[jointId] !== undefined);
+            const jointKeyframes = keyframes.filter(k => (k.joints && k.joints[jointId] !== undefined) || (k.boneProps && k.boneProps[jointId] !== undefined));
             const isTrackActive = this.selectedJointId === jointId;
+            const isBoneExpanded = this.expandedBoneTracks.has(jointId);
 
             html += `
               <div class="timeline-element-row ${isTrackActive ? 'active-track' : ''}" data-joint="${jointId}">
                 <div class="timeline-element-header" data-joint="${jointId}" title="${displayName} (${jointId}) - Click to select track">
                   <span style="display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis;">
+                    <button class="btn-toggle-bone-props" data-joint="${jointId}" title="Toggle property channels (X, Y, Rotation, Scale)">${isBoneExpanded ? '▼' : '▶'}</button>
                     <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${jointDef.color}; flex-shrink:0;"></span>
                     <span style="overflow:hidden; text-overflow:ellipsis; font-weight:${isTrackActive ? '700' : '500'};">${displayName}</span>
                   </span>
@@ -1400,7 +1874,7 @@ export class KeyframeTimeline {
                     const leftPx = Math.round(k.time * pixelsPerSec);
                     const keyId = this.makeKeyId(k.time, jointId);
                     const isSelected = this.selectedKeyframeKeys.has(keyId) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time));
-                    const pos = k.joints[jointId] || rest;
+                    const pos = k.joints?.[jointId] || rest;
                     const dx = Math.round(pos.x - rest.x);
                     const dy = Math.round(pos.y - rest.y);
                     const dist = Math.round(Math.hypot(dx, dy));
@@ -1424,10 +1898,253 @@ export class KeyframeTimeline {
                 </div>
               </div>
             `;
+
+            if (isBoneExpanded) {
+              const metrics = getBoneMetrics(jointId, currentPosed, this.restJoints);
+              const propSubtracks: { key: BonePropertyKey; name: string; colorClass: string; icon: string; curValText: string }[] = [
+                { key: 'x', name: 'Pos X', colorClass: 'prop-x', icon: '🔴', curValText: `X: ${curDx >= 0 ? '+' : ''}${curDx}px` },
+                { key: 'y', name: 'Pos Y', colorClass: 'prop-y', icon: '🟢', curValText: `Y: ${curDy >= 0 ? '+' : ''}${curDy}px` },
+                { key: 'rotation', name: 'Rotation', colorClass: 'prop-rotation', icon: '🔵', curValText: `${metrics.rotDeg > 0 ? '+' : ''}${metrics.rotDeg}°` },
+                { key: 'scale', name: 'Scale', colorClass: 'prop-scale', icon: '🟠', curValText: `${metrics.scale}x` }
+              ];
+
+              for (const sub of propSubtracks) {
+                html += `
+                  <div class="timeline-element-row property-subtrack" data-joint="${jointId}" data-prop="${sub.key}">
+                    <div class="timeline-element-header" data-joint="${jointId}" data-prop="${sub.key}" title="${displayName} - ${sub.name}">
+                      <span style="display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis;">
+                        <span style="font-size:0.6rem;">${sub.icon}</span>
+                        <span style="overflow:hidden; text-overflow:ellipsis;">${sub.name}</span>
+                      </span>
+                      <div style="display:flex; align-items:center; gap:3px;">
+                        <span class="element-change-badge rest" style="font-size:0.52rem; padding:1px 3px;">
+                          ${sub.curValText}
+                        </span>
+                        <button class="btn-track-prop-reset-key" data-joint="${jointId}" data-prop="${sub.key}" title="Reset ${sub.name} to rest value at playhead" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#94a3b8; border-radius:3px; font-size:0.6rem; cursor:pointer; line-height:1;" onmouseover="this.style.background='#dc2626';this.style.color='#fff';" onmouseout="this.style.background='#334155';this.style.color='#94a3b8';">↺</button>
+                        <button class="btn-track-prop-add-key" data-joint="${jointId}" data-prop="${sub.key}" title="Add keyframe specifically for ${displayName} ${sub.name} at playhead (${this.currentTime.toFixed(2)}s)" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#38bdf8; border-radius:3px; font-size:0.6rem; cursor:pointer; line-height:1;">＋</button>
+                      </div>
+                    </div>
+                    <div class="element-track-lane" data-joint="${jointId}" data-prop="${sub.key}" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                      ${keyframes.filter(k => k.boneProps?.[jointId]?.[sub.key] !== undefined).map(k => {
+                        const leftPx = Math.round(k.time * pixelsPerSec);
+                        const keyId = this.makeKeyId(k.time, jointId, sub.key);
+                        const isSelected = this.selectedKeyframeKeys.has(keyId) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time, jointId)) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time));
+                        const val = k.boneProps![jointId]![sub.key];
+                        const desc = `${displayName} [${sub.name}] @ ${k.time.toFixed(2)}s: ${val}\n[Click: Select / Drag: Move]`;
+                        return `
+                          <div class="element-key-marker prop-marker ${sub.colorClass} ${isSelected ? 'selected' : ''}"
+                            data-time="${k.time}"
+                            data-joint="${jointId}"
+                            data-prop="${sub.key}"
+                            data-keyid="${keyId}"
+                            title="${desc}"
+                            style="left:${leftPx - 4}px;">
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                `;
+              }
+            }
           }
         }
       }
+
+      // Facial Controls Track Group
+    const currentFace = this.getCurrentFacialPose();
+    html += `
+      <div class="timeline-group-row">
+        <div class="timeline-group-header btn-toggle-facial-group" style="cursor:pointer;" title="Toggle Facial Controls (Eyebrows, Eyes, Mouth)">
+          <span style="display:flex; align-items:center; gap:5px;">
+            <span>${this.isFacialTracksExpanded ? '▼' : '▶'}</span>
+            <span>🎭 Facial Controls</span>
+            <span style="font-size:0.55rem; color:#64748b; font-weight:500;">(Visemes & Expressions)</span>
+          </span>
+          <span style="font-size:0.55rem; color:#38bdf8; font-weight:600;">
+            ${currentFace.viseme ? `[${currentFace.viseme}]` : 'Neutral'}
+          </span>
+        </div>
+        <div class="master-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px; background:rgba(15,23,42,0.3);"></div>
+      </div>
+    `;
+
+    if (this.isFacialTracksExpanded) {
+      // 1. Eyebrows Row
+      html += `
+        <div class="timeline-element-row">
+          <div class="timeline-element-header" title="Eyebrow height, tilt, and furrow">
+            <span style="display:flex; align-items:center; gap:5px;">
+              <button class="btn-toggle-eyebrows" style="border:none; background:transparent; color:#64748b; font-size:0.55rem; cursor:pointer;">${this.isEyebrowsExpanded ? '▼' : '▶'}</button>
+              <span>🤨 Eyebrows</span>
+            </span>
+            <div style="display:flex; align-items:center; gap:3px;">
+              <button class="btn-face-prop-reset" data-facetype="brow" title="Reset eyebrows to neutral" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#94a3b8; border-radius:3px; font-size:0.6rem; cursor:pointer;">↺</button>
+              <button class="btn-face-prop-add" data-facetype="brow" title="Add eyebrow keyframe at playhead" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#38bdf8; border-radius:3px; font-size:0.6rem; cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+            ${keyframes.filter(k => k.face && (k.face.browHeightL !== undefined || k.face.browAngleL !== undefined || k.face.browFurrow !== undefined)).map(k => {
+              const leftPx = Math.round(k.time * pixelsPerSec);
+              return `<div class="element-key-marker prop-marker prop-x" data-time="${k.time}" title="Eyebrows @ ${k.time.toFixed(2)}s" style="left:${leftPx - 4}px; background:#fbbf24 !important;"></div>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      if (this.isEyebrowsExpanded) {
+        const browSubtracks: { key: keyof FacialPoseData; name: string; curVal: number }[] = [
+          { key: 'browHeightL', name: 'Height L', curVal: currentFace.browHeightL || 0 },
+          { key: 'browHeightR', name: 'Height R', curVal: currentFace.browHeightR || 0 },
+          { key: 'browAngleL', name: 'Angle / Slant', curVal: currentFace.browAngleL || 0 },
+          { key: 'browFurrow', name: 'Furrow', curVal: currentFace.browFurrow || 0 }
+        ];
+        for (const sub of browSubtracks) {
+          html += `
+            <div class="timeline-element-row property-subtrack">
+              <div class="timeline-element-header" style="padding-left:28px;">
+                <span>• ${sub.name}</span>
+                <span class="element-change-badge rest" style="font-size:0.52rem;">${sub.curVal.toFixed(1)}</span>
+              </div>
+              <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                ${keyframes.filter(k => k.face && (k.face as any)[sub.key] !== undefined).map(k => {
+                  const leftPx = Math.round(k.time * pixelsPerSec);
+                  return `<div class="element-key-marker prop-marker" data-time="${k.time}" style="left:${leftPx - 4}px; background:#fbbf24 !important;"></div>`;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // 2. Eyes & Eyelids Row
+      html += `
+        <div class="timeline-element-row">
+          <div class="timeline-element-header" title="Eye blinking, winking, and squinting">
+            <span style="display:flex; align-items:center; gap:5px;">
+              <button class="btn-toggle-eyes" style="border:none; background:transparent; color:#64748b; font-size:0.55rem; cursor:pointer;">${this.isEyesExpanded ? '▼' : '▶'}</button>
+              <span>👀 Eyes & Eyelids</span>
+            </span>
+            <div style="display:flex; align-items:center; gap:3px;">
+              <button class="btn-studio btn-open-eye-wizard" style="font-size:0.55rem; padding:1px 5px; color:#38bdf8;" title="Open Eye Setup Wizard (Choose mode: Sclera Window, Sprite Swap, or Procedural)">Setup Eyes...</button>
+              <button class="btn-face-prop-reset" data-facetype="eyes" title="Reset eyes to open" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#94a3b8; border-radius:3px; font-size:0.6rem; cursor:pointer;">↺</button>
+              <button class="btn-face-prop-add" data-facetype="eyes" title="Add blink keyframe at playhead" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#38bdf8; border-radius:3px; font-size:0.6rem; cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+            ${keyframes.filter(k => k.face && (k.face.blinkL !== undefined || k.face.squint !== undefined)).map(k => {
+              const leftPx = Math.round(k.time * pixelsPerSec);
+              return `<div class="element-key-marker prop-marker" data-time="${k.time}" title="Blink @ ${k.time.toFixed(2)}s" style="left:${leftPx - 4}px; background:#38bdf8 !important;"></div>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      if (this.isEyesExpanded) {
+        const eyeSubtracks: { key: keyof FacialPoseData; name: string; curVal: number }[] = [
+          { key: 'blinkL', name: 'Blink Left', curVal: currentFace.blinkL || 0 },
+          { key: 'blinkR', name: 'Blink Right', curVal: currentFace.blinkR || 0 },
+          { key: 'squint', name: 'Squint', curVal: currentFace.squint || 0 }
+        ];
+        for (const sub of eyeSubtracks) {
+          html += `
+            <div class="timeline-element-row property-subtrack">
+              <div class="timeline-element-header" style="padding-left:28px;">
+                <span>• ${sub.name}</span>
+                <span class="element-change-badge rest" style="font-size:0.52rem;">${Math.round(sub.curVal * 100)}%</span>
+              </div>
+              <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                ${keyframes.filter(k => k.face && (k.face as any)[sub.key] !== undefined).map(k => {
+                  const leftPx = Math.round(k.time * pixelsPerSec);
+                  return `<div class="element-key-marker prop-marker" data-time="${k.time}" style="left:${leftPx - 4}px; background:#38bdf8 !important;"></div>`;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // 3. Mouth & Lips Row
+      html += `
+        <div class="timeline-element-row">
+          <div class="timeline-element-header" title="Mouth shapes, speech visemes, and expressions">
+            <span style="display:flex; align-items:center; gap:5px;">
+              <button class="btn-toggle-mouth" style="border:none; background:transparent; color:#64748b; font-size:0.55rem; cursor:pointer;">${this.isMouthExpanded ? '▼' : '▶'}</button>
+              <span>👄 Mouth & Lips</span>
+            </span>
+            <div style="display:flex; align-items:center; gap:3px;">
+              <button class="btn-studio btn-open-mouth-wizard" style="font-size:0.55rem; padding:1px 5px; color:#f43f5e;" title="Open Mouth Setup Wizard (Choose mode: Sliced Visemes, Cavity Sandwich, Mesh Warp, or Procedural)">Setup Mouth...</button>
+              <button class="btn-face-prop-reset" data-facetype="mouth" title="Reset mouth to neutral" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#94a3b8; border-radius:3px; font-size:0.6rem; cursor:pointer;">↺</button>
+              <button class="btn-face-prop-add" data-facetype="mouth" title="Add mouth keyframe at playhead" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border:none; background:#334155; color:#38bdf8; border-radius:3px; font-size:0.6rem; cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+            ${keyframes.filter(k => k.face && (k.face.viseme !== undefined || k.face.mouthOpen !== undefined)).map(k => {
+              const leftPx = Math.round(k.time * pixelsPerSec);
+              const label = k.face?.viseme || (k.face?.mouthOpen ? 'Open' : 'Mouth');
+              return `
+                <div class="viseme-chip" data-time="${k.time}" style="position:absolute; top:2px; left:${leftPx - 10}px; z-index:12;" title="${label} @ ${k.time.toFixed(2)}s">
+                  ${label}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+
+      // Quick Viseme Palette row
+      const quickVisemes: { key: VisemePreset; label: string }[] = [
+        { key: 'rest', label: 'Rest' },
+        { key: 'smile', label: 'Smile' },
+        { key: 'ah', label: 'Ah' },
+        { key: 'oh', label: 'Oh' },
+        { key: 'ee', label: 'Ee' },
+        { key: 'frown', label: 'Frown' },
+        { key: 'ooh', label: 'Ooh' },
+        { key: 'fv', label: 'F/V' },
+        { key: 'l', label: 'L' }
+      ];
+
+      html += `
+        <div class="timeline-element-row property-subtrack" style="height:24px;">
+          <div class="timeline-element-header" style="padding-left:28px; font-size:0.56rem; color:#94a3b8;">
+            <span>Phonemes:</span>
+          </div>
+          <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px; display:flex; align-items:center; gap:4px; padding-left:8px;">
+            ${quickVisemes.map(qv => `
+              <button class="viseme-chip btn-quick-drop-viseme" data-viseme="${qv.key}" title="Set ${qv.label} viseme at playhead (${this.currentTime.toFixed(2)}s)">
+                ${qv.label}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      if (this.isMouthExpanded) {
+        const mouthSubtracks: { key: keyof FacialPoseData; name: string; curVal: number }[] = [
+          { key: 'mouthOpen', name: 'Open (Jaw Drop)', curVal: currentFace.mouthOpen || 0 },
+          { key: 'mouthSmile', name: 'Smile / Frown', curVal: currentFace.mouthSmile || 0 },
+          { key: 'mouthWidth', name: 'Mouth Width', curVal: currentFace.mouthWidth !== undefined ? currentFace.mouthWidth : 1.0 }
+        ];
+        for (const sub of mouthSubtracks) {
+          html += `
+            <div class="timeline-element-row property-subtrack">
+              <div class="timeline-element-header" style="padding-left:28px;">
+                <span>• ${sub.name}</span>
+                <span class="element-change-badge rest" style="font-size:0.52rem;">${sub.curVal.toFixed(2)}</span>
+              </div>
+              <div class="element-track-lane" style="width:${trackWidth}px; min-width:${trackWidth}px;">
+                ${keyframes.filter(k => k.face && (k.face as any)[sub.key] !== undefined).map(k => {
+                  const leftPx = Math.round(k.time * pixelsPerSec);
+                  return `<div class="element-key-marker prop-marker" data-time="${k.time}" style="left:${leftPx - 4}px; background:#f43f5e !important;"></div>`;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
     }
+  }
 
     container.innerHTML = html;
 
@@ -1453,11 +2170,28 @@ export class KeyframeTimeline {
       });
     });
 
+    // Bone expand/collapse toggles
+    container.querySelectorAll('.btn-toggle-bone-props').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jointId = btn.getAttribute('data-joint') as AnatomicalJointId;
+        if (jointId) {
+          this.toggleBoneExpanded(jointId);
+        }
+      });
+    });
+
     // Track row header clicks to set selected joint
     container.querySelectorAll('.timeline-element-header').forEach(header => {
       header.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        if (target.classList.contains('btn-track-add-key') || target.classList.contains('btn-track-reset-key')) return;
+        if (
+          target.classList.contains('btn-track-add-key') ||
+          target.classList.contains('btn-track-reset-key') ||
+          target.classList.contains('btn-track-prop-add-key') ||
+          target.classList.contains('btn-track-prop-reset-key') ||
+          target.classList.contains('btn-toggle-bone-props')
+        ) return;
         const jointId = header.getAttribute('data-joint') as AnatomicalJointId;
         if (jointId) {
           this.setSelectedJoint(jointId);
@@ -1492,6 +2226,106 @@ export class KeyframeTimeline {
       });
     });
 
+    // Property Subtrack Reset buttons
+    container.querySelectorAll('.btn-track-prop-reset-key').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jointId = btn.getAttribute('data-joint') as AnatomicalJointId;
+        const propKey = btn.getAttribute('data-prop') as BonePropertyKey;
+        if (jointId && propKey) {
+          let resetVal = 0;
+          if (propKey === 'x') resetVal = this.restJoints[jointId]?.x ?? 0;
+          else if (propKey === 'y') resetVal = this.restJoints[jointId]?.y ?? 0;
+          else if (propKey === 'rotation') resetVal = 0;
+          else if (propKey === 'scale') resetVal = 1.0;
+          this.addTrackPropertyKeyframe(jointId, propKey, resetVal);
+        }
+      });
+    });
+
+    // Property Subtrack "+Key" buttons
+    container.querySelectorAll('.btn-track-prop-add-key').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const jointId = btn.getAttribute('data-joint') as AnatomicalJointId;
+        const propKey = btn.getAttribute('data-prop') as BonePropertyKey;
+        if (jointId && propKey) {
+          this.addTrackPropertyKeyframe(jointId, propKey);
+        }
+      });
+    });
+
+    // Facial Controls toggles and actions
+    container.querySelector('.btn-toggle-facial-group')?.addEventListener('click', () => {
+      this.toggleFacialTracks();
+    });
+
+    container.querySelector('.btn-toggle-eyebrows')?.addEventListener('click', () => {
+      this.toggleEyebrowsExpanded();
+    });
+
+    container.querySelector('.btn-toggle-eyes')?.addEventListener('click', () => {
+      this.toggleEyesExpanded();
+    });
+
+    container.querySelector('.btn-toggle-mouth')?.addEventListener('click', () => {
+      this.toggleMouthExpanded();
+    });
+
+    container.querySelector('.btn-open-eye-wizard')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.events.onRequestEyeSetupWizard?.();
+    });
+
+    container.querySelector('.btn-open-mouth-wizard')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.events.onRequestMouthSetupWizard?.();
+    });
+
+    container.querySelectorAll('.btn-quick-drop-viseme').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const v = btn.getAttribute('data-viseme') as VisemePreset;
+        if (v) {
+          let open = 0;
+          let smile = 0;
+          if (v === 'ah') open = 0.8;
+          else if (v === 'oh') open = 0.6;
+          else if (v === 'smile') smile = 0.8;
+          else if (v === 'frown') smile = -0.8;
+          this.addFacialKeyframe({ viseme: v, mouthOpen: open, mouthSmile: smile });
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-face-prop-add').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fType = btn.getAttribute('data-facetype');
+        if (fType === 'brow') {
+          this.addFacialKeyframe({ browHeightL: 5, browHeightR: 5 });
+        } else if (fType === 'eyes') {
+          this.addFacialKeyframe({ blinkL: 1.0, blinkR: 1.0 });
+        } else if (fType === 'mouth') {
+          this.addFacialKeyframe({ mouthOpen: 0.5, mouthSmile: 0.2 });
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-face-prop-reset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fType = btn.getAttribute('data-facetype');
+        if (fType === 'brow') {
+          this.addFacialKeyframe({ browHeightL: 0, browHeightR: 0, browAngleL: 0, browAngleR: 0, browFurrow: 0 });
+        } else if (fType === 'eyes') {
+          this.addFacialKeyframe({ blinkL: 0, blinkR: 0, squint: 0 });
+        } else if (fType === 'mouth') {
+          this.addFacialKeyframe({ viseme: 'rest', mouthOpen: 0, mouthSmile: 0, mouthWidth: 1.0 });
+        }
+      });
+    });
+
     // Bind marker clicks / drag starts
     container.querySelectorAll('.element-key-marker').forEach(marker => {
       marker.addEventListener('mousedown', (e) => {
@@ -1508,7 +2342,8 @@ export class KeyframeTimeline {
 
     const time = parseFloat(targetEl.getAttribute('data-time')!);
     const jointId = targetEl.getAttribute('data-joint') as AnatomicalJointId;
-    const keyId = targetEl.getAttribute('data-keyid') || this.makeKeyId(time, jointId);
+    const propKey = targetEl.getAttribute('data-prop') as BonePropertyKey | undefined;
+    const keyId = targetEl.getAttribute('data-keyid') || this.makeKeyId(time, jointId, propKey);
 
     const isCtrl = e.ctrlKey || e.metaKey;
     const isShift = e.shiftKey;
@@ -1594,7 +2429,22 @@ export class KeyframeTimeline {
 
     this.draggingEntries = [];
     for (const kId of this.selectedKeyframeKeys) {
-      if (kId.startsWith('joint:')) {
+      if (kId.startsWith('prop:')) {
+        const parts = kId.split(':');
+        const jId = parts[1] as AnatomicalJointId;
+        const pKey = parts[2] as BonePropertyKey;
+        const t = parseFloat(parts[3]);
+        const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
+        if (kf && kf.boneProps?.[jId]?.[pKey] !== undefined) {
+          this.draggingEntries.push({
+            keyId: kId,
+            originalTime: kf.time,
+            jointId: jId,
+            propKey: pKey,
+            propValue: kf.boneProps[jId]![pKey]
+          });
+        }
+      } else if (kId.startsWith('joint:')) {
         const parts = kId.split(':');
         const jId = parts[1] as AnatomicalJointId;
         const t = parseFloat(parts[2]);
@@ -1668,7 +2518,7 @@ export class KeyframeTimeline {
         this.isLooping,
         this.restJoints
       );
-      this.container.querySelectorAll('.timeline-element-row').forEach(row => {
+      this.container.querySelectorAll('.timeline-element-row:not(.property-subtrack)').forEach(row => {
         const jointId = row.getAttribute('data-joint') as AnatomicalJointId;
         const badge = row.querySelector('.element-change-badge');
         if (jointId && badge && currentPosed[jointId]) {
@@ -1679,6 +2529,24 @@ export class KeyframeTimeline {
           const isMoved = Math.hypot(dx, dy) >= 1;
           badge.className = `element-change-badge ${isMoved ? 'moved' : 'rest'}`;
           badge.textContent = isMoved ? `Δ ${dx >= 0 ? '+' : ''}${dx}, ${dy >= 0 ? '+' : ''}${dy}` : 'Rest';
+        }
+      });
+      this.container.querySelectorAll('.timeline-element-row.property-subtrack').forEach(row => {
+        const jointId = row.getAttribute('data-joint') as AnatomicalJointId;
+        const propKey = row.getAttribute('data-prop') as BonePropertyKey;
+        const badge = row.querySelector('.element-change-badge');
+        if (jointId && propKey && badge) {
+          const rest = this.restJoints[jointId] || { x: 0, y: 0 };
+          const cur = currentPosed[jointId] || rest;
+          const dx = Math.round(cur.x - rest.x);
+          const dy = Math.round(cur.y - rest.y);
+          if (propKey === 'x') badge.textContent = `X: ${dx >= 0 ? '+' : ''}${dx}px`;
+          else if (propKey === 'y') badge.textContent = `Y: ${dy >= 0 ? '+' : ''}${dy}px`;
+          else if (propKey === 'rotation' || propKey === 'scale') {
+            const metrics = getBoneMetrics(jointId, currentPosed, this.restJoints);
+            if (propKey === 'rotation') badge.textContent = `${metrics.rotDeg > 0 ? '+' : ''}${metrics.rotDeg}°`;
+            else badge.textContent = `${metrics.scale}x`;
+          }
         }
       });
     }
@@ -2025,12 +2893,26 @@ export class KeyframeTimeline {
     if (entries.length === 0) return;
 
     // 1. Remove/detach all moved joint or master entries from their original keyframes
-    const newItems: { time: number; jointId?: AnatomicalJointId; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
+    const newItems: { time: number; jointId?: AnatomicalJointId; propKey?: BonePropertyKey; propValue?: number; pos?: { x: number; y: number }; joints?: Record<AnatomicalJointId, { x: number; y: number }>; name?: string }[] = [];
 
     for (const entry of entries) {
       const newTime = Math.max(0, Math.min(this.duration, Math.round((entry.originalTime + dt) * 100) / 100));
 
-      if (entry.jointId && entry.pos) {
+      if (entry.jointId && entry.propKey && entry.propValue !== undefined) {
+        const origKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - entry.originalTime) < 0.005);
+        if (origKf && origKf.boneProps?.[entry.jointId]) {
+          delete origKf.boneProps[entry.jointId]![entry.propKey];
+          if (Object.keys(origKf.boneProps[entry.jointId]!).length === 0) {
+            delete origKf.boneProps[entry.jointId];
+          }
+        }
+        newItems.push({
+          time: newTime,
+          jointId: entry.jointId,
+          propKey: entry.propKey,
+          propValue: entry.propValue
+        });
+      } else if (entry.jointId && entry.pos) {
         const origKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - entry.originalTime) < 0.005);
         if (origKf && origKf.joints) {
           delete origKf.joints[entry.jointId];
@@ -2062,7 +2944,30 @@ export class KeyframeTimeline {
 
     for (const item of newItems) {
       let destKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - item.time) < 0.005);
-      if (item.jointId && item.pos) {
+      if (item.jointId && item.propKey && item.propValue !== undefined) {
+        if (!destKf) {
+          destKf = {
+            time: item.time,
+            joints: {} as any,
+            boneProps: {
+              [item.jointId]: { [item.propKey]: item.propValue }
+            }
+          };
+          track.keyframes.push(destKf);
+        } else {
+          if (!destKf.boneProps) destKf.boneProps = {};
+          if (!destKf.boneProps[item.jointId]) destKf.boneProps[item.jointId] = {};
+          destKf.boneProps[item.jointId]![item.propKey] = item.propValue;
+        }
+        if (item.propKey === 'x' || item.propKey === 'y') {
+          if (!destKf.joints) destKf.joints = {} as any;
+          if (!destKf.joints[item.jointId]) {
+            destKf.joints[item.jointId] = { ...(this.restJoints[item.jointId] || { x: 0, y: 0 }) };
+          }
+          destKf.joints[item.jointId][item.propKey] = Math.round(item.propValue);
+        }
+        this.selectedKeyframeKeys.add(this.makeKeyId(item.time, item.jointId, item.propKey));
+      } else if (item.jointId && item.pos) {
         if (!destKf) {
           destKf = {
             time: item.time,

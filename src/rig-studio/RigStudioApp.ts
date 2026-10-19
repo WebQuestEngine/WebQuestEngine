@@ -12,7 +12,13 @@ import {
   StudioAnimationDefinition,
   StudioKeyframe,
   StudioSideTrack,
-  StudioImageSheet
+  StudioImageSheet,
+  RigPartItem,
+  FacialRigConfig,
+  FacialPoseData,
+  EyeRigConfig,
+  MouthRigConfig,
+  VisemePreset
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -33,18 +39,13 @@ import {
 import { RigStudioCanvas } from './rigging/RigStudioCanvas';
 import { VectorElementSlicer, SlicerToolMode } from './slicer/VectorElementSlicer';
 import { KeyframeTimeline } from './timeline/KeyframeTimeline';
+import {
+  openEyeSetupWizard,
+  openMouthSetupWizard,
+  EYE_MODE_DESCRIPTIONS,
+  MOUTH_MODE_DESCRIPTIONS
+} from './dialogs/FacialSetupWizard';
 
-export interface RigPartItem {
-  id: string;
-  name: string;
-  imageUrl: string;
-  image: HTMLImageElement;
-  width: number;
-  height: number;
-  assignedBoneId?: AnatomicalJointId | null;
-  pivotX?: number;
-  pivotY?: number;
-}
 
 interface StudioHistoryState {
   description: string;
@@ -63,8 +64,9 @@ export class RigStudioApp {
   private characterName = 'Character';
   private activeStudioMode: 'rig' | 'slicer' | 'animate' = 'rig';
   private activeView: StudioView = 'front';
-  private activeRightTab: 'bones' | 'parts' | 'layers' | 'animations' = 'bones';
+  private activeRightTab: 'bones' | 'face' | 'parts' | 'layers' | 'animations' = 'bones';
   private partsLibrary: RigPartItem[] = [];
+  private facialRig: FacialRigConfig = {};
 
   // Animations State
   private animations: Record<string, StudioAnimationDefinition> = {};
@@ -3373,6 +3375,9 @@ export class RigStudioApp {
           <button class="sidebar-tab-btn ${this.activeRightTab === 'bones' ? 'active' : ''}" data-tab="bones" style="flex:1;">
             Joints & Bones
           </button>
+          <button class="sidebar-tab-btn ${this.activeRightTab === 'face' ? 'active' : ''}" data-tab="face" style="flex:0.85;" title="Facial Controls & Setup Wizards">
+            🎭 Face
+          </button>
           <button class="sidebar-tab-btn ${this.activeRightTab === 'parts' ? 'active' : ''}" data-tab="parts" style="flex:1.1;">
             Parts Library ${libCount > 0 ? `(${libCount})` : ''}
           </button>
@@ -3675,6 +3680,9 @@ export class RigStudioApp {
               }).join('')}
             </div>
           </div>
+        ` : this.activeRightTab === 'face' ? `
+          <!-- Face Rig & Expressions Tab Content -->
+          ${this.renderFaceTabContent()}
         ` : `
           <!-- Animations Tab Content -->
           ${this.renderAnimationsTabContent()}
@@ -3685,13 +3693,18 @@ export class RigStudioApp {
     // Tab toggle events
     sidebar.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const tab = btn.getAttribute('data-tab') as 'bones' | 'parts' | 'layers' | 'animations';
+        const tab = btn.getAttribute('data-tab') as 'bones' | 'face' | 'parts' | 'layers' | 'animations';
         if (tab) {
           this.activeRightTab = tab;
           this.renderRightSidebar();
         }
       });
     });
+
+    if (this.activeRightTab === 'face') {
+      this.bindFaceTabEvents(sidebar);
+      return;
+    }
 
     if (this.activeRightTab === 'animations') {
       this.bindAnimationsTabEvents(sidebar);
@@ -4514,6 +4527,7 @@ export class RigStudioApp {
       views: viewsExport,
       partsLibrary: partsLibExport,
       slicer: slicerExport,
+      facialRig: JSON.parse(JSON.stringify(this.facialRig)),
       animations: JSON.parse(JSON.stringify(this.animations)),
       activeAnimation: this.activeAnimationName
     };
@@ -4759,6 +4773,15 @@ export class RigStudioApp {
         this.canvas.resetPose();
       }
 
+      // Restore facial rig and update canvas
+      if (data.facialRig) {
+        this.facialRig = JSON.parse(JSON.stringify(data.facialRig));
+      } else {
+        this.facialRig = {};
+      }
+      this.canvas?.setFacialRig(this.facialRig);
+      this.canvas?.setPartsLibrary(this.partsLibrary);
+
       if (this.timeline) {
         this.timeline.setAnimationState(this.animations, this.activeAnimationName, this.activeView, activeArt.joints);
       }
@@ -4810,6 +4833,7 @@ export class RigStudioApp {
             back: ['up']
           },
           elements: [],
+          facialRig: JSON.parse(JSON.stringify(this.facialRig)),
           animations: JSON.parse(JSON.stringify(this.animations))
         }
       },
@@ -5668,15 +5692,20 @@ export class RigStudioApp {
     if (!container) return;
 
     if (!this.timeline) {
+      const currentArt = this.views[this.activeView] || this.views.front || Object.values(this.views)[0];
+      const initialJoints = currentArt?.joints || getDefaultJointPositions('front');
       this.timeline = new KeyframeTimeline(
         container,
         this.animations,
         this.activeAnimationName,
         this.activeView,
-        this.views[this.activeView].joints,
+        initialJoints,
         {
           onPoseInterpolated: (joints) => {
             this.canvas?.setPreviewJoints(joints);
+            if (this.timeline) {
+              this.canvas?.setFacialPose(this.timeline.getCurrentFacialPose());
+            }
           },
           onPlayToggle: (isPlaying) => {
             if (isPlaying && this.toolMode !== 'preview') {
@@ -5746,20 +5775,59 @@ export class RigStudioApp {
             this.setTimelineHeight(height);
             this.safeSetStorage('questforge_rig_timeline_height', String(height));
             this.showToast(`Timeline height set to ${height}px`, 'info');
+          },
+          onRequestEyeSetupWizard: () => {
+            this.openEyeSetupWizardDialog();
+          },
+          onRequestMouthSetupWizard: () => {
+            this.openMouthSetupWizardDialog();
           }
         }
       );
       this.timeline.setKinematicsMode(this.kinematicsMode);
     } else {
+      const currentArt = this.views[this.activeView] || this.views.front || Object.values(this.views)[0];
+      const initialJoints = currentArt?.joints || getDefaultJointPositions('front');
       this.timeline.setAnimationState(
         this.animations,
         this.activeAnimationName,
         this.activeView,
-        this.views[this.activeView].joints
+        initialJoints
       );
       this.timeline.setKinematicsMode(this.kinematicsMode);
     }
   }
+
+  public openEyeSetupWizardDialog(): void {
+    const slicedParts = this.partsLibrary.map(p => ({ id: p.id, name: p.name, dataUrl: p.imageUrl }));
+    openEyeSetupWizard({
+      currentConfig: this.facialRig.eyes,
+      slicedParts,
+      onSave: (config) => {
+        this.facialRig.eyes = config;
+        this.canvas?.setFacialRig(this.facialRig);
+        this.renderRightSidebar();
+        this.timeline?.renderTimeline();
+        this.showToast(`Eye Rig mode set to ${EYE_MODE_DESCRIPTIONS[config.mode]?.title || config.mode}`, 'success');
+      }
+    });
+  }
+
+  public openMouthSetupWizardDialog(): void {
+    const slicedParts = this.partsLibrary.map(p => ({ id: p.id, name: p.name, dataUrl: p.imageUrl }));
+    openMouthSetupWizard({
+      currentConfig: this.facialRig.mouth,
+      slicedParts,
+      onSave: (config) => {
+        this.facialRig.mouth = config;
+        this.canvas?.setFacialRig(this.facialRig);
+        this.renderRightSidebar();
+        this.timeline?.renderTimeline();
+        this.showToast(`Mouth Rig mode set to ${MOUTH_MODE_DESCRIPTIONS[config.mode]?.title || config.mode}`, 'success');
+      }
+    });
+  }
+
 
   public createAnimation(name: string, relevantSides: StudioView[], initialDuration = 1.0): void {
     const cleanName = name.trim().toLowerCase().replace(/\s+/g, '_');
@@ -6013,6 +6081,376 @@ export class RigStudioApp {
     nameInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
       if (e.key === 'Escape') close();
+    });
+  }
+
+  private renderFaceTabContent(): string {
+    const eyeCfg = this.facialRig.eyes || { mode: 'procedural' };
+    const mouthCfg = this.facialRig.mouth || { mode: 'procedural' };
+    const browCfg = this.facialRig.eyebrows || {};
+
+    const eyeDesc = EYE_MODE_DESCRIPTIONS[eyeCfg.mode] || EYE_MODE_DESCRIPTIONS.procedural;
+    const mouthDesc = MOUTH_MODE_DESCRIPTIONS[mouthCfg.mode] || MOUTH_MODE_DESCRIPTIONS.procedural;
+
+    const parts = this.partsLibrary;
+    const currentPose = this.timeline ? this.timeline.getCurrentFacialPose() : {};
+
+    return `
+      <div style="display:flex; flex-direction:column; gap:12px; padding:2px 0;">
+        <!-- Header Info -->
+        <div style="display:flex; flex-direction:column; gap:3px; border-bottom:1px solid rgba(148,163,184,0.14); padding-bottom:8px;">
+          <div style="font-size:0.85rem; font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+            <span>🎭</span>
+            <span>Facial Rigging & Controls</span>
+          </div>
+          <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
+            Configure Eye and Mouth rigging architectures (Sprite Swap, Sclera Window, Visemes, Cavity, or Vectors), then calibrate expressions.
+          </div>
+        </div>
+
+        <!-- 1. Eye Rig Configuration Card -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:1.1rem;">${eyeDesc.icon}</span>
+              <div>
+                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">Eyes Rig</div>
+                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">${eyeDesc.title}</div>
+              </div>
+            </div>
+            <button id="btn-open-eye-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Eyes Setup Wizard to change architecture or assign graphic slots">
+              ⚙️ Wizard...
+            </button>
+          </div>
+          <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
+            ${eyeDesc.subtitle}.
+            ${eyeCfg.mode === 'sprite_swap' ? `Sliced slots: ${Object.keys(eyeCfg.sprites || {}).length} states.` : ''}
+            ${eyeCfg.mode === 'sclera_window' ? `Clipping: Sclera [${eyeCfg.scleraPartId ? '✓' : 'Default'}], Eyelid [${eyeCfg.eyelidUpperPartId ? '✓' : 'Default'}].` : ''}
+            ${eyeCfg.mode === 'procedural' ? 'Real-time vector sclera, pupil, iris, and eyelid arches.' : ''}
+          </div>
+        </div>
+
+        <!-- 2. Mouth Rig Configuration Card -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:1.1rem;">${mouthDesc.icon}</span>
+              <div>
+                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">Mouth Rig</div>
+                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">${mouthDesc.title}</div>
+              </div>
+            </div>
+            <button id="btn-open-mouth-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Mouth Setup Wizard to change architecture or calibrate jaw/smile morphs">
+              ⚙️ Wizard...
+            </button>
+          </div>
+          <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
+            ${mouthDesc.subtitle}.
+            ${mouthCfg.mode === 'viseme_library' ? `Visemes assigned: ${Object.keys(mouthCfg.visemePartIds || {}).length}/9 shapes.` : ''}
+            ${mouthCfg.mode === 'cavity_sandwich' ? `Sandwich: Cavity [${mouthCfg.cavityPartId ? '✓' : 'Default'}], Teeth [${mouthCfg.teethUpperPartId ? '✓' : 'Default'}], Tongue [${mouthCfg.tonguePartId ? '✓' : 'Default'}].` : ''}
+            ${mouthCfg.mode === 'mesh_warp' ? `Single-sprite mesh: Base mouth [${mouthCfg.baseMouthPartId ? '✓' : 'Default'}].` : ''}
+            ${mouthCfg.mode === 'procedural' ? 'Continuous anti-aliased Bezier lip contouring & viseme synthesis.' : ''}
+          </div>
+        </div>
+
+        <!-- 3. Eyebrows Configuration Card -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+            <span>🤨</span>
+            <span>Eyebrows Setup</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Left Brow Slot:</label>
+              <select id="sel-face-brow-left" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
+                <option value="">(Procedural Vector)</option>
+                ${parts.map(p => `<option value="${p.id}" ${browCfg.leftBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Right Brow Slot:</label>
+              <select id="sel-face-brow-right" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
+                <option value="">(Procedural Vector)</option>
+                ${parts.map(p => `<option value="${p.id}" ${browCfg.rightBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
+            <label style="font-size:0.62rem; color:#94a3b8; font-weight:600;">Vector Stroke Color:</label>
+            <input type="color" id="inp-face-brow-color" value="${browCfg.color || '#2b1b17'}" style="width:28px; height:18px; border:none; background:transparent; cursor:pointer;">
+          </div>
+        </div>
+
+        <!-- 4. Live Expression & Viseme Testing Deck -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+              <span>🎛️</span>
+              <span>Live Expression Testing</span>
+            </div>
+            <button id="btn-face-reset-all" class="btn-studio" style="font-size:0.62rem; padding:2px 6px;">
+              ↺ Reset
+            </button>
+          </div>
+
+          <!-- Quick Viseme Presets -->
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:0.62rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">Quick Visemes:</span>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              ${(['rest', 'smile', 'ah', 'oh', 'ee', 'fv', 'mbp', 'wq', 'l'] as VisemePreset[]).map(v => {
+                const isSel = currentPose.viseme === v;
+                return `
+                  <button class="btn-face-viseme-chip ${isSel ? 'active' : ''}" data-viseme="${v}" style="font-size:0.62rem; padding:3px 6px; border-radius:4px; border:1px solid ${isSel ? '#38bdf8' : 'rgba(148,163,184,0.2)'}; background:${isSel ? '#0284c7' : '#1e293b'}; color:#f8fafc; cursor:pointer; font-weight:600;">
+                    ${v.toUpperCase()}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Sliders Grid -->
+          <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+            <!-- Eyelids -->
+            <div style="font-size:0.62rem; color:#38bdf8; font-weight:700; text-transform:uppercase;">Eyelids</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Blink L</span>
+                  <span id="val-face-blink-l">${Math.round((currentPose.eyelids_blink_l ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyelids_blink_l" min="0" max="1" step="0.05" value="${currentPose.eyelids_blink_l ?? 0}" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Blink R</span>
+                  <span id="val-face-blink-r">${Math.round((currentPose.eyelids_blink_r ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyelids_blink_r" min="0" max="1" step="0.05" value="${currentPose.eyelids_blink_r ?? 0}" style="width:100%;">
+              </div>
+            </div>
+            <div>
+              <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                <span>Squint</span>
+                <span id="val-face-squint">${Math.round((currentPose.eyelids_squint ?? 0) * 100)}%</span>
+              </div>
+              <input type="range" class="face-slider" data-prop="eyelids_squint" min="0" max="1" step="0.05" value="${currentPose.eyelids_squint ?? 0}" style="width:100%;">
+            </div>
+
+            <!-- Eyebrows -->
+            <div style="font-size:0.62rem; color:#38bdf8; font-weight:700; text-transform:uppercase; margin-top:4px;">Eyebrows</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Height L</span>
+                  <span id="val-face-brow-hl">${currentPose.eyebrows_height_l ?? 0}px</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyebrows_height_l" min="-20" max="20" step="1" value="${currentPose.eyebrows_height_l ?? 0}" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Height R</span>
+                  <span id="val-face-brow-hr">${currentPose.eyebrows_height_r ?? 0}px</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyebrows_height_r" min="-20" max="20" step="1" value="${currentPose.eyebrows_height_r ?? 0}" style="width:100%;">
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Angle L</span>
+                  <span id="val-face-brow-al">${currentPose.eyebrows_angle_l ?? 0}°</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyebrows_angle_l" min="-30" max="30" step="2" value="${currentPose.eyebrows_angle_l ?? 0}" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Angle R</span>
+                  <span id="val-face-brow-ar">${currentPose.eyebrows_angle_r ?? 0}°</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="eyebrows_angle_r" min="-30" max="30" step="2" value="${currentPose.eyebrows_angle_r ?? 0}" style="width:100%;">
+              </div>
+            </div>
+            <div>
+              <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                <span>Furrow</span>
+                <span id="val-face-brow-furrow">${currentPose.eyebrows_furrow ?? 0}px</span>
+              </div>
+              <input type="range" class="face-slider" data-prop="eyebrows_furrow" min="0" max="10" step="1" value="${currentPose.eyebrows_furrow ?? 0}" style="width:100%;">
+            </div>
+
+            <!-- Lips & Mouth -->
+            <div style="font-size:0.62rem; color:#38bdf8; font-weight:700; text-transform:uppercase; margin-top:4px;">Lips & Mouth</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Open</span>
+                  <span id="val-face-lips-open">${Math.round((currentPose.lips_open ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="lips_open" min="0" max="1" step="0.05" value="${currentPose.lips_open ?? 0}" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Smile / Frown</span>
+                  <span id="val-face-lips-smile">${Math.round((currentPose.lips_smile ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="lips_smile" min="-1" max="1" step="0.05" value="${currentPose.lips_smile ?? 0}" style="width:100%;">
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Wide</span>
+                  <span id="val-face-lips-wide">${Math.round((currentPose.lips_wide ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="lips_wide" min="-1" max="1" step="0.05" value="${currentPose.lips_wide ?? 0}" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                  <span>Pucker</span>
+                  <span id="val-face-lips-pucker">${Math.round((currentPose.lips_pucker ?? 0) * 100)}%</span>
+                </div>
+                <input type="range" class="face-slider" data-prop="lips_pucker" min="0" max="1" step="0.05" value="${currentPose.lips_pucker ?? 0}" style="width:100%;">
+              </div>
+            </div>
+            <div>
+              <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                <span>Jaw Drop</span>
+                <span id="val-face-lips-jaw">${currentPose.lips_jaw_drop ?? 0}px</span>
+              </div>
+              <input type="range" class="face-slider" data-prop="lips_jaw_drop" min="0" max="20" step="1" value="${currentPose.lips_jaw_drop ?? 0}" style="width:100%;">
+            </div>
+          </div>
+
+          <!-- Keyframe Action -->
+          <button id="btn-face-record-keyframe" class="btn-studio btn-studio-primary" style="font-size:0.72rem; justify-content:center; width:100%; margin-top:4px;">
+            🔴 Record Face Keyframe at Playhead
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private bindFaceTabEvents(sidebar: HTMLElement): void {
+    // Open Wizards
+    sidebar.querySelector('#btn-open-eye-wizard')?.addEventListener('click', () => {
+      this.openEyeSetupWizardDialog();
+    });
+
+    sidebar.querySelector('#btn-open-mouth-wizard')?.addEventListener('click', () => {
+      this.openMouthSetupWizardDialog();
+    });
+
+    // Brow Slot Selection
+    sidebar.querySelector('#sel-face-brow-left')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value;
+      this.facialRig.eyebrows = { ...this.facialRig.eyebrows, leftBrowPartId: val || undefined };
+      this.canvas?.setFacialRig(this.facialRig);
+      this.showToast(val ? 'Left eyebrow graphic assigned' : 'Left eyebrow set to procedural', 'info');
+    });
+
+    sidebar.querySelector('#sel-face-brow-right')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value;
+      this.facialRig.eyebrows = { ...this.facialRig.eyebrows, rightBrowPartId: val || undefined };
+      this.canvas?.setFacialRig(this.facialRig);
+      this.showToast(val ? 'Right eyebrow graphic assigned' : 'Right eyebrow set to procedural', 'info');
+    });
+
+    sidebar.querySelector('#inp-face-brow-color')?.addEventListener('input', (e) => {
+      const col = (e.target as HTMLInputElement).value;
+      this.facialRig.eyebrows = { ...this.facialRig.eyebrows, color: col };
+      this.canvas?.setFacialRig(this.facialRig);
+    });
+
+    // Live Viseme chip clicks
+    let activePose: FacialPoseData = this.timeline ? { ...this.timeline.getCurrentFacialPose() } : {};
+
+    sidebar.querySelectorAll('.btn-face-viseme-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = btn.getAttribute('data-viseme') as VisemePreset;
+        if (!v) return;
+        activePose.viseme = v;
+
+        // Visual chip highlight
+        sidebar.querySelectorAll('.btn-face-viseme-chip').forEach(b => {
+          (b as HTMLElement).style.background = '#1e293b';
+          (b as HTMLElement).style.borderColor = 'rgba(148,163,184,0.2)';
+        });
+        (btn as HTMLElement).style.background = '#0284c7';
+        (btn as HTMLElement).style.borderColor = '#38bdf8';
+
+        this.canvas?.setFacialPose(activePose);
+      });
+    });
+
+    // Real-time Sliders
+    sidebar.querySelectorAll('.face-slider').forEach(el => {
+      const slider = el as HTMLInputElement;
+      const prop = slider.getAttribute('data-prop') as keyof FacialPoseData;
+      slider.addEventListener('input', () => {
+        const val = parseFloat(slider.value);
+        (activePose as any)[prop] = val;
+
+        // Update value text
+        if (prop === 'eyelids_blink_l') {
+          const l = sidebar.querySelector('#val-face-blink-l');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'eyelids_blink_r') {
+          const l = sidebar.querySelector('#val-face-blink-r');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'eyelids_squint') {
+          const l = sidebar.querySelector('#val-face-squint');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'eyebrows_height_l') {
+          const l = sidebar.querySelector('#val-face-brow-hl');
+          if (l) l.textContent = `${val}px`;
+        } else if (prop === 'eyebrows_height_r') {
+          const l = sidebar.querySelector('#val-face-brow-hr');
+          if (l) l.textContent = `${val}px`;
+        } else if (prop === 'eyebrows_angle_l') {
+          const l = sidebar.querySelector('#val-face-brow-al');
+          if (l) l.textContent = `${val}°`;
+        } else if (prop === 'eyebrows_angle_r') {
+          const l = sidebar.querySelector('#val-face-brow-ar');
+          if (l) l.textContent = `${val}°`;
+        } else if (prop === 'eyebrows_furrow') {
+          const l = sidebar.querySelector('#val-face-brow-furrow');
+          if (l) l.textContent = `${val}px`;
+        } else if (prop === 'lips_open') {
+          const l = sidebar.querySelector('#val-face-lips-open');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'lips_smile') {
+          const l = sidebar.querySelector('#val-face-lips-smile');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'lips_wide') {
+          const l = sidebar.querySelector('#val-face-lips-wide');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'lips_pucker') {
+          const l = sidebar.querySelector('#val-face-lips-pucker');
+          if (l) l.textContent = `${Math.round(val * 100)}%`;
+        } else if (prop === 'lips_jaw_drop') {
+          const l = sidebar.querySelector('#val-face-lips-jaw');
+          if (l) l.textContent = `${val}px`;
+        }
+
+        this.canvas?.setFacialPose(activePose);
+      });
+    });
+
+    // Reset All
+    sidebar.querySelector('#btn-face-reset-all')?.addEventListener('click', () => {
+      activePose = {};
+      this.canvas?.setFacialPose(activePose);
+      this.renderRightSidebar();
+    });
+
+    // Record Keyframe
+    sidebar.querySelector('#btn-face-record-keyframe')?.addEventListener('click', () => {
+      if (this.timeline) {
+        this.timeline.addFacialKeyframe(this.timeline.currentTime, activePose);
+        this.showToast(`Facial pose keyframed at ${this.timeline.currentTime.toFixed(2)}s`, 'success');
+      } else {
+        this.showToast('Please open the timeline to record keyframes', 'warning');
+      }
     });
   }
 

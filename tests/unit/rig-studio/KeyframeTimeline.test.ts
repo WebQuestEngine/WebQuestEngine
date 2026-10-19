@@ -548,6 +548,147 @@ describe('KeyframeTimeline - Copy, Paste, Close Cycle and Kinematics', () => {
       timeline.destroy();
       expect(document.querySelector('.timeline-rubberband-box')).toBeNull();
     });
+
+    it('adds independent property keyframes (x, y, rotation, scale) to sub-tracks', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const track = animations.walk.tracks.front!;
+      track.keyframes = [];
+
+      // Add independent property keys to hip_l (thigh)
+      timeline.addTrackPropertyKeyframe('hip_l', 'y', 250, 0.2);
+      timeline.addTrackPropertyKeyframe('hip_l', 'rotation', 15.5, 0.4);
+      timeline.addTrackPropertyKeyframe('hip_l', 'scale', 1.15, 0.4);
+
+      expect(track.keyframes.length).toBe(2);
+
+      const kf02 = track.keyframes.find(k => Math.abs(k.time - 0.2) < 0.01);
+      expect(kf02).toBeDefined();
+      expect(kf02?.boneProps?.hip_l?.y).toBe(250);
+      expect(kf02?.joints.hip_l.y).toBe(250);
+
+      const kf04 = track.keyframes.find(k => Math.abs(k.time - 0.4) < 0.01);
+      expect(kf04).toBeDefined();
+      expect(kf04?.boneProps?.hip_l?.rotation).toBe(15.5);
+      expect(kf04?.boneProps?.hip_l?.scale).toBe(1.15);
+
+      timeline.destroy();
+    });
+
+    it('interpolates individual property channels independently between keyframes', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const track = animations.walk.tracks.front!;
+      track.keyframes = [
+        {
+          time: 0.0,
+          joints: { hip_l: { x: 100, y: 200 } } as any,
+          boneProps: { hip_l: { x: 100, y: 200 } }
+        },
+        {
+          time: 0.5,
+          joints: { hip_l: { x: 100, y: 280 } } as any,
+          boneProps: { hip_l: { y: 280 } } // Only Y changed at 0.5s!
+        },
+        {
+          time: 1.0,
+          joints: { hip_l: { x: 150, y: 200 } } as any,
+          boneProps: { hip_l: { x: 150, y: 200 } }
+        }
+      ];
+
+      // At t=0.5s: Y should be 280, X should interpolate smoothly between 0.0s (100) and 1.0s (150) -> ~125
+      timeline.setTime(0.5);
+      const poseAt05 = timeline.getCurrentPose();
+      expect(poseAt05.hip_l.y).toBeCloseTo(280, 0);
+      expect(poseAt05.hip_l.x).toBeCloseTo(125, 0);
+
+      timeline.destroy();
+    });
+
+    it('expands bone track to display property sub-tracks and diamond markers', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      expect(timeline.isBoneExpanded('hip_l')).toBe(false);
+      timeline.toggleBoneExpanded('hip_l', true);
+      expect(timeline.isBoneExpanded('hip_l')).toBe(true);
+
+      const subtracks = container.querySelectorAll('.timeline-element-row.property-subtrack[data-joint="hip_l"]');
+      expect(subtracks.length).toBe(4); // Pos X, Pos Y, Rotation, Scale
+
+      timeline.toggleBoneExpanded('hip_l', false);
+      expect(timeline.isBoneExpanded('hip_l')).toBe(false);
+
+      const subtracksAfter = container.querySelectorAll('.timeline-element-row.property-subtrack[data-joint="hip_l"]');
+      expect(subtracksAfter.length).toBe(0);
+
+      timeline.destroy();
+    });
+
+    it('deletes and copies specific property channel keyframes independently', () => {
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'walk',
+        'front',
+        restJoints
+      );
+
+      const track = animations.walk.tracks.front!;
+      track.keyframes = [
+        {
+          time: 0.3,
+          joints: { hip_l: { x: 100, y: 220 } } as any,
+          boneProps: {
+            hip_l: { x: 100, y: 220, rotation: 12 }
+          }
+        }
+      ];
+
+      // Select and delete only the rotation property key
+      const propKeyId = 'prop:hip_l:rotation:0.300';
+      timeline.clearSelection();
+      (timeline as any).selectedKeyframeKeys.add(propKeyId);
+
+      const copied = timeline.copyKeyframe();
+      expect(copied).toBe(true);
+
+      const deleted = timeline.deleteSelectedKeyframes();
+      expect(deleted).toBe(true);
+
+      // Rotation should be removed, but x and y should remain!
+      expect(track.keyframes[0].boneProps?.hip_l?.rotation).toBeUndefined();
+      expect(track.keyframes[0].boneProps?.hip_l?.y).toBe(220);
+      expect(track.keyframes[0].boneProps?.hip_l?.x).toBe(100);
+
+      // Paste copied rotation at 0.6s
+      timeline.setTime(0.6);
+      const pasted = timeline.pasteKeyframe();
+      expect(pasted).toBe(true);
+
+      const kf06 = track.keyframes.find(k => Math.abs(k.time - 0.6) < 0.01);
+      expect(kf06?.boneProps?.hip_l?.rotation).toBe(12);
+
+      timeline.destroy();
+    });
   });
 });
 
