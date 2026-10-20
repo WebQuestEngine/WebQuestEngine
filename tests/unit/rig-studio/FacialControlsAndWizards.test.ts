@@ -260,6 +260,163 @@ describe('Facial Controls & Setup Wizards', () => {
 
       const openVal = rightSidebar.querySelector('#val-face-lips-open');
       expect(openVal?.textContent).toBe('75%');
+
+      // Verify Face Placement sliders exist and update offsets
+      const offXSlider = rightSidebar.querySelector('#inp-face-offset-x') as HTMLInputElement;
+      expect(offXSlider).not.toBeNull();
+      offXSlider.value = '15';
+      offXSlider.dispatchEvent(new Event('input'));
+      expect(rightSidebar.querySelector('#val-face-offset-x')?.textContent).toBe('15px');
+    });
+
+    it('displays property subtrack keyframes even when keyframe was created at parent joint level', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      const animations = {
+        idle: {
+          name: 'idle',
+          relevantSides: ['front'],
+          tracks: {
+            front: {
+              duration: 2.0,
+              fps: 30,
+              keyframes: [
+                {
+                  time: 0.0,
+                  joints: { head: { x: 10, y: -300 }, neck: { x: 10, y: -250 } }
+                },
+                {
+                  time: 1.0,
+                  joints: { head: { x: 25, y: -290 }, neck: { x: 20, y: -245 } }
+                }
+              ]
+            }
+          }
+        }
+      };
+
+      const timeline = new KeyframeTimeline(
+        container,
+        animations,
+        'idle',
+        'front',
+        { head: { x: 0, y: -300 }, neck: { x: 0, y: -250 } } as any
+      );
+
+      // Expand head bone track
+      timeline.toggleBoneExpanded('head');
+      expect(timeline.isBoneExpanded('head')).toBe(true);
+
+      // Verify that property subtracks (x, y, rotation, scale) contain keyframe markers
+      const headSubtracks = container.querySelectorAll('.property-subtrack[data-joint="head"]');
+      expect(headSubtracks.length).toBe(4);
+
+      // Subtrack X should show markers at 0.0s and 1.0s
+      const xTrack = container.querySelector('.property-subtrack[data-joint="head"][data-prop="x"]');
+      const markers = xTrack?.querySelectorAll('.element-key-marker.prop-marker');
+      expect(markers?.length).toBe(2);
+
+      timeline.destroy();
+    });
+
+    it('allows toggling facial feature visibility across views including back view without hard-coding', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      const app = new RigStudioApp(container);
+      const rightSidebar = container.querySelector('#right-sidebar') as HTMLElement;
+      (rightSidebar.querySelector('[data-tab="face"]') as HTMLButtonElement).click();
+
+      // Verify view toggle chips exist for front, back, left, right
+      const viewChips = rightSidebar.querySelectorAll('.btn-face-view-toggle');
+      expect(viewChips.length).toBeGreaterThanOrEqual(4);
+
+      const backChip = Array.from(viewChips).find(b => b.getAttribute('data-view') === 'back') as HTMLButtonElement;
+      expect(backChip).not.toBeNull();
+      // By default back view is not active
+      expect(backChip.classList.contains('active')).toBe(false);
+
+      // Canvas should not have facial view enabled for back by default
+      const canvas = (app as any).canvas;
+      canvas.setActiveView('back');
+      expect(canvas.isFacialViewEnabled()).toBe(false);
+      expect(canvas.getFacialWorldCenter()).toBeNull();
+
+      // Click the Back chip to enable facial features on back view
+      backChip.click();
+
+      // Back view chip is now active
+      const updatedBackChip = rightSidebar.querySelector('.btn-face-view-toggle[data-view="back"]') as HTMLButtonElement;
+      expect(updatedBackChip.classList.contains('active')).toBe(true);
+
+      // Canvas now considers back view enabled because user selected it
+      expect(canvas.isFacialViewEnabled()).toBe(true);
+      expect(canvas.getFacialWorldCenter()).not.toBeNull();
+    });
+
+    it('manages N-instances of eyes, mouths, and eyebrows for custom creatures and profile views', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      const app = new RigStudioApp(container);
+      const rightSidebar = container.querySelector('#right-sidebar') as HTMLElement;
+      (rightSidebar.querySelector('[data-tab="face"]') as HTMLButtonElement).click();
+
+      // Click "Add Eye" button
+      const addEyeBtn = rightSidebar.querySelector('#btn-add-eye-instance') as HTMLButtonElement;
+      expect(addEyeBtn).not.toBeNull();
+      addEyeBtn.click();
+
+      // Expect eye instances cards to exist (default conversion produces 3 eyes)
+      let eyeCards = rightSidebar.querySelectorAll('.eye-instance-card');
+      expect(eyeCards.length).toBe(3);
+
+      // Verify we can add a 4th eye (N-eyes creature)
+      addEyeBtn.click();
+      eyeCards = rightSidebar.querySelectorAll('.eye-instance-card');
+      expect(eyeCards.length).toBe(4);
+
+      // Adjust 4th eye name and offsets
+      const fourthNameInput = eyeCards[3].querySelector('.inp-eye-inst-name') as HTMLInputElement;
+      fourthNameInput.value = 'Alien Forehead Eye';
+      fourthNameInput.dispatchEvent(new Event('input'));
+      expect((app as any).facialRig.eyeInstances[3].name).toBe('Alien Forehead Eye');
+
+      const fourthXInput = eyeCards[3].querySelector('.inp-eye-inst-x') as HTMLInputElement;
+      fourthXInput.value = '5';
+      fourthXInput.dispatchEvent(new Event('input'));
+      expect((app as any).facialRig.eyeInstances[3].offsetX).toBe(5);
+
+      // Set side view filter on 4th eye
+      const viewSelect = eyeCards[3].querySelector('.sel-eye-inst-view') as HTMLSelectElement;
+      viewSelect.value = 'left';
+      viewSelect.dispatchEvent(new Event('change'));
+      expect((app as any).facialRig.eyeInstances[3].enabledViews).toEqual(['left']);
+
+      // Add Mouth instance
+      const addMouthBtn = rightSidebar.querySelector('#btn-add-mouth-instance') as HTMLButtonElement;
+      expect(addMouthBtn).not.toBeNull();
+      addMouthBtn.click();
+
+      let mouthCards = rightSidebar.querySelectorAll('.mouth-instance-card');
+      expect(mouthCards.length).toBe(2);
+
+      // Add Eyebrow instance
+      const addBrowBtn = rightSidebar.querySelector('#btn-add-brow-instance') as HTMLButtonElement;
+      expect(addBrowBtn).not.toBeNull();
+      addBrowBtn.click();
+
+      let browCards = rightSidebar.querySelectorAll('.brow-instance-card');
+      expect(browCards.length).toBe(3);
+
+      // Delete an eye instance
+      const delEyeBtn = eyeCards[0].querySelector('.btn-eye-inst-del') as HTMLButtonElement;
+      delEyeBtn.click();
+
+      eyeCards = rightSidebar.querySelectorAll('.eye-instance-card');
+      expect(eyeCards.length).toBe(3);
     });
   });
 });
+

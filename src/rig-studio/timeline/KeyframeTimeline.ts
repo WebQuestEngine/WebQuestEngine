@@ -1925,12 +1925,24 @@ export class KeyframeTimeline {
                       </div>
                     </div>
                     <div class="element-track-lane" data-joint="${jointId}" data-prop="${sub.key}" style="width:${trackWidth}px; min-width:${trackWidth}px;">
-                      ${keyframes.filter(k => k.boneProps?.[jointId]?.[sub.key] !== undefined).map(k => {
+                      ${keyframes.filter(k => (k.boneProps?.[jointId]?.[sub.key] !== undefined) || (k.joints && k.joints[jointId] !== undefined)).map(k => {
                         const leftPx = Math.round(k.time * pixelsPerSec);
                         const keyId = this.makeKeyId(k.time, jointId, sub.key);
                         const isSelected = this.selectedKeyframeKeys.has(keyId) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time, jointId)) || this.selectedKeyframeKeys.has(this.makeKeyId(k.time));
-                        const val = k.boneProps![jointId]![sub.key];
-                        const desc = `${displayName} [${sub.name}] @ ${k.time.toFixed(2)}s: ${val}\n[Click: Select / Drag: Move]`;
+                        let val = k.boneProps?.[jointId]?.[sub.key];
+                        const isExplicit = val !== undefined;
+                        if (val === undefined && k.joints?.[jointId]) {
+                          if (sub.key === 'x') val = Math.round(k.joints[jointId].x);
+                          else if (sub.key === 'y') val = Math.round(k.joints[jointId].y);
+                          else if (sub.key === 'rotation') {
+                            const m = getBoneMetrics(jointId, k.joints, this.restJoints);
+                            val = m.rotDeg;
+                          } else if (sub.key === 'scale') {
+                            const m = getBoneMetrics(jointId, k.joints, this.restJoints);
+                            val = m.scale;
+                          }
+                        }
+                        const desc = `${displayName} [${sub.name}] @ ${k.time.toFixed(2)}s: ${val ?? 0}${isExplicit ? ' (custom)' : ''}\n[Click: Select / Drag: Move]`;
                         return `
                           <div class="element-key-marker prop-marker ${sub.colorClass} ${isSelected ? 'selected' : ''}"
                             data-time="${k.time}"
@@ -2435,14 +2447,23 @@ export class KeyframeTimeline {
         const pKey = parts[2] as BonePropertyKey;
         const t = parseFloat(parts[3]);
         const kf = track.keyframes.find(k => Math.abs(k.time - t) < 0.005);
-        if (kf && kf.boneProps?.[jId]?.[pKey] !== undefined) {
-          this.draggingEntries.push({
-            keyId: kId,
-            originalTime: kf.time,
-            jointId: jId,
-            propKey: pKey,
-            propValue: kf.boneProps[jId]![pKey]
-          });
+        if (kf) {
+          let pVal = kf.boneProps?.[jId]?.[pKey];
+          if (pVal === undefined && kf.joints?.[jId]) {
+            if (pKey === 'x') pVal = kf.joints[jId].x;
+            else if (pKey === 'y') pVal = kf.joints[jId].y;
+            else if (pKey === 'rotation') pVal = getBoneMetrics(jId, kf.joints, this.restJoints).rotDeg;
+            else if (pKey === 'scale') pVal = getBoneMetrics(jId, kf.joints, this.restJoints).scale;
+          }
+          if (pVal !== undefined) {
+            this.draggingEntries.push({
+              keyId: kId,
+              originalTime: kf.time,
+              jointId: jId,
+              propKey: pKey,
+              propValue: pVal
+            });
+          }
         }
       } else if (kId.startsWith('joint:')) {
         const parts = kId.split(':');
@@ -2900,10 +2921,20 @@ export class KeyframeTimeline {
 
       if (entry.jointId && entry.propKey && entry.propValue !== undefined) {
         const origKf = track.keyframes.find((k: StudioKeyframe) => Math.abs(k.time - entry.originalTime) < 0.005);
-        if (origKf && origKf.boneProps?.[entry.jointId]) {
-          delete origKf.boneProps[entry.jointId]![entry.propKey];
-          if (Object.keys(origKf.boneProps[entry.jointId]!).length === 0) {
-            delete origKf.boneProps[entry.jointId];
+        if (origKf) {
+          if (origKf.boneProps?.[entry.jointId]) {
+            delete origKf.boneProps[entry.jointId]![entry.propKey];
+            if (Object.keys(origKf.boneProps[entry.jointId]!).length === 0) {
+              delete origKf.boneProps[entry.jointId];
+            }
+          } else if (origKf.joints?.[entry.jointId]) {
+            const m = getBoneMetrics(entry.jointId, origKf.joints, this.restJoints);
+            origKf.boneProps = origKf.boneProps || {};
+            origKf.boneProps[entry.jointId] = {};
+            if (entry.propKey !== 'x') origKf.boneProps[entry.jointId]!.x = origKf.joints[entry.jointId].x;
+            if (entry.propKey !== 'y') origKf.boneProps[entry.jointId]!.y = origKf.joints[entry.jointId].y;
+            if (entry.propKey !== 'rotation') origKf.boneProps[entry.jointId]!.rotation = m.rotDeg;
+            if (entry.propKey !== 'scale') origKf.boneProps[entry.jointId]!.scale = m.scale;
           }
         }
         newItems.push({

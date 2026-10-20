@@ -454,7 +454,93 @@ export interface MouthRigConfig {
   teethColor?: string;
 }
 
+export interface EyeInstanceConfig {
+  id: string;
+  name: string;
+  mode: EyeRigMode;
+  offsetX: number; // local offset from face center (px)
+  offsetY: number; // local offset from face center (px)
+  scale?: number;
+  rotation?: number; // degrees
+  flipX?: boolean;
+  enabledViews?: StudioView[]; // If specified, only shown in these views
+  // Slot bindings for sprite swap:
+  eyeOpenSlot?: string;
+  eyeHalfSlot?: string;
+  eyeClosedSlot?: string;
+  partId?: string;
+  sprites?: Record<string, string>;
+  // Slot bindings for sclera window:
+  scleraPartId?: string;
+  pupilPartId?: string;
+  eyelidUpperPartId?: string;
+  eyelidLowerPartId?: string;
+  // Blink channel binding
+  blinkChannel?: 'blinkL' | 'blinkR' | 'squint';
+}
+
+export interface EyebrowInstanceConfig {
+  id: string;
+  name: string;
+  partId?: string;
+  color?: string;
+  thickness?: number;
+  offsetX: number;
+  offsetY: number;
+  scale?: number;
+  angle?: number;
+  flipX?: boolean;
+  enabledViews?: StudioView[];
+  channel?: 'eyebrows_height_l' | 'eyebrows_height_r';
+}
+
+export interface MouthInstanceConfig {
+  id: string;
+  name: string;
+  mode: MouthRigMode;
+  offsetX: number;
+  offsetY: number;
+  scale?: number;
+  rotation?: number;
+  flipX?: boolean;
+  enabledViews?: StudioView[];
+  // Visemes
+  visemeSlots?: Partial<Record<VisemePreset, string>>;
+  visemePartIds?: Partial<Record<VisemePreset, string>>;
+  // Cavity sandwich
+  upperLipSlot?: string;
+  lowerLipSlot?: string;
+  cavitySlot?: string;
+  cavityPartId?: string;
+  teethUpperPartId?: string;
+  tonguePartId?: string;
+  lipUpperPartId?: string;
+  lipLowerPartId?: string;
+  // Mesh warp
+  mouthSpriteSlot?: string;
+  mouthPartId?: string;
+  baseMouthPartId?: string;
+  // Procedural
+  lipColor?: string;
+  cavityColor?: string;
+  teethColor?: string;
+}
+
 export interface FacialRigConfig {
+  // Configurable views where facial features appear (user selectable, e.g. includes 'back' if desired)
+  enabledViews?: StudioView[];
+
+  // Placement & scale
+  offsetX?: number; // Horizontal offset on head (px)
+  offsetY?: number; // Vertical offset on head (px)
+  scale?: number;   // Facial scale multiplier (1.0 = standard)
+
+  // Multi-instance feature arrays (supports N eyes, N eyebrows, N mouths)
+  eyeInstances?: EyeInstanceConfig[];
+  eyebrowInstances?: EyebrowInstanceConfig[];
+  mouthInstances?: MouthInstanceConfig[];
+
+  // Legacy / fallback single configurations
   eyebrows?: EyebrowRigConfig;
   eyes?: EyeRigConfig;
   mouth?: MouthRigConfig;

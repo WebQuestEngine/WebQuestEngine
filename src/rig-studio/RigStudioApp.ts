@@ -18,7 +18,10 @@ import {
   FacialPoseData,
   EyeRigConfig,
   MouthRigConfig,
-  VisemePreset
+  VisemePreset,
+  EyeInstanceConfig,
+  EyebrowInstanceConfig,
+  MouthInstanceConfig
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -427,6 +430,10 @@ export class RigStudioApp {
       },
       onImageDropped: (file) => {
         this.handleFileUpload(file);
+      },
+      onFacialRigChanged: (cfg) => {
+        this.facialRig = { ...this.facialRig, ...cfg };
+        this.renderRightSidebar();
       }
     });
 
@@ -6095,6 +6102,15 @@ export class RigStudioApp {
     const parts = this.partsLibrary;
     const currentPose = this.timeline ? this.timeline.getCurrentFacialPose() : {};
 
+    const isViewActive = (vId: string) => {
+      if (this.facialRig.enabledViews && Array.isArray(this.facialRig.enabledViews)) {
+        return this.facialRig.enabledViews.includes(vId);
+      }
+      return !(vId === 'back' || vId === 'back_left' || vId === 'back_right');
+    };
+
+    const viewsList = Object.entries(this.views);
+
     return `
       <div style="display:flex; flex-direction:column; gap:12px; padding:2px 0;">
         <!-- Header Info -->
@@ -6104,7 +6120,70 @@ export class RigStudioApp {
             <span>Facial Rigging & Controls</span>
           </div>
           <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
-            Configure Eye and Mouth rigging architectures (Sprite Swap, Sclera Window, Visemes, Cavity, or Vectors), then calibrate expressions.
+            Configure facial view visibility, multi-instance eyes/mouths/brows, and calibrate expressions.
+          </div>
+        </div>
+
+        <!-- 0. Face Position & Alignment on Head -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+              <span>📍</span>
+              <span>Face Placement on Head</span>
+            </div>
+            <button id="btn-face-reset-pos" class="btn-studio" style="font-size:0.62rem; padding:2px 6px;" title="Reset face position to head center">
+              ↺ Center
+            </button>
+          </div>
+          <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
+            Adjust face placement & scale on head, or click & drag directly on the canvas.
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+            <div>
+              <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                <span>Position X</span>
+                <span id="val-face-offset-x">${this.facialRig.offsetX ?? 0}px</span>
+              </div>
+              <input type="range" id="inp-face-offset-x" min="-100" max="100" step="1" value="${this.facialRig.offsetX ?? 0}" style="width:100%;">
+            </div>
+            <div>
+              <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+                <span>Position Y</span>
+                <span id="val-face-offset-y">${this.facialRig.offsetY ?? 0}px</span>
+              </div>
+              <input type="range" id="inp-face-offset-y" min="-120" max="80" step="1" value="${this.facialRig.offsetY ?? 0}" style="width:100%;">
+            </div>
+          </div>
+          <div>
+            <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#94a3b8;">
+              <span>Face Scale</span>
+              <span id="val-face-scale">${Math.round((this.facialRig.scale ?? 1.0) * 100)}%</span>
+            </div>
+            <input type="range" id="inp-face-scale" min="0.3" max="2.5" step="0.05" value="${this.facialRig.scale ?? 1.0}" style="width:100%;">
+          </div>
+        </div>
+
+        <!-- 0.5 Facial Views Visibility (User-Selectable Views) -->
+        <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+              <span>👁️</span>
+              <span>Facial Visibility Across Views</span>
+            </div>
+          </div>
+          <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
+            Select which character poses show facial features. Back views are omitted by default, but fully selectable:
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${viewsList.map(([vId, vData]) => {
+              const active = isViewActive(vId);
+              return `
+                <button class="btn-face-view-toggle ${active ? 'active' : ''}" data-view="${vId}" style="font-size:0.65rem; padding:3px 8px; border-radius:4px; border:1px solid ${active ? '#38bdf8' : 'rgba(148,163,184,0.2)'}; background:${active ? '#0284c7' : '#1e293b'}; color:#f8fafc; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px;">
+                  <span>${active ? '✓' : '✗'}</span>
+                  <span>${vData.label || vId}</span>
+                </button>
+              `;
+            }).join('')}
           </div>
         </div>
 
@@ -6114,20 +6193,86 @@ export class RigStudioApp {
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="font-size:1.1rem;">${eyeDesc.icon}</span>
               <div>
-                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">Eyes Rig</div>
-                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">${eyeDesc.title}</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">
+                  Eyes Rig ${this.facialRig.eyeInstances && this.facialRig.eyeInstances.length > 0 ? `(${this.facialRig.eyeInstances.length} Eyes)` : ''}
+                </div>
+                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">
+                  ${this.facialRig.eyeInstances && this.facialRig.eyeInstances.length > 0 ? 'Multi-Eye Setup' : eyeDesc.title}
+                </div>
               </div>
             </div>
-            <button id="btn-open-eye-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Eyes Setup Wizard to change architecture or assign graphic slots">
-              ⚙️ Wizard...
-            </button>
+            <div style="display:flex; gap:4px;">
+              <button id="btn-add-eye-instance" class="btn-studio" style="font-size:0.65rem; padding:3px 7px;" title="Add an eye instance (supports N eyes for creatures or single side-view eyes)">
+                ➕ Add Eye
+              </button>
+              <button id="btn-open-eye-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Eyes Setup Wizard">
+                ⚙️ Wizard...
+              </button>
+            </div>
           </div>
           <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
             ${eyeDesc.subtitle}.
-            ${eyeCfg.mode === 'sprite_swap' ? `Sliced slots: ${Object.keys(eyeCfg.sprites || {}).length} states.` : ''}
-            ${eyeCfg.mode === 'sclera_window' ? `Clipping: Sclera [${eyeCfg.scleraPartId ? '✓' : 'Default'}], Eyelid [${eyeCfg.eyelidUpperPartId ? '✓' : 'Default'}].` : ''}
-            ${eyeCfg.mode === 'procedural' ? 'Real-time vector sclera, pupil, iris, and eyelid arches.' : ''}
           </div>
+
+          ${this.facialRig.eyeInstances && this.facialRig.eyeInstances.length > 0 ? `
+            <div style="display:flex; flex-direction:column; gap:8px; border-top:1px solid rgba(148,163,184,0.15); padding-top:8px;">
+              ${this.facialRig.eyeInstances.map((inst, idx) => `
+                <div class="eye-instance-card" data-idx="${idx}" style="background:#1e293b; border:1px solid rgba(148,163,184,0.2); border-radius:4px; padding:6px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:6px; flex:1;">
+                      <span style="font-size:0.7rem;">👁️</span>
+                      <input type="text" class="inp-eye-inst-name studio-input" data-idx="${idx}" value="${inst.name}" style="font-size:0.65rem; padding:2px 4px; width:110px; font-weight:600;">
+                      <span style="font-size:0.6rem; color:#38bdf8; background:rgba(56,189,248,0.1); padding:1px 4px; border-radius:3px;">${inst.mode}</span>
+                    </div>
+                    <button class="btn-eye-inst-del btn-studio" data-idx="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#f87171;" title="Delete this eye instance">✕</button>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>X Offset</span>
+                        <span class="lbl-eye-x">${inst.offsetX}px</span>
+                      </div>
+                      <input type="range" class="inp-eye-inst-x" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetX}" style="width:100%;">
+                    </div>
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>Y Offset</span>
+                        <span class="lbl-eye-y">${inst.offsetY}px</span>
+                      </div>
+                      <input type="range" class="inp-eye-inst-y" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetY}" style="width:100%;">
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <div>
+                      <label style="font-size:0.58rem; color:#94a3b8; display:block;">Blink Channel:</label>
+                      <select class="sel-eye-inst-blink studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                        <option value="blinkL" ${inst.blinkChannel === 'blinkL' ? 'selected' : ''}>Left Blink</option>
+                        <option value="blinkR" ${inst.blinkChannel === 'blinkR' ? 'selected' : ''}>Right Blink</option>
+                        <option value="squint" ${inst.blinkChannel === 'squint' ? 'selected' : ''}>Squint Only</option>
+                        <option value="" ${!inst.blinkChannel ? 'selected' : ''}>Synchronized (Both)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-size:0.58rem; color:#94a3b8; display:block;">Visible View:</label>
+                      <select class="sel-eye-inst-view studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                        <option value="">All Face Views</option>
+                        ${viewsList.map(([vId, vData]) => `
+                          <option value="${vId}" ${inst.enabledViews?.includes(vId) ? 'selected' : ''}>${vData.label || vId} Only</option>
+                        `).join('')}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.5); padding:6px; border-radius:4px;">
+              <span style="font-size:0.62rem; color:#94a3b8;">Standard dual eyes active.</span>
+              <button id="btn-add-first-eye-instance" class="btn-studio" style="font-size:0.62rem; padding:2px 6px;">
+                ➕ Multi-Eye / Creature Mode
+              </button>
+            </div>
+          `}
         </div>
 
         <!-- 2. Mouth Rig Configuration Card -->
@@ -6136,49 +6281,169 @@ export class RigStudioApp {
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="font-size:1.1rem;">${mouthDesc.icon}</span>
               <div>
-                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">Mouth Rig</div>
-                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">${mouthDesc.title}</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#f8fafc;">
+                  Mouth Rig ${this.facialRig.mouthInstances && this.facialRig.mouthInstances.length > 0 ? `(${this.facialRig.mouthInstances.length} Mouths)` : ''}
+                </div>
+                <div style="font-size:0.62rem; color:#38bdf8; font-weight:600;">
+                  ${this.facialRig.mouthInstances && this.facialRig.mouthInstances.length > 0 ? 'Multi-Mouth Setup' : mouthDesc.title}
+                </div>
               </div>
             </div>
-            <button id="btn-open-mouth-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Mouth Setup Wizard to change architecture or calibrate jaw/smile morphs">
-              ⚙️ Wizard...
-            </button>
+            <div style="display:flex; gap:4px;">
+              <button id="btn-add-mouth-instance" class="btn-studio" style="font-size:0.65rem; padding:3px 7px;" title="Add another mouth instance">
+                ➕ Add Mouth
+              </button>
+              <button id="btn-open-mouth-wizard" class="btn-studio btn-studio-primary" style="font-size:0.68rem; padding:3px 8px;" title="Open Mouth Setup Wizard">
+                ⚙️ Wizard...
+              </button>
+            </div>
           </div>
           <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
             ${mouthDesc.subtitle}.
-            ${mouthCfg.mode === 'viseme_library' ? `Visemes assigned: ${Object.keys(mouthCfg.visemePartIds || {}).length}/9 shapes.` : ''}
-            ${mouthCfg.mode === 'cavity_sandwich' ? `Sandwich: Cavity [${mouthCfg.cavityPartId ? '✓' : 'Default'}], Teeth [${mouthCfg.teethUpperPartId ? '✓' : 'Default'}], Tongue [${mouthCfg.tonguePartId ? '✓' : 'Default'}].` : ''}
-            ${mouthCfg.mode === 'mesh_warp' ? `Single-sprite mesh: Base mouth [${mouthCfg.baseMouthPartId ? '✓' : 'Default'}].` : ''}
-            ${mouthCfg.mode === 'procedural' ? 'Continuous anti-aliased Bezier lip contouring & viseme synthesis.' : ''}
           </div>
+
+          ${this.facialRig.mouthInstances && this.facialRig.mouthInstances.length > 0 ? `
+            <div style="display:flex; flex-direction:column; gap:8px; border-top:1px solid rgba(148,163,184,0.15); padding-top:8px;">
+              ${this.facialRig.mouthInstances.map((inst, idx) => `
+                <div class="mouth-instance-card" data-idx="${idx}" style="background:#1e293b; border:1px solid rgba(148,163,184,0.2); border-radius:4px; padding:6px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:6px; flex:1;">
+                      <span style="font-size:0.7rem;">👄</span>
+                      <input type="text" class="inp-mouth-inst-name studio-input" data-idx="${idx}" value="${inst.name}" style="font-size:0.65rem; padding:2px 4px; width:110px; font-weight:600;">
+                      <span style="font-size:0.6rem; color:#38bdf8; background:rgba(56,189,248,0.1); padding:1px 4px; border-radius:3px;">${inst.mode}</span>
+                    </div>
+                    <button class="btn-mouth-inst-del btn-studio" data-idx="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#f87171;" title="Delete this mouth instance">✕</button>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>X Offset</span>
+                        <span class="lbl-mouth-x">${inst.offsetX}px</span>
+                      </div>
+                      <input type="range" class="inp-mouth-inst-x" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetX}" style="width:100%;">
+                    </div>
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>Y Offset</span>
+                        <span class="lbl-mouth-y">${inst.offsetY}px</span>
+                      </div>
+                      <input type="range" class="inp-mouth-inst-y" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetY}" style="width:100%;">
+                    </div>
+                  </div>
+                  <div>
+                    <label style="font-size:0.58rem; color:#94a3b8; display:block;">Visible View:</label>
+                    <select class="sel-mouth-inst-view studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                      <option value="">All Face Views</option>
+                      ${viewsList.map(([vId, vData]) => `
+                        <option value="${vId}" ${inst.enabledViews?.includes(vId) ? 'selected' : ''}>${vData.label || vId} Only</option>
+                      `).join('')}
+                    </select>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.5); padding:6px; border-radius:4px;">
+              <span style="font-size:0.62rem; color:#94a3b8;">Single standard mouth active.</span>
+              <button id="btn-add-first-mouth-instance" class="btn-studio" style="font-size:0.62rem; padding:2px 6px;">
+                ➕ Multi-Mouth / Creature Mode
+              </button>
+            </div>
+          `}
         </div>
 
         <!-- 3. Eyebrows Configuration Card -->
         <div style="background:#0f172a; border:1px solid rgba(148,163,184,0.2); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:8px;">
-          <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-            <span>🤨</span>
-            <span>Eyebrows Setup</span>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div>
-              <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Left Brow Slot:</label>
-              <select id="sel-face-brow-left" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
-                <option value="">(Procedural Vector)</option>
-                ${parts.map(p => `<option value="${p.id}" ${browCfg.leftBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
-              </select>
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+              <span>🤨</span>
+              <span>Eyebrows Setup ${this.facialRig.eyebrowInstances && this.facialRig.eyebrowInstances.length > 0 ? `(${this.facialRig.eyebrowInstances.length} Brows)` : ''}</span>
             </div>
-            <div>
-              <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Right Brow Slot:</label>
-              <select id="sel-face-brow-right" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
-                <option value="">(Procedural Vector)</option>
-                ${parts.map(p => `<option value="${p.id}" ${browCfg.rightBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
-              </select>
+            <button id="btn-add-brow-instance" class="btn-studio" style="font-size:0.65rem; padding:3px 7px;" title="Add another eyebrow instance">
+              ➕ Add Brow
+            </button>
+          </div>
+
+          ${this.facialRig.eyebrowInstances && this.facialRig.eyebrowInstances.length > 0 ? `
+            <div style="display:flex; flex-direction:column; gap:8px; border-top:1px solid rgba(148,163,184,0.15); padding-top:8px;">
+              ${this.facialRig.eyebrowInstances.map((inst, idx) => `
+                <div class="brow-instance-card" data-idx="${idx}" style="background:#1e293b; border:1px solid rgba(148,163,184,0.2); border-radius:4px; padding:6px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:6px; flex:1;">
+                      <span style="font-size:0.7rem;">〰️</span>
+                      <input type="text" class="inp-brow-inst-name studio-input" data-idx="${idx}" value="${inst.name}" style="font-size:0.65rem; padding:2px 4px; width:110px; font-weight:600;">
+                    </div>
+                    <button class="btn-brow-inst-del btn-studio" data-idx="${idx}" style="font-size:0.6rem; padding:1px 5px; color:#f87171;" title="Delete this brow">✕</button>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>X Offset</span>
+                        <span class="lbl-brow-x">${inst.offsetX}px</span>
+                      </div>
+                      <input type="range" class="inp-brow-inst-x" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetX}" style="width:100%;">
+                    </div>
+                    <div>
+                      <div style="display:flex; justify-content:space-between; font-size:0.58rem; color:#94a3b8;">
+                        <span>Y Offset</span>
+                        <span class="lbl-brow-y">${inst.offsetY}px</span>
+                      </div>
+                      <input type="range" class="inp-brow-inst-y" data-idx="${idx}" min="-80" max="80" step="1" value="${inst.offsetY}" style="width:100%;">
+                    </div>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <div>
+                      <label style="font-size:0.58rem; color:#94a3b8; display:block;">Channel:</label>
+                      <select class="sel-brow-inst-channel studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                        <option value="eyebrows_height_l" ${inst.channel === 'eyebrows_height_l' ? 'selected' : ''}>Left Brow Height</option>
+                        <option value="eyebrows_height_r" ${inst.channel === 'eyebrows_height_r' ? 'selected' : ''}>Right Brow Height</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-size:0.58rem; color:#94a3b8; display:block;">Graphic Slot:</label>
+                      <select class="sel-brow-inst-part studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                        <option value="">(Procedural Vector)</option>
+                        ${parts.map(p => `<option value="${p.id}" ${inst.partId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style="font-size:0.58rem; color:#94a3b8; display:block;">Visible View:</label>
+                    <select class="sel-brow-inst-view studio-select" data-idx="${idx}" style="width:100%; font-size:0.62rem; padding:2px;">
+                      <option value="">All Face Views</option>
+                      ${viewsList.map(([vId, vData]) => `
+                        <option value="${vId}" ${inst.enabledViews?.includes(vId) ? 'selected' : ''}>${vData.label || vId} Only</option>
+                      `).join('')}
+                    </select>
+                  </div>
+                </div>
+              `).join('')}
             </div>
-          </div>
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
-            <label style="font-size:0.62rem; color:#94a3b8; font-weight:600;">Vector Stroke Color:</label>
-            <input type="color" id="inp-face-brow-color" value="${browCfg.color || '#2b1b17'}" style="width:28px; height:18px; border:none; background:transparent; cursor:pointer;">
-          </div>
+          ` : `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div>
+                <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Left Brow Slot:</label>
+                <select id="sel-face-brow-left" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
+                  <option value="">(Procedural Vector)</option>
+                  ${parts.map(p => `<option value="${p.id}" ${browCfg.leftBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label style="font-size:0.62rem; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">Right Brow Slot:</label>
+                <select id="sel-face-brow-right" class="studio-select" style="width:100%; font-size:0.65rem; padding:3px;">
+                  <option value="">(Procedural Vector)</option>
+                  ${parts.map(p => `<option value="${p.id}" ${browCfg.rightBrowPartId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
+              <label style="font-size:0.62rem; color:#94a3b8; font-weight:600;">Vector Stroke Color:</label>
+              <input type="color" id="inp-face-brow-color" value="${browCfg.color || '#2b1b17'}" style="width:28px; height:18px; border:none; background:transparent; cursor:pointer;">
+            </div>
+            <button id="btn-add-first-brow-instance" class="btn-studio" style="font-size:0.62rem; padding:2px 6px; width:100%; margin-top:4px;">
+              ➕ Multi-Brow Mode
+            </button>
+          `}
         </div>
 
         <!-- 4. Live Expression & Viseme Testing Deck -->
@@ -6338,6 +6603,351 @@ export class RigStudioApp {
 
     sidebar.querySelector('#btn-open-mouth-wizard')?.addEventListener('click', () => {
       this.openMouthSetupWizardDialog();
+    });
+
+    // Face Placement & Scale controls
+    const inpOffX = sidebar.querySelector('#inp-face-offset-x') as HTMLInputElement | null;
+    const inpOffY = sidebar.querySelector('#inp-face-offset-y') as HTMLInputElement | null;
+    const inpScale = sidebar.querySelector('#inp-face-scale') as HTMLInputElement | null;
+
+    inpOffX?.addEventListener('input', () => {
+      const val = parseInt(inpOffX.value, 10);
+      this.facialRig.offsetX = val;
+      const lbl = sidebar.querySelector('#val-face-offset-x');
+      if (lbl) lbl.textContent = `${val}px`;
+      this.canvas?.setFacialRig(this.facialRig);
+    });
+
+    inpOffY?.addEventListener('input', () => {
+      const val = parseInt(inpOffY.value, 10);
+      this.facialRig.offsetY = val;
+      const lbl = sidebar.querySelector('#val-face-offset-y');
+      if (lbl) lbl.textContent = `${val}px`;
+      this.canvas?.setFacialRig(this.facialRig);
+    });
+
+    inpScale?.addEventListener('input', () => {
+      const val = parseFloat(inpScale.value);
+      this.facialRig.scale = val;
+      const lbl = sidebar.querySelector('#val-face-scale');
+      if (lbl) lbl.textContent = `${Math.round(val * 100)}%`;
+      this.canvas?.setFacialRig(this.facialRig);
+    });
+
+    sidebar.querySelector('#btn-face-reset-pos')?.addEventListener('click', () => {
+      this.facialRig.offsetX = 0;
+      this.facialRig.offsetY = 0;
+      this.facialRig.scale = 1.0;
+      this.canvas?.setFacialRig(this.facialRig);
+      this.renderRightSidebar();
+      this.showToast('Face placement centered on head', 'info');
+    });
+
+    // Facial View Visibility toggles
+    sidebar.querySelectorAll('.btn-face-view-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const vId = btn.getAttribute('data-view');
+        if (!vId) return;
+        if (!this.facialRig.enabledViews || !Array.isArray(this.facialRig.enabledViews)) {
+          this.facialRig.enabledViews = Object.keys(this.views).filter(v => !(v === 'back' || v === 'back_left' || v === 'back_right'));
+        }
+        if (this.facialRig.enabledViews.includes(vId)) {
+          this.facialRig.enabledViews = this.facialRig.enabledViews.filter(v => v !== vId);
+        } else {
+          this.facialRig.enabledViews.push(vId);
+        }
+        this.canvas?.setFacialRig(this.facialRig);
+        this.renderRightSidebar();
+        this.showToast(`Facial features ${this.facialRig.enabledViews.includes(vId) ? 'enabled' : 'hidden'} on "${vId}"`, 'info');
+      });
+    });
+
+    // Multi-Eye instance events
+    const addEyeInst = () => {
+      if (!this.facialRig.eyeInstances || this.facialRig.eyeInstances.length === 0) {
+        this.facialRig.eyeInstances = [
+          { id: 'eye_left', name: 'Left Eye', mode: this.facialRig.eyes?.mode || 'procedural', offsetX: -13, offsetY: -3, blinkChannel: 'blinkL' },
+          { id: 'eye_right', name: 'Right Eye', mode: this.facialRig.eyes?.mode || 'procedural', offsetX: 13, offsetY: -3, blinkChannel: 'blinkR' },
+          { id: `eye_${Date.now()}`, name: 'New Eye', mode: 'procedural', offsetX: 0, offsetY: -18, blinkChannel: 'blinkL' }
+        ];
+      } else {
+        const count = this.facialRig.eyeInstances.length + 1;
+        this.facialRig.eyeInstances.push({
+          id: `eye_${Date.now()}`,
+          name: `Eye ${count}`,
+          mode: 'procedural',
+          offsetX: 0,
+          offsetY: -10,
+          blinkChannel: 'blinkL'
+        });
+      }
+      this.canvas?.setFacialRig(this.facialRig);
+      this.renderRightSidebar();
+      this.showToast('Eye instance added', 'info');
+    };
+    sidebar.querySelector('#btn-add-eye-instance')?.addEventListener('click', addEyeInst);
+    sidebar.querySelector('#btn-add-first-eye-instance')?.addEventListener('click', addEyeInst);
+
+    sidebar.querySelectorAll('.inp-eye-inst-name').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.eyeInstances?.[idx]) {
+          this.facialRig.eyeInstances[idx].name = (e.target as HTMLInputElement).value;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-eye-inst-x').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.eyeInstances?.[idx]) {
+          this.facialRig.eyeInstances[idx].offsetX = val;
+          const card = el.closest('.eye-instance-card');
+          const lbl = card?.querySelector('.lbl-eye-x');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-eye-inst-y').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.eyeInstances?.[idx]) {
+          this.facialRig.eyeInstances[idx].offsetY = val;
+          const card = el.closest('.eye-instance-card');
+          const lbl = card?.querySelector('.lbl-eye-y');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-eye-inst-blink').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value as any;
+        if (this.facialRig.eyeInstances?.[idx]) {
+          this.facialRig.eyeInstances[idx].blinkChannel = val || undefined;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-eye-inst-view').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value;
+        if (this.facialRig.eyeInstances?.[idx]) {
+          this.facialRig.eyeInstances[idx].enabledViews = val ? [val] : undefined;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-eye-inst-del').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.eyeInstances) {
+          this.facialRig.eyeInstances.splice(idx, 1);
+          this.canvas?.setFacialRig(this.facialRig);
+          this.renderRightSidebar();
+          this.showToast('Eye instance removed', 'info');
+        }
+      });
+    });
+
+    // Multi-Mouth instance events
+    const addMouthInst = () => {
+      if (!this.facialRig.mouthInstances || this.facialRig.mouthInstances.length === 0) {
+        this.facialRig.mouthInstances = [
+          { id: 'mouth_primary', name: 'Main Mouth', mode: this.facialRig.mouth?.mode || 'procedural', offsetX: 0, offsetY: 0 },
+          { id: `mouth_${Date.now()}`, name: 'Second Mouth', mode: 'procedural', offsetX: 0, offsetY: 18 }
+        ];
+      } else {
+        const count = this.facialRig.mouthInstances.length + 1;
+        this.facialRig.mouthInstances.push({
+          id: `mouth_${Date.now()}`,
+          name: `Mouth ${count}`,
+          mode: 'procedural',
+          offsetX: 0,
+          offsetY: 15
+        });
+      }
+      this.canvas?.setFacialRig(this.facialRig);
+      this.renderRightSidebar();
+      this.showToast('Mouth instance added', 'info');
+    };
+    sidebar.querySelector('#btn-add-mouth-instance')?.addEventListener('click', addMouthInst);
+    sidebar.querySelector('#btn-add-first-mouth-instance')?.addEventListener('click', addMouthInst);
+
+    sidebar.querySelectorAll('.inp-mouth-inst-name').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.mouthInstances?.[idx]) {
+          this.facialRig.mouthInstances[idx].name = (e.target as HTMLInputElement).value;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-mouth-inst-x').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.mouthInstances?.[idx]) {
+          this.facialRig.mouthInstances[idx].offsetX = val;
+          const card = el.closest('.mouth-instance-card');
+          const lbl = card?.querySelector('.lbl-mouth-x');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-mouth-inst-y').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.mouthInstances?.[idx]) {
+          this.facialRig.mouthInstances[idx].offsetY = val;
+          const card = el.closest('.mouth-instance-card');
+          const lbl = card?.querySelector('.lbl-mouth-y');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-mouth-inst-view').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value;
+        if (this.facialRig.mouthInstances?.[idx]) {
+          this.facialRig.mouthInstances[idx].enabledViews = val ? [val] : undefined;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-mouth-inst-del').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.mouthInstances) {
+          this.facialRig.mouthInstances.splice(idx, 1);
+          this.canvas?.setFacialRig(this.facialRig);
+          this.renderRightSidebar();
+          this.showToast('Mouth instance removed', 'info');
+        }
+      });
+    });
+
+    // Multi-Brow instance events
+    const addBrowInst = () => {
+      if (!this.facialRig.eyebrowInstances || this.facialRig.eyebrowInstances.length === 0) {
+        this.facialRig.eyebrowInstances = [
+          { id: 'brow_left', name: 'Left Brow', offsetX: -13, offsetY: -14, channel: 'eyebrows_height_l', partId: this.facialRig.eyebrows?.leftBrowPartId },
+          { id: 'brow_right', name: 'Right Brow', offsetX: 13, offsetY: -14, channel: 'eyebrows_height_r', partId: this.facialRig.eyebrows?.rightBrowPartId },
+          { id: `brow_${Date.now()}`, name: 'Center Brow', offsetX: 0, offsetY: -20, channel: 'eyebrows_height_l' }
+        ];
+      } else {
+        const count = this.facialRig.eyebrowInstances.length + 1;
+        this.facialRig.eyebrowInstances.push({
+          id: `brow_${Date.now()}`,
+          name: `Brow ${count}`,
+          offsetX: 0,
+          offsetY: -15,
+          channel: 'eyebrows_height_l'
+        });
+      }
+      this.canvas?.setFacialRig(this.facialRig);
+      this.renderRightSidebar();
+      this.showToast('Eyebrow instance added', 'info');
+    };
+    sidebar.querySelector('#btn-add-brow-instance')?.addEventListener('click', addBrowInst);
+    sidebar.querySelector('#btn-add-first-brow-instance')?.addEventListener('click', addBrowInst);
+
+    sidebar.querySelectorAll('.inp-brow-inst-name').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].name = (e.target as HTMLInputElement).value;
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-brow-inst-x').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].offsetX = val;
+          const card = el.closest('.brow-instance-card');
+          const lbl = card?.querySelector('.lbl-brow-x');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.inp-brow-inst-y').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = parseInt((e.target as HTMLInputElement).value, 10);
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].offsetY = val;
+          const card = el.closest('.brow-instance-card');
+          const lbl = card?.querySelector('.lbl-brow-y');
+          if (lbl) lbl.textContent = `${val}px`;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-brow-inst-channel').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value as any;
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].channel = val;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-brow-inst-part').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value;
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].partId = val || undefined;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.sel-brow-inst-view').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        const val = (e.target as HTMLSelectElement).value;
+        if (this.facialRig.eyebrowInstances?.[idx]) {
+          this.facialRig.eyebrowInstances[idx].enabledViews = val ? [val] : undefined;
+          this.canvas?.setFacialRig(this.facialRig);
+        }
+      });
+    });
+
+    sidebar.querySelectorAll('.btn-brow-inst-del').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+        if (this.facialRig.eyebrowInstances) {
+          this.facialRig.eyebrowInstances.splice(idx, 1);
+          this.canvas?.setFacialRig(this.facialRig);
+          this.renderRightSidebar();
+          this.showToast('Eyebrow instance removed', 'info');
+        }
+      });
     });
 
     // Brow Slot Selection

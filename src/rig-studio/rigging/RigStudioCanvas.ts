@@ -7,7 +7,10 @@ import {
   FacialRigConfig,
   FacialPoseData,
   VisemePreset,
-  RigPartItem
+  RigPartItem,
+  EyeInstanceConfig,
+  EyebrowInstanceConfig,
+  MouthInstanceConfig
 } from '../types';
 import {
   ANATOMICAL_JOINTS,
@@ -30,6 +33,7 @@ export interface RigStudioCanvasEvents {
   onPartDroppedOnBone?: (boneId: AnatomicalJointId, partData: any) => void;
   onFileDroppedOnBone?: (boneId: AnatomicalJointId, file: File) => void;
   onPreviewPoseChanged?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
+  onFacialRigChanged?: (cfg: FacialRigConfig) => void;
 }
 
 export class RigStudioCanvas {
@@ -63,6 +67,14 @@ export class RigStudioCanvas {
   private facialRig: FacialRigConfig = {};
   private currentFacialPose: FacialPoseData = {};
   private partsLibrary: RigPartItem[] = [];
+
+  // On-Canvas Interactive Facial Placement Gizmo
+  private isDraggingFace = false;
+  private dragFaceStartWorld = { x: 0, y: 0 };
+  private dragFaceInitialOffsetX = 0;
+  private dragFaceInitialOffsetY = 0;
+  private dragFaceRotAngle = 0;
+  private isHoveringFace = false;
 
   // Z-Order / Layer Draw Order for bones and attached graphics (bottom to top)
   private boneDrawOrder: AnatomicalJointId[] = [...DEFAULT_BONE_DRAW_ORDER];
@@ -561,6 +573,65 @@ export class RigStudioCanvas {
     this.render();
   }
 
+  public setActiveView(view: StudioView): void {
+    this.currentView = view;
+    this.render();
+  }
+
+  public isFacialViewEnabled(): boolean {
+    const cfg = this.facialRig;
+    if (cfg?.enabledViews && Array.isArray(cfg.enabledViews)) {
+      return cfg.enabledViews.includes(this.currentView);
+    }
+    // Default fallback: all views except back views
+    return !(this.currentView === 'back' || this.currentView === 'back_left' || this.currentView === 'back_right');
+  }
+
+  public getFacialWorldCenter(): { x: number; y: number; rotAngle: number } | null {
+    if (!this.isFacialViewEnabled()) {
+      return null;
+    }
+    const pj = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    if (!pj.head || !pj.neck) return null;
+
+    const headPartInfo = this.getPartTransformInfo('head', pj);
+    const dx = pj.head.x - pj.neck.x;
+    const dy = pj.head.y - pj.neck.y;
+    const headDist = Math.hypot(dx, dy) || 50;
+    const headAngle = Math.atan2(dy, dx) + Math.PI / 2;
+
+    const rotAngle = headPartInfo ? headPartInfo.rotAngle : headAngle;
+    const pivotX = headPartInfo ? headPartInfo.pivotWorldX : pj.neck.x;
+    const pivotY = headPartInfo ? headPartInfo.pivotWorldY : pj.neck.y;
+
+    let faceCenterLocalX = 0;
+    let faceCenterLocalY = -(headDist * 0.55);
+
+    if (headPartInfo) {
+      faceCenterLocalX = headPartInfo.targetW * (0.5 - headPartInfo.anchorX);
+      faceCenterLocalY = -headPartInfo.targetH * (headPartInfo.anchorY - 0.40);
+    }
+
+    const cfg = this.facialRig || {};
+    const userOffX = cfg.offsetX ?? 0;
+    const userOffY = cfg.offsetY ?? 0;
+
+    let lx = faceCenterLocalX + userOffX;
+    let ly = faceCenterLocalY + userOffY;
+
+    if (headPartInfo && headPartInfo.flipX) lx = -lx;
+    if (headPartInfo && headPartInfo.flipY) ly = -ly;
+
+    const cos = Math.cos(rotAngle);
+    const sin = Math.sin(rotAngle);
+
+    return {
+      x: pivotX + (lx * cos - ly * sin),
+      y: pivotY + (lx * sin + ly * cos),
+      rotAngle
+    };
+  }
+
   public setSourceImage(img: HTMLImageElement | null, name = '', resetJoints = false): void {
     this.sourceImage = img;
     this.imageName = name;
@@ -884,6 +955,19 @@ export class RigStudioCanvas {
         }
       }
 
+      // 1.5 Hit test face center gizmo if face controls are configured/active
+      const faceCenter = this.getFacialWorldCenter();
+      if (faceCenter && Math.hypot(world.x - faceCenter.x, world.y - faceCenter.y) < 24 / this.zoom) {
+        this.events.onBeforeModification?.('Move Face Placement');
+        this.isDraggingFace = true;
+        this.dragFaceStartWorld = { ...world };
+        this.dragFaceInitialOffsetX = this.facialRig?.offsetX ?? 0;
+        this.dragFaceInitialOffsetY = this.facialRig?.offsetY ?? 0;
+        this.dragFaceRotAngle = faceCenter.rotAngle;
+        this.render();
+        return;
+      }
+
       // 2. Hit test joints
       let clickedJointId: AnatomicalJointId | null = null;
       let closestDist = 18 / this.zoom;
@@ -962,6 +1046,22 @@ export class RigStudioCanvas {
       }
 
       const world = this.screenToWorld(e.clientX, e.clientY);
+
+      // Dragging Face placement
+      if (this.isDraggingFace) {
+        const deltaWorldX = world.x - this.dragFaceStartWorld.x;
+        const deltaWorldY = world.y - this.dragFaceStartWorld.y;
+        const cos = Math.cos(-this.dragFaceRotAngle);
+        const sin = Math.sin(-this.dragFaceRotAngle);
+        const localDx = deltaWorldX * cos - deltaWorldY * sin;
+        const localDy = deltaWorldX * sin + deltaWorldY * cos;
+        if (!this.facialRig) this.facialRig = {};
+        this.facialRig.offsetX = Math.round(this.dragFaceInitialOffsetX + localDx);
+        this.facialRig.offsetY = Math.round(this.dragFaceInitialOffsetY + localDy);
+        this.events.onFacialRigChanged?.(this.facialRig);
+        this.render();
+        return;
+      }
 
       // Transforming active graphic (Translate, Rotate, Scale, Pivot)
       if (this.isTransformingPart && this.selectedJointId && this.parts[this.selectedJointId]) {
@@ -1088,10 +1188,27 @@ export class RigStudioCanvas {
         this.hoveredJointId = hovered;
         this.render();
       }
+
+      // Face gizmo hover detection
+      const faceCenter = this.getFacialWorldCenter();
+      const isNearFace = faceCenter && Math.hypot(world.x - faceCenter.x, world.y - faceCenter.y) < 24 / this.zoom;
+      if (isNearFace !== this.isHoveringFace) {
+        this.isHoveringFace = !!isNearFace;
+        this.render();
+      }
+      if (isNearFace && !this.isTransformingPart && !this.isDraggingJoint) {
+        this.container.style.cursor = 'move';
+      }
     });
 
     window.addEventListener('mouseup', () => {
       this.isPanning = false;
+
+      if (this.isDraggingFace) {
+        this.isDraggingFace = false;
+        this.events.onFacialRigChanged?.(this.facialRig);
+        this.render();
+      }
 
       if (this.isTransformingPart) {
         this.isTransformingPart = false;
@@ -2331,71 +2448,210 @@ export class RigStudioCanvas {
   }
 
   private drawFacialFeatures(): void {
+    if (!this.isFacialViewEnabled()) {
+      return;
+    }
+
     const pj = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
     if (!pj.head || !pj.neck) return;
 
     const dx = pj.head.x - pj.neck.x;
     const dy = pj.head.y - pj.neck.y;
+    const headDist = Math.hypot(dx, dy) || 50;
     const headAngle = Math.atan2(dy, dx) + Math.PI / 2;
 
     const headPartInfo = this.getPartTransformInfo('head', pj);
-    const centerX = headPartInfo ? headPartInfo.pivotWorldX : pj.head.x;
-    const centerY = headPartInfo ? headPartInfo.pivotWorldY : (pj.head.y + pj.neck.y) / 2;
     const rotAngle = headPartInfo ? headPartInfo.rotAngle : headAngle;
+    const pivotX = headPartInfo ? headPartInfo.pivotWorldX : pj.neck.x;
+    const pivotY = headPartInfo ? headPartInfo.pivotWorldY : pj.neck.y;
 
     const pose = this.currentFacialPose || {};
     const cfg = this.facialRig || {};
 
     const hasPoseData = Object.keys(pose).length > 0;
-    const hasConfig = !!(cfg.eyebrows || cfg.eyes || cfg.mouth);
+    const hasConfig = !!(
+      cfg.eyebrows || cfg.eyes || cfg.mouth || cfg.offsetX || cfg.offsetY ||
+      (cfg.eyeInstances && cfg.eyeInstances.length > 0) ||
+      (cfg.eyebrowInstances && cfg.eyebrowInstances.length > 0) ||
+      (cfg.mouthInstances && cfg.mouthInstances.length > 0)
+    );
     if (!hasPoseData && !hasConfig && this.toolMode !== 'preview') {
       return;
     }
 
-    this.ctx.save();
-    this.ctx.translate(centerX, centerY);
-    this.ctx.rotate(rotAngle);
+    let faceCenterLocalX = 0;
+    let faceCenterLocalY = -(headDist * 0.55);
+    let baseScale = 1.0;
 
-    if (headPartInfo && headPartInfo.part.scale) {
-      const s = headPartInfo.part.scale;
-      this.ctx.scale(s, s);
+    if (headPartInfo) {
+      faceCenterLocalX = headPartInfo.targetW * (0.5 - headPartInfo.anchorX);
+      faceCenterLocalY = -headPartInfo.targetH * (headPartInfo.anchorY - 0.40);
+      baseScale = (headPartInfo.part.scale ?? 1.0) * headPartInfo.charScale;
     }
 
+    const userOffX = cfg.offsetX ?? 0;
+    const userOffY = cfg.offsetY ?? 0;
+    const userScale = cfg.scale ?? 1.0;
+    const totalScale = baseScale * userScale;
+
+    this.ctx.save();
+    this.ctx.translate(pivotX, pivotY);
+    this.ctx.rotate(rotAngle);
+
+    if (headPartInfo && (headPartInfo.flipX || headPartInfo.flipY)) {
+      this.ctx.scale(headPartInfo.flipX ? -1 : 1, headPartInfo.flipY ? -1 : 1);
+    }
+
+    // Move directly to the center of the face:
+    this.ctx.translate(faceCenterLocalX + userOffX, faceCenterLocalY + userOffY);
+    this.ctx.scale(totalScale, totalScale);
+
+    // Profile & 3/4 perspective handling
+    const isProfile = this.currentView === 'left' || this.currentView === 'right' || this.currentView === 'side';
+    const isProfileLeft = this.currentView === 'left' || this.currentView === 'side';
+    const isProfileRight = this.currentView === 'right';
+
     // 1. Eyebrows
-    this.drawEyebrows(pose, cfg);
+    this.drawEyebrows(pose, cfg, isProfile, isProfileLeft, isProfileRight);
 
     // 2. Eyes
-    this.drawEyes(pose, cfg);
+    this.drawEyes(pose, cfg, isProfile, isProfileLeft, isProfileRight);
 
     // 3. Mouth
-    this.drawMouth(pose, cfg);
+    this.drawMouth(pose, cfg, isProfile, isProfileLeft, isProfileRight);
+
+    // If hovering or dragging face placement gizmo, draw indicator
+    if (this.isHoveringFace || this.isDraggingFace) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, 24, 0, Math.PI * 2);
+      this.ctx.strokeStyle = this.isDraggingFace ? '#38bdf8' : 'rgba(56, 189, 248, 0.6)';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([4, 3]);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(-6, 0);
+      this.ctx.lineTo(6, 0);
+      this.ctx.moveTo(0, -6);
+      this.ctx.lineTo(0, 6);
+      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([]);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
 
     this.ctx.restore();
   }
 
-  private drawEyebrows(pose: FacialPoseData, cfg: FacialRigConfig): void {
+  private drawEyebrows(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
+    if (cfg.eyebrowInstances && cfg.eyebrowInstances.length > 0) {
+      for (const inst of cfg.eyebrowInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        this.drawEyebrowInstance(inst, pose);
+      }
+      return;
+    }
+
     const browCfg = cfg.eyebrows;
     const furrow = (pose.eyebrows_furrow ?? 0) * 0.4;
     const strokeColor = browCfg?.color || '#2b1b17';
 
-    // Left Brow
-    const hL = -(pose.eyebrows_height_l ?? 0);
-    const angL = ((pose.eyebrows_angle_l ?? 0) * Math.PI) / 180;
-    const xL = -14 + furrow;
-    const yL = 10 + hL;
+    // Left Brow (draw if front/3-quarter or profile left)
+    if (!isProfile || isProfileLeft) {
+      const hL = -(pose.eyebrows_height_l ?? 0);
+      const angL = ((pose.eyebrows_angle_l ?? 0) * Math.PI) / 180;
+      const xL = (isProfile ? -4 : -13) + furrow;
+      const yL = -14 + hL;
+
+      this.ctx.save();
+      this.ctx.translate(xL, yL);
+      this.ctx.rotate(angL);
+
+      const leftImg = this.getPartImageById(browCfg?.leftBrowPartId);
+      if (leftImg) {
+        const bw = 18;
+        const bh = (leftImg.height / leftImg.width) * bw;
+        this.ctx.drawImage(leftImg, -bw / 2, -bh / 2, bw, bh);
+      } else {
+        this.ctx.beginPath();
+        this.ctx.lineWidth = 2.4;
+        this.ctx.lineCap = 'round';
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.moveTo(-8, 1);
+        this.ctx.quadraticCurveTo(0, -3, 8, 0);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    // Right Brow (draw if front/3-quarter or profile right)
+    if (!isProfile || isProfileRight) {
+      const hR = -(pose.eyebrows_height_r ?? 0);
+      const angR = ((pose.eyebrows_angle_r ?? 0) * Math.PI) / 180;
+      const xR = (isProfile ? 4 : 13) - furrow;
+      const yR = -14 + hR;
+
+      this.ctx.save();
+      this.ctx.translate(xR, yR);
+      this.ctx.rotate(angR);
+
+      const rightImg = this.getPartImageById(browCfg?.rightBrowPartId);
+      if (rightImg) {
+        const bw = 18;
+        const bh = (rightImg.height / rightImg.width) * bw;
+        this.ctx.drawImage(rightImg, -bw / 2, -bh / 2, bw, bh);
+      } else {
+        this.ctx.beginPath();
+        this.ctx.lineWidth = 2.4;
+        this.ctx.lineCap = 'round';
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.moveTo(-8, 0);
+        this.ctx.quadraticCurveTo(0, -3, 8, 1);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+  }
+
+  private drawEyebrowInstance(inst: EyebrowInstanceConfig, pose: FacialPoseData): void {
+    const heightChannel = inst.channel === 'eyebrows_height_r' ? pose.eyebrows_height_r : pose.eyebrows_height_l;
+    const h = -(heightChannel ?? 0);
+    const furrow = (pose.eyebrows_furrow ?? 0) * 0.4;
+    const angleDelta = inst.channel === 'eyebrows_height_r' ? (pose.eyebrows_angle_r ?? 0) : (pose.eyebrows_angle_l ?? 0);
+    const angleDeg = (inst.angle ?? 0) + angleDelta;
+    const rotRad = (angleDeg * Math.PI) / 180;
+    const strokeColor = inst.color || '#2b1b17';
 
     this.ctx.save();
-    this.ctx.translate(xL, yL);
-    this.ctx.rotate(angL);
+    const furrowOffset = inst.offsetX < 0 ? furrow : (inst.offsetX > 0 ? -furrow : 0);
+    this.ctx.translate(inst.offsetX + furrowOffset, inst.offsetY + h);
+    if (rotRad !== 0) {
+      this.ctx.rotate(rotRad);
+    }
+    if (inst.scale !== undefined && inst.scale !== 1.0) {
+      this.ctx.scale(inst.scale, inst.scale);
+    }
+    if (inst.flipX) {
+      this.ctx.scale(-1, 1);
+    }
 
-    const leftImg = this.getPartImageById(browCfg?.leftBrowPartId);
-    if (leftImg) {
+    const browImg = this.getPartImageById(inst.partId);
+    if (browImg) {
       const bw = 18;
-      const bh = (leftImg.height / leftImg.width) * bw;
-      this.ctx.drawImage(leftImg, -bw / 2, -bh / 2, bw, bh);
+      const bh = (browImg.height / browImg.width) * bw;
+      this.ctx.drawImage(browImg, -bw / 2, -bh / 2, bw, bh);
     } else {
       this.ctx.beginPath();
-      this.ctx.lineWidth = 2.4;
+      this.ctx.lineWidth = inst.thickness || 2.4;
       this.ctx.lineCap = 'round';
       this.ctx.strokeStyle = strokeColor;
       this.ctx.moveTo(-8, 1);
@@ -2403,51 +2659,184 @@ export class RigStudioCanvas {
       this.ctx.stroke();
     }
     this.ctx.restore();
-
-    // Right Brow
-    const hR = -(pose.eyebrows_height_r ?? 0);
-    const angR = ((pose.eyebrows_angle_r ?? 0) * Math.PI) / 180;
-    const xR = 14 - furrow;
-    const yR = 10 + hR;
-
-    this.ctx.save();
-    this.ctx.translate(xR, yR);
-    this.ctx.rotate(angR);
-
-    const rightImg = this.getPartImageById(browCfg?.rightBrowPartId);
-    if (rightImg) {
-      const bw = 18;
-      const bh = (rightImg.height / rightImg.width) * bw;
-      this.ctx.drawImage(rightImg, -bw / 2, -bh / 2, bw, bh);
-    } else {
-      this.ctx.beginPath();
-      this.ctx.lineWidth = 2.4;
-      this.ctx.lineCap = 'round';
-      this.ctx.strokeStyle = strokeColor;
-      this.ctx.moveTo(-8, 0);
-      this.ctx.quadraticCurveTo(0, -3, 8, 1);
-      this.ctx.stroke();
-    }
-    this.ctx.restore();
   }
 
-  private drawEyes(pose: FacialPoseData, cfg: FacialRigConfig): void {
+  private drawEyes(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
+    if (cfg.eyeInstances && cfg.eyeInstances.length > 0) {
+      const squint = pose.eyelids_squint ?? 0;
+      for (const inst of cfg.eyeInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        let blink = 0;
+        if (inst.blinkChannel === 'blinkR') {
+          blink = pose.eyelids_blink_r ?? 0;
+        } else if (inst.blinkChannel === 'blinkL') {
+          blink = pose.eyelids_blink_l ?? 0;
+        } else if (inst.blinkChannel === 'squint') {
+          blink = squint;
+        } else {
+          blink = ((pose.eyelids_blink_l ?? 0) + (pose.eyelids_blink_r ?? 0)) / 2;
+        }
+        blink = Math.max(0, Math.min(1, blink + squint * 0.35));
+
+        this.ctx.save();
+        this.ctx.translate(inst.offsetX, inst.offsetY);
+        if (inst.scale !== undefined && inst.scale !== 1.0) {
+          this.ctx.scale(inst.scale, inst.scale);
+        }
+        if (inst.flipX) {
+          this.ctx.scale(-1, 1);
+        }
+        if (inst.rotation) {
+          this.ctx.rotate((inst.rotation * Math.PI) / 180);
+        }
+        this.drawEyeInstanceSingle(inst, blink);
+        this.ctx.restore();
+      }
+      return;
+    }
+
     const eyeCfg = cfg.eyes || { mode: 'procedural' };
     const squint = pose.eyelids_squint ?? 0;
     const blinkL = Math.max(0, Math.min(1, (pose.eyelids_blink_l ?? 0) + squint * 0.35));
     const blinkR = Math.max(0, Math.min(1, (pose.eyelids_blink_r ?? 0) + squint * 0.35));
 
-    // Left Eye at x = -14, y = 22
-    this.ctx.save();
-    this.ctx.translate(-14, 22);
-    this.drawEyeSingle(true, blinkL, eyeCfg);
-    this.ctx.restore();
+    // Left Eye at x = -13, y = -3 (or x = -4 on profile)
+    if (!isProfile || isProfileLeft) {
+      this.ctx.save();
+      this.ctx.translate(isProfile ? -4 : -13, -3);
+      this.drawEyeSingle(true, blinkL, eyeCfg);
+      this.ctx.restore();
+    }
 
-    // Right Eye at x = 14, y = 22
-    this.ctx.save();
-    this.ctx.translate(14, 22);
-    this.drawEyeSingle(false, blinkR, eyeCfg);
-    this.ctx.restore();
+    // Right Eye at x = 13, y = -3 (or x = 4 on profile)
+    if (!isProfile || isProfileRight) {
+      this.ctx.save();
+      this.ctx.translate(isProfile ? 4 : 13, -3);
+      this.drawEyeSingle(false, blinkR, eyeCfg);
+      this.ctx.restore();
+    }
+  }
+
+  private drawEyeInstanceSingle(inst: EyeInstanceConfig, blink: number): void {
+    const mode = inst.mode || 'procedural';
+
+    if (mode === 'sprite_swap') {
+      let state = 'open';
+      if (blink >= 0.75) state = 'closed';
+      else if (blink >= 0.35) state = 'half';
+
+      const spritePartId =
+        (state === 'open' ? inst.eyeOpenSlot : state === 'half' ? inst.eyeHalfSlot : inst.eyeClosedSlot) ||
+        inst.sprites?.[state] ||
+        inst.partId;
+      const img = this.getPartImageById(spritePartId);
+      if (img) {
+        const ew = 18;
+        const eh = (img.height / img.width) * ew;
+        this.ctx.drawImage(img, -ew / 2, -eh / 2, ew, eh);
+        return;
+      }
+    } else if (mode === 'sclera_window') {
+      const scleraImg = this.getPartImageById(inst.scleraPartId);
+      const pupilImg = this.getPartImageById(inst.pupilPartId);
+      const eyelidImg = this.getPartImageById(inst.eyelidUpperPartId);
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (scleraImg) {
+        this.ctx.drawImage(scleraImg, -8, -6, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#f8f8f8';
+        this.ctx.fill();
+      }
+
+      // Pupil
+      if (pupilImg) {
+        this.ctx.drawImage(pupilImg, -4, -4, 8, 8);
+      } else {
+        this.ctx.fillStyle = '#1c2833';
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // Eyelid overlay curtain sliding down
+      const curtainH = 12 * blink;
+      if (eyelidImg) {
+        this.ctx.drawImage(eyelidImg, -8, -6 + curtainH - 12, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#e5bba7';
+        this.ctx.fillRect(-8, -6, 16, curtainH);
+      }
+
+      this.ctx.restore();
+
+      // Contour lash line
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.6;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      if (blink >= 0.8) {
+        this.ctx.moveTo(-7, 1);
+        this.ctx.quadraticCurveTo(0, 3, 7, 1);
+      } else {
+        this.ctx.moveTo(-7, 0);
+        this.ctx.quadraticCurveTo(0, -4, 7, 0);
+      }
+      this.ctx.stroke();
+      return;
+    }
+
+    // Default / Procedural Fallback
+    if (blink >= 0.85) {
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.8;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      this.ctx.moveTo(-6, 0);
+      this.ctx.quadraticCurveTo(0, 3, 6, 0);
+      this.ctx.stroke();
+    } else {
+      const openH = Math.max(0.8, 5 * (1 - blink * 0.9));
+      // Sclera
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 6.5, openH, 0, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#f8f8f8';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#3d2b27';
+      this.ctx.lineWidth = 1.2;
+      this.ctx.stroke();
+
+      // Pupil & Iris
+      const pupilR = Math.min(openH * 0.9, 3);
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pupilR, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#223843';
+      this.ctx.fill();
+
+      // Catchlight
+      if (openH > 2.5) {
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+      }
+    }
   }
 
   private drawEyeSingle(isLeft: boolean, blink: number, eyeCfg: NonNullable<FacialRigConfig['eyes']>): void {
@@ -2561,13 +2950,46 @@ export class RigStudioCanvas {
     }
   }
 
-  private drawMouth(pose: FacialPoseData, cfg: FacialRigConfig): void {
-    const mouthCfg = cfg.mouth || { mode: 'procedural' };
-    const viseme = pose.viseme || 'rest';
+  private drawMouth(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
     const jawDrop = (pose.lips_jaw_drop ?? 0) * 0.25;
+    const viseme = pose.viseme || 'rest';
+
+    if (cfg.mouthInstances && cfg.mouthInstances.length > 0) {
+      for (const inst of cfg.mouthInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        this.ctx.save();
+        this.ctx.translate(inst.offsetX, inst.offsetY + jawDrop);
+        if (inst.scale !== undefined && inst.scale !== 1.0) {
+          this.ctx.scale(inst.scale, inst.scale);
+        }
+        if (inst.flipX) {
+          this.ctx.scale(-1, 1);
+        }
+        if (inst.rotation) {
+          this.ctx.rotate((inst.rotation * Math.PI) / 180);
+        }
+        this.drawMouthInstanceSingle(inst, pose, viseme);
+        this.ctx.restore();
+      }
+      return;
+    }
+
+    const mouthCfg = cfg.mouth || { mode: 'procedural' };
 
     this.ctx.save();
-    this.ctx.translate(0, 42 + jawDrop);
+    const mouthX = isProfile ? (isProfileLeft ? -4 : 4) : 0;
+    this.ctx.translate(mouthX, 15 + jawDrop);
+    if (isProfile) {
+      this.ctx.scale(0.75, 1.0);
+    }
 
     const mode = mouthCfg.mode || 'procedural';
 
@@ -2661,6 +3083,97 @@ export class RigStudioCanvas {
     // Default / Procedural Bezier Lips (handles viseme synthesis or manual sliders)
     this.drawProceduralLips(pose, viseme);
     this.ctx.restore();
+  }
+
+  private drawMouthInstanceSingle(inst: MouthInstanceConfig, pose: FacialPoseData, viseme: VisemePreset): void {
+    const mode = inst.mode || 'procedural';
+
+    if (mode === 'viseme_library') {
+      const vPartId = inst.visemePartIds?.[viseme] || inst.visemeSlots?.[viseme];
+      const img = this.getPartImageById(vPartId);
+      if (img) {
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        return;
+      }
+    } else if (mode === 'mesh_warp') {
+      const img = this.getPartImageById(inst.baseMouthPartId || inst.mouthPartId);
+      if (img) {
+        const open = pose.lips_open ?? 0;
+        const wide = pose.lips_wide ?? 0;
+        const pucker = pose.lips_pucker ?? 0;
+        const smile = pose.lips_smile ?? 0;
+
+        const sx = 1 + wide * 0.3 - pucker * 0.35;
+        const sy = 1 + open * 0.5;
+        this.ctx.scale(sx, sy);
+        this.ctx.translate(0, -smile * 2.5);
+
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        return;
+      }
+    } else if (mode === 'cavity_sandwich') {
+      const cavityImg = this.getPartImageById(inst.cavityPartId);
+      const teethUpImg = this.getPartImageById(inst.teethUpperPartId);
+      const tongueImg = this.getPartImageById(inst.tonguePartId);
+      const upperLipImg = this.getPartImageById(inst.lipUpperPartId);
+      const lowerLipImg = this.getPartImageById(inst.lipLowerPartId);
+
+      const open = Math.max(0.1, pose.lips_open ?? 0);
+      const h = 10 * open;
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (cavityImg) {
+        this.ctx.drawImage(cavityImg, -12, -h, 24, h * 2);
+      } else {
+        this.ctx.fillStyle = inst.cavityColor || '#2b090b';
+        this.ctx.fill();
+      }
+
+      if (teethUpImg) {
+        this.ctx.drawImage(teethUpImg, -8, -h, 16, h * 0.6);
+      } else {
+        this.ctx.fillStyle = inst.teethColor || '#faf8f5';
+        this.ctx.fillRect(-6, -h, 12, h * 0.4);
+      }
+
+      if (tongueImg) {
+        this.ctx.drawImage(tongueImg, -6, 0, 12, h);
+      } else if (h > 4) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, h * 0.6, 6, 4, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#d95368';
+        this.ctx.fill();
+      }
+
+      this.ctx.restore();
+
+      // Outer Lip Sprites or contours
+      if (upperLipImg) {
+        this.ctx.drawImage(upperLipImg, -12, -h - 2, 24, 6);
+      }
+      if (lowerLipImg) {
+        this.ctx.drawImage(lowerLipImg, -12, h - 2, 24, 6);
+      }
+      if (!upperLipImg && !lowerLipImg) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+        this.ctx.strokeStyle = inst.lipColor || '#4a1518';
+        this.ctx.lineWidth = 1.4;
+        this.ctx.stroke();
+      }
+      return;
+    }
+
+    // Default / Procedural Bezier Lips
+    this.drawProceduralLips(pose, viseme);
   }
 
   private drawProceduralLips(pose: FacialPoseData, viseme: VisemePreset): void {
