@@ -50,6 +50,11 @@ import {
   EYE_MODE_DESCRIPTIONS,
   MOUTH_MODE_DESCRIPTIONS
 } from './dialogs/FacialSetupWizard';
+import { RONALD_DEMO_DATA, createRonaldSlicerElements } from './fixtures/ronaldDemoData';
+import {
+  buildSpineDocument as exportSpineDocument,
+  convertStudioAnimationsToSpineTracks as exportSpineTracks
+} from './export/SpineExporter';
 
 
 interface StudioHistoryState {
@@ -2738,58 +2743,19 @@ export class RigStudioApp {
   }
 
   private loadRonaldPreMarkedElementsInSlicer(): void {
-    const demoUrl = '/demo/assets/characters/sir_ronald_parts.png';
+    const demoUrl = RONALD_DEMO_DATA.textureUrl;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       this.slicerImage = img;
       this.slicerImageUrl = demoUrl;
-      this.slicerImageFileName = 'sir_ronald_parts.png';
-      this.slicerImageFileSize = '420 KB';
+      this.slicerImageFileName = RONALD_DEMO_DATA.fileName;
+      this.slicerImageFileSize = RONALD_DEMO_DATA.fileSize;
       if (this.slicer) {
         this.slicer.setImage(img);
         this.slicer.resetView();
 
-        const ronaldParts: {
-          name: string;
-          boneId?: AnatomicalJointId;
-          bounds: { x: number; y: number; width: number; height: number };
-          pivot: { x: number; y: number };
-        }[] = [
-          { name: 'Head (f_head)', boneId: 'head', bounds: { x: 16, y: 166, width: 211, height: 216 }, pivot: { x: 106, y: 168 } },
-          { name: 'Torso & Waist (f_torso)', boneId: 'chest', bounds: { x: 249, y: 168, width: 252, height: 249 }, pivot: { x: 126, y: 180 } },
-          { name: 'Left Upper Arm (f_arm_upper_l)', boneId: 'shoulder_l', bounds: { x: 673, y: 197, width: 97, height: 117 }, pivot: { x: 31, y: 23 } },
-          { name: 'Left Forearm (f_arm_lower_l)', boneId: 'elbow_l', bounds: { x: 706, y: 312, width: 69, height: 66 }, pivot: { x: 35, y: 14 } },
-          { name: 'Left Hand (f_hand_l)', boneId: 'wrist_l', bounds: { x: 673, y: 354, width: 91, height: 75 }, pivot: { x: 46, y: 20 } },
-          { name: 'Right Upper Arm (f_arm_upper_r)', boneId: 'shoulder_r', bounds: { x: 529, y: 197, width: 90, height: 117 }, pivot: { x: 61, y: 21 } },
-          { name: 'Right Forearm (f_arm_lower_r)', boneId: 'elbow_r', bounds: { x: 520, y: 304, width: 69, height: 81 }, pivot: { x: 31, y: 10 } },
-          { name: 'Right Hand (f_hand_r)', boneId: 'wrist_r', bounds: { x: 533, y: 349, width: 88, height: 80 }, pivot: { x: 32, y: 23 } },
-          { name: 'Left Thigh (f_leg_upper_l)', boneId: 'hip_l', bounds: { x: 973, y: 158, width: 95, height: 123 }, pivot: { x: 44, y: 16 } },
-          { name: 'Left Calf (f_leg_lower_l)', boneId: 'knee_l', bounds: { x: 981, y: 278, width: 87, height: 92 }, pivot: { x: 45, y: 14 } },
-          { name: 'Left Boot (f_foot_l)', boneId: 'ankle_l', bounds: { x: 995, y: 370, width: 94, height: 80 }, pivot: { x: 33, y: 10 } },
-          { name: 'Right Thigh (f_leg_upper_r)', boneId: 'hip_r', bounds: { x: 829, y: 160, width: 92, height: 128 }, pivot: { x: 54, y: 14 } },
-          { name: 'Right Calf (f_leg_lower_r)', boneId: 'knee_r', bounds: { x: 828, y: 286, width: 86, height: 99 }, pivot: { x: 40, y: 12 } },
-          { name: 'Right Boot (f_foot_r)', boneId: 'ankle_r', bounds: { x: 813, y: 382, width: 89, height: 70 }, pivot: { x: 52, y: 11 } },
-        ];
-
-        const elements: VectorOutlineElement[] = ronaldParts.map((p, i) => {
-          const b = p.bounds;
-          return {
-            id: `ronald_slicer_elem_${i + 1}`,
-            name: p.name,
-            assignedBoneId: p.boneId,
-            polygon: [
-              { x: b.x, y: b.y },
-              { x: b.x + b.width, y: b.y },
-              { x: b.x + b.width, y: b.y + b.height },
-              { x: b.x, y: b.y + b.height }
-            ],
-            bounds: b,
-            pivot: p.pivot,
-            deformationMode: 'cutout'
-          };
-        });
-
+        const elements = createRonaldSlicerElements();
         this.slicer.setElements(elements);
         this.savedElements = elements;
         this.persistElementsToStorage();
@@ -3343,33 +3309,11 @@ export class RigStudioApp {
   }
 
   public loadRonaldDemoParts(autoAssemble = false): void {
-    const demoUrl = '/demo/assets/characters/sir_ronald_parts.png';
+    const demoUrl = RONALD_DEMO_DATA.textureUrl;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const ronaldElements: {
-        name: string;
-        boneId?: AnatomicalJointId;
-        bounds: { x: number; y: number; width: number; height: number };
-        pivot: { x: number; y: number };
-      }[] = [
-        { name: 'Head (f_head)', boneId: 'head', bounds: { x: 16, y: 166, width: 211, height: 216 }, pivot: { x: 106, y: 168 } },
-        { name: 'Torso & Waist (Full)', boneId: 'chest', bounds: { x: 249, y: 168, width: 252, height: 249 }, pivot: { x: 126, y: 180 } },
-        { name: 'Torso Chest (f_torso)', bounds: { x: 249, y: 168, width: 252, height: 173 }, pivot: { x: 126, y: 160 } },
-        { name: 'Hip / Belt (f_hip)', bounds: { x: 292, y: 336, width: 168, height: 81 }, pivot: { x: 84, y: 41 } },
-        { name: 'Left Upper Arm (f_arm_upper_l)', boneId: 'shoulder_l', bounds: { x: 673, y: 197, width: 97, height: 117 }, pivot: { x: 31, y: 23 } },
-        { name: 'Left Forearm (f_arm_lower_l)', boneId: 'elbow_l', bounds: { x: 706, y: 312, width: 69, height: 66 }, pivot: { x: 35, y: 14 } },
-        { name: 'Left Hand (f_hand_l)', boneId: 'wrist_l', bounds: { x: 673, y: 354, width: 91, height: 75 }, pivot: { x: 46, y: 20 } },
-        { name: 'Right Upper Arm (f_arm_upper_r)', boneId: 'shoulder_r', bounds: { x: 529, y: 197, width: 90, height: 117 }, pivot: { x: 61, y: 21 } },
-        { name: 'Right Forearm (f_arm_lower_r)', boneId: 'elbow_r', bounds: { x: 520, y: 304, width: 69, height: 81 }, pivot: { x: 31, y: 10 } },
-        { name: 'Right Hand (f_hand_r)', boneId: 'wrist_r', bounds: { x: 533, y: 349, width: 88, height: 80 }, pivot: { x: 32, y: 23 } },
-        { name: 'Left Thigh (f_leg_upper_l)', boneId: 'hip_l', bounds: { x: 973, y: 158, width: 95, height: 123 }, pivot: { x: 44, y: 16 } },
-        { name: 'Left Calf (f_leg_lower_l)', boneId: 'knee_l', bounds: { x: 981, y: 278, width: 87, height: 92 }, pivot: { x: 45, y: 14 } },
-        { name: 'Left Boot (f_foot_l)', boneId: 'ankle_l', bounds: { x: 995, y: 370, width: 94, height: 80 }, pivot: { x: 33, y: 10 } },
-        { name: 'Right Thigh (f_leg_upper_r)', boneId: 'hip_r', bounds: { x: 829, y: 160, width: 92, height: 128 }, pivot: { x: 54, y: 14 } },
-        { name: 'Right Calf (f_leg_lower_r)', boneId: 'knee_r', bounds: { x: 828, y: 286, width: 86, height: 99 }, pivot: { x: 40, y: 12 } },
-        { name: 'Right Boot (f_foot_r)', boneId: 'ankle_r', bounds: { x: 813, y: 382, width: 89, height: 70 }, pivot: { x: 52, y: 11 } },
-      ];
+      const ronaldElements = RONALD_DEMO_DATA.parts;
 
       for (const elem of ronaldElements) {
         const off = document.createElement('canvas');
@@ -4930,60 +4874,14 @@ export class RigStudioApp {
   }
 
   private buildSpineDocument(): SpineDocument {
-    const frontJoints = this.views.front.joints;
-    const bones = convertJointsToSpineBones(frontJoints, 'front');
-
-    const spineDoc: SpineDocument = {
-      skeleton: {
-        spine: '3.8.99',
-        width: 128,
-        height: 256,
-        questforge: {
-          posePreset: '3-way',
-          poseDirections: {
-            front: ['down'],
-            side: ['right', 'left'],
-            back: ['up']
-          },
-          elements: [],
-          facialRig: JSON.parse(JSON.stringify(this.facialRig)),
-          animations: JSON.parse(JSON.stringify(this.animations))
-        }
-      },
-      bones,
-      slots: (() => {
-        const spineBoneMap: Record<string, string> = {
-          hip_l: 'leg_upper_l',
-          knee_l: 'leg_lower_l',
-          ankle_l: 'foot_l',
-          hip_r: 'leg_upper_r',
-          knee_r: 'leg_lower_r',
-          ankle_r: 'foot_r',
-          chest: 'torso',
-          neck: 'neck',
-          head: 'head',
-          shoulder_l: 'arm_upper_l',
-          elbow_l: 'arm_lower_l',
-          wrist_l: 'hand_l',
-          shoulder_r: 'arm_upper_r',
-          elbow_r: 'arm_lower_r',
-          wrist_r: 'hand_r'
-        };
-        const order = this.canvas ? this.canvas.getBoneDrawOrder() : (this.views.front.boneOrder || DEFAULT_BONE_DRAW_ORDER);
-        return order.map(bId => {
-          const sName = spineBoneMap[bId] || bId;
-          return { name: sName, bone: sName };
-        });
-      })(),
-      skins: [
-        { name: 'front', attachments: {} },
-        { name: 'back', attachments: {} },
-        { name: 'side', attachments: {} }
-      ],
-      animations: this.convertStudioAnimationsToSpineTracks()
-    };
-
-    return spineDoc;
+    return exportSpineDocument({
+      views: this.views,
+      activeView: this.activeView,
+      boneDrawOrder: this.canvas ? this.canvas.getBoneDrawOrder() : (this.views.front.boneOrder || DEFAULT_BONE_DRAW_ORDER),
+      facialRig: this.facialRig,
+      animations: this.animations,
+      elements: this.savedElements
+    });
   }
 
   private updatePartInspectorValues(boneId: AnatomicalJointId, part: BonePartAttachment): void {
@@ -7965,39 +7863,6 @@ export class RigStudioApp {
   }
 
   private convertStudioAnimationsToSpineTracks(): Record<string, any> {
-    const spineAnimations: Record<string, any> = {};
-
-    for (const [animName, animDef] of Object.entries(this.animations)) {
-      for (const side of animDef.relevantSides) {
-        const sideTrack = animDef.tracks[side];
-        if (!sideTrack || !sideTrack.keyframes || sideTrack.keyframes.length === 0) continue;
-
-        const spineKey = side === 'front' ? animName : `${animName}_${side}`;
-        const bonesTrack: Record<string, any> = {};
-
-        for (const kf of sideTrack.keyframes) {
-          const torsoAngle = kf.joints.chest && kf.joints.neck ? Math.atan2(kf.joints.neck.y - kf.joints.chest.y, kf.joints.neck.x - kf.joints.chest.x) * (180 / Math.PI) + 90 : 0;
-          const headAngle = kf.joints.head && kf.joints.neck ? Math.atan2(kf.joints.head.y - kf.joints.neck.y, kf.joints.head.x - kf.joints.neck.x) * (180 / Math.PI) + 90 : 0;
-
-          if (!bonesTrack.torso) bonesTrack.torso = { rotate: [] };
-          bonesTrack.torso.rotate.push({ time: kf.time, angle: Math.round(torsoAngle * 10) / 10 });
-
-          if (!bonesTrack.head) bonesTrack.head = { rotate: [] };
-          bonesTrack.head.rotate.push({ time: kf.time, angle: Math.round(headAngle * 10) / 10 });
-        }
-
-        spineAnimations[spineKey] = { bones: bonesTrack };
-      }
-    }
-
-    if (Object.keys(spineAnimations).length === 0) {
-      spineAnimations.idle = {
-        bones: {
-          torso: { rotate: [{ time: 0, angle: 0 }, { time: 0.8, angle: 2 }, { time: 1.6, angle: 0 }] }
-        }
-      };
-    }
-
-    return spineAnimations;
+    return exportSpineTracks(this.animations);
   }
 }
