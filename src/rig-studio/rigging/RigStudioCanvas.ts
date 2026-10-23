@@ -1,0 +1,3294 @@
+import {
+  AnatomicalJointDef,
+  AnatomicalJointId,
+  BonePartAttachment,
+  JointToolMode,
+  StudioView,
+  FacialRigConfig,
+  FacialPoseData,
+  VisemePreset,
+  RigPartItem,
+  EyeInstanceConfig,
+  EyebrowInstanceConfig,
+  MouthInstanceConfig
+} from '../types';
+import {
+  ANATOMICAL_JOINTS,
+  ANATOMICAL_BONES,
+  BONE_CONNECTIONS,
+  DEFAULT_ENVELOPES,
+  DEFAULT_BONE_DRAW_ORDER,
+  getDefaultJointPositions,
+  pathCapsule,
+  poseJointPreservingBones,
+  poseJointFK
+} from './AnatomicalRig';
+
+export interface RigStudioCanvasEvents {
+  onJointSelected?: (jointId: AnatomicalJointId | null) => void;
+  onJointsModified?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
+  onPartModified?: (boneId: AnatomicalJointId, part: BonePartAttachment) => void;
+  onBeforeModification?: (description: string) => void;
+  onImageDropped?: (file: File) => void;
+  onPartDroppedOnBone?: (boneId: AnatomicalJointId, partData: any) => void;
+  onFileDroppedOnBone?: (boneId: AnatomicalJointId, file: File) => void;
+  onPreviewPoseChanged?: (joints: Record<AnatomicalJointId, { x: number; y: number }>) => void;
+  onFacialRigChanged?: (cfg: FacialRigConfig) => void;
+}
+
+export class RigStudioCanvas {
+  private container: HTMLElement;
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+
+  private currentView: StudioView = 'front';
+  private toolMode: JointToolMode = 'select';
+  private kinematicsMode: 'ik' | 'fk' = 'ik';
+  private symmetryEnabled = true;
+  private showBonesEnabled = true;
+  private showEnvelopesEnabled = true;
+
+  private sourceImage: HTMLImageElement | null = null;
+  private imageName = '';
+  private imageBounds = { width: 220, height: 420 };
+
+  // Current placed joints in active view
+  private restJoints: Record<AnatomicalJointId, { x: number; y: number }>;
+  // Posed joints during Preview Mode
+  private previewJoints: Record<AnatomicalJointId, { x: number; y: number }>;
+
+  // Envelopes per bone
+  private envelopes: Record<AnatomicalJointId, number> = { ...DEFAULT_ENVELOPES };
+
+  // Attached parts per bone
+  private parts: Record<string, BonePartAttachment> = {};
+
+  // Facial Rig, pose, and sliced parts library
+  private facialRig: FacialRigConfig = {};
+  private viewFacialRigs: Partial<Record<StudioView, FacialRigConfig>> = {};
+  private currentFacialPose: FacialPoseData = {};
+  private partsLibrary: RigPartItem[] = [];
+
+  // On-Canvas Interactive Facial Placement Gizmo
+  private isDraggingFace = false;
+  private dragFaceStartWorld = { x: 0, y: 0 };
+  private dragFaceInitialOffsetX = 0;
+  private dragFaceInitialOffsetY = 0;
+  private dragFaceRotAngle = 0;
+  private isHoveringFace = false;
+
+  // Z-Order / Layer Draw Order for bones and attached graphics (bottom to top)
+  private boneDrawOrder: AnatomicalJointId[] = [...DEFAULT_BONE_DRAW_ORDER];
+
+  // Lock graphic position in world space when dragging bone joints
+  private lockGraphicPosition = false;
+
+  // Reference artwork overlay behind parts
+  private showReferenceArtwork = false;
+  private referenceArtworkOpacity = 0.35;
+
+  // On-Canvas WYSIWYG Graphic Transform Gizmo interaction
+  private isTransformingPart = false;
+  private transformAction: 'translate' | 'rotate' | 'scale' | 'pivot' | null = null;
+  private transformHandle: 'body' | 'rotate' | 'pivot' | 'tl' | 'tr' | 'bl' | 'br' | null = null;
+  private hoveredGizmoHandle: 'body' | 'rotate' | 'pivot' | 'tl' | 'tr' | 'bl' | 'br' | null = null;
+  private transformStartWorld = { x: 0, y: 0 };
+  private transformStartAngle = 0;
+  private transformStartDist = 1;
+  private transformStartSnapshot: {
+    offsetX: number;
+    offsetY: number;
+    rotation: number;
+    scale: number;
+    pivotX: number;
+    pivotY: number;
+  } | null = null;
+
+  private selectedJointId: AnatomicalJointId | null = null;
+  private hoveredJointId: AnatomicalJointId | null = null;
+  private dragHoverBoneId: AnatomicalJointId | null = null;
+  private dragHoverPart: any | null = null;
+
+  // Pan & Zoom
+  private zoom = 1.35;
+  private panX = 0;
+  private panY = 0;
+  // Ghost rest pose in preview mode
+  private showGhostPose = false;
+
+  private isPanning = false;
+  private isSpacePressed = false;
+  private lastMouseX = 0;
+  private lastMouseY = 0;
+
+  // Dragging Joint
+  private isDraggingJoint = false;
+  private draggedJointId: AnatomicalJointId | null = null;
+
+  private events: RigStudioCanvasEvents;
+
+  constructor(container: HTMLElement, events: RigStudioCanvasEvents = {}) {
+    this.container = container;
+    this.events = events;
+
+    this.restJoints = getDefaultJointPositions('front', this.imageBounds.width, this.imageBounds.height);
+    this.previewJoints = { ...this.restJoints };
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'studio-canvas';
+    this.canvas.style.display = 'block';
+    this.canvas.style.width = '100%';
+    if (this.container) {
+      this.container.appendChild(this.canvas);
+    }
+
+    this.ctx = this.canvas.getContext('2d')!;
+
+    this.bindEvents();
+    this.resizeCanvas();
+    this.resetView();
+  }
+
+  public setToolMode(mode: JointToolMode): void {
+    this.toolMode = mode;
+    if (mode === 'preview') {
+      // Initialize preview joints from current rest joints
+      this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+    }
+    this.render();
+  }
+
+  public getToolMode(): JointToolMode {
+    return this.toolMode;
+  }
+
+  public setKinematicsMode(mode: 'ik' | 'fk'): void {
+    this.kinematicsMode = mode;
+    this.render();
+  }
+
+  public getKinematicsMode(): 'ik' | 'fk' {
+    return this.kinematicsMode;
+  }
+
+  public setSymmetry(enabled: boolean): void {
+    this.symmetryEnabled = enabled;
+  }
+
+  public setShowBones(enabled: boolean): void {
+    this.showBonesEnabled = enabled;
+    this.render();
+  }
+
+  public setShowEnvelopes(enabled: boolean): void {
+    this.showEnvelopesEnabled = enabled;
+    this.render();
+  }
+
+  public isShowEnvelopes(): boolean {
+    return this.showEnvelopesEnabled;
+  }
+
+  public setEnvelopeRadius(jointId: AnatomicalJointId, radius: number): void {
+    this.envelopes[jointId] = radius;
+    this.render();
+  }
+
+  public getEnvelopeRadius(jointId: AnatomicalJointId): number {
+    return this.envelopes[jointId] || DEFAULT_ENVELOPES[jointId] || 20;
+  }
+
+  public getEnvelopes(): Record<AnatomicalJointId, number> {
+    return { ...this.envelopes };
+  }
+
+  public setEnvelopes(envs: Record<string, number>): void {
+    this.envelopes = { ...DEFAULT_ENVELOPES, ...envs };
+    this.render();
+  }
+
+  public setPart(boneId: AnatomicalJointId, part: BonePartAttachment | null): void {
+    if (part) {
+      this.parts[boneId] = part;
+      if (part.image && (!part.image.complete || !part.image.naturalWidth)) {
+        part.image.addEventListener('load', () => this.render(), { once: true });
+      }
+    } else {
+      delete this.parts[boneId];
+    }
+    this.render();
+  }
+
+  public getParts(): Record<string, BonePartAttachment> {
+    return { ...this.parts };
+  }
+
+  public setParts(partsMap: Record<string, BonePartAttachment>): void {
+    this.parts = { ...partsMap };
+    for (const p of Object.values(this.parts)) {
+      if (p.image && (!p.image.complete || !p.image.naturalWidth)) {
+        p.image.addEventListener('load', () => this.render(), { once: true });
+      }
+    }
+    this.render();
+  }
+
+  public getBoneDrawOrder(): AnatomicalJointId[] {
+    return [...this.boneDrawOrder];
+  }
+
+  public setBoneDrawOrder(order: AnatomicalJointId[]): void {
+    if (!order || order.length === 0) return;
+    const validSet = new Set(order);
+    const newOrder = [...order];
+    for (const b of DEFAULT_BONE_DRAW_ORDER) {
+      if (!validSet.has(b)) {
+        newOrder.push(b);
+        validSet.add(b);
+      }
+    }
+    this.boneDrawOrder = newOrder;
+    this.render();
+  }
+
+  public setFacialRig(config: FacialRigConfig, view?: StudioView): void {
+    const targetView = view || this.currentView;
+    const cloned = JSON.parse(JSON.stringify(config || {}));
+    this.viewFacialRigs[targetView] = cloned;
+    if (targetView === this.currentView) {
+      this.facialRig = cloned;
+    }
+    this.render();
+  }
+
+  public setFacialPose(pose: FacialPoseData): void {
+    this.currentFacialPose = { ...pose };
+    this.render();
+  }
+
+  public setPartsLibrary(items: RigPartItem[]): void {
+    this.partsLibrary = [...items];
+    this.render();
+  }
+
+
+  /**
+   * Moves a bone one step up (forward / toward top layer in stacking order).
+   */
+  public moveBoneUp(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx >= 0 && idx < this.boneDrawOrder.length - 1) {
+      const temp = this.boneDrawOrder[idx];
+      this.boneDrawOrder[idx] = this.boneDrawOrder[idx + 1];
+      this.boneDrawOrder[idx + 1] = temp;
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Moves a bone one step down (backward / toward bottom layer in stacking order).
+   */
+  public moveBoneDown(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx > 0) {
+      const temp = this.boneDrawOrder[idx];
+      this.boneDrawOrder[idx] = this.boneDrawOrder[idx - 1];
+      this.boneDrawOrder[idx - 1] = temp;
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Raises a bone to the very top (front-most layer, drawn last).
+   */
+  public moveBoneToTop(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx >= 0 && idx < this.boneDrawOrder.length - 1) {
+      this.boneDrawOrder.splice(idx, 1);
+      this.boneDrawOrder.push(boneId);
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Lowers a bone to the very bottom (back-most layer, drawn first).
+   */
+  public moveBoneToBottom(boneId: AnatomicalJointId): boolean {
+    const idx = this.boneDrawOrder.indexOf(boneId);
+    if (idx > 0) {
+      this.boneDrawOrder.splice(idx, 1);
+      this.boneDrawOrder.unshift(boneId);
+      this.render();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Reorders a bone from an arbitrary index to another index.
+   */
+  public reorderBone(fromIndex: number, toIndex: number): boolean {
+    if (fromIndex < 0 || fromIndex >= this.boneDrawOrder.length) return false;
+    if (toIndex < 0 || toIndex >= this.boneDrawOrder.length) return false;
+    if (fromIndex === toIndex) return false;
+    const item = this.boneDrawOrder.splice(fromIndex, 1)[0];
+    this.boneDrawOrder.splice(toIndex, 0, item);
+    this.render();
+    return true;
+  }
+
+  public setDragHoverPart(part: any | null): void {
+    this.dragHoverPart = part;
+    this.render();
+  }
+
+  public setShowGhost(show: boolean): void {
+    this.showGhostPose = show;
+    this.render();
+  }
+
+  public getShowGhost(): boolean {
+    return this.showGhostPose;
+  }
+
+  public setLockGraphicPosition(locked: boolean): void {
+    this.lockGraphicPosition = locked;
+  }
+
+  public isLockGraphicPosition(): boolean {
+    return this.lockGraphicPosition;
+  }
+
+  public setShowReferenceArtwork(show: boolean): void {
+    this.showReferenceArtwork = show;
+    this.render();
+  }
+
+  public isShowReferenceArtwork(): boolean {
+    return this.showReferenceArtwork;
+  }
+
+  public setReferenceArtworkOpacity(opacity: number): void {
+    this.referenceArtworkOpacity = Math.max(0, Math.min(1, opacity));
+    this.render();
+  }
+
+  public getReferenceArtworkOpacity(): number {
+    return this.referenceArtworkOpacity;
+  }
+
+  public centerPartOnBone(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    const seg = this.getBoneSegmentJoints(boneId, this.toolMode === 'preview' ? this.previewJoints : this.restJoints);
+    if (!seg) return;
+
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+    const boneLen = Math.hypot(seg.p2.x - seg.p1.x, seg.p2.y - seg.p1.y);
+
+    part.offsetX = 0;
+    if (isSpine) {
+      part.offsetY = 0;
+    } else {
+      part.offsetY = Math.round(boneLen / 2);
+    }
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public snapPartPivotToJoint(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    part.offsetX = 0;
+    part.offsetY = 0;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public alignPartRotationToBone(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Align Angle to Bone');
+    part.rotation = 0;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public setPartRotation(boneId: AnatomicalJointId, angleRad: number): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Rotate Graphic');
+    let normalized = angleRad;
+    while (normalized > Math.PI) normalized -= 2 * Math.PI;
+    while (normalized < -Math.PI) normalized += 2 * Math.PI;
+    part.rotation = normalized;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public rotatePartBy(boneId: AnatomicalJointId, deltaRad: number): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Rotate Graphic');
+    let newRot = (part.rotation || 0) + deltaRad;
+    while (newRot > Math.PI) newRot -= 2 * Math.PI;
+    while (newRot < -Math.PI) newRot += 2 * Math.PI;
+    part.rotation = newRot;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public rotatePart90(boneId: AnatomicalJointId, clockwise = true): void {
+    this.rotatePartBy(boneId, clockwise ? Math.PI / 2 : -Math.PI / 2);
+  }
+
+  public flipPartHorizontal(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Flip Graphic H');
+    part.flipX = !part.flipX;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public flipPartVertical(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Flip Graphic V');
+    part.flipY = !part.flipY;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  public resetPartTransform(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (!part) return;
+    this.events.onBeforeModification?.('Reset Graphic Transforms');
+    part.offsetX = 0;
+    part.offsetY = 0;
+    part.rotation = 0;
+    part.scale = 1.0;
+    part.flipX = false;
+    part.flipY = false;
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+    part.pivotX = 0.5;
+    part.pivotY = isSpine ? (boneId === 'head' ? 0.78 : 0.5) : 0.15;
+    this.render();
+    this.notifyPartModified(boneId);
+  }
+
+  private notifyPartModified(boneId: AnatomicalJointId): void {
+    const part = this.parts[boneId];
+    if (part && this.events.onPartModified) {
+      this.events.onPartModified(boneId, part);
+    }
+  }
+
+  /**
+   * Automatically slices and extracts each anatomical bone segment
+   * from the loaded character artwork into individual BonePartAttachments.
+   */
+  public autoExtractBoneParts(): Record<string, BonePartAttachment> {
+    if (!this.sourceImage || !this.imageBounds.width || !this.imageBounds.height) {
+      return {};
+    }
+
+    const img = this.sourceImage;
+    const bw = this.imageBounds.width;
+    const bh = this.imageBounds.height;
+    const results: Record<string, BonePartAttachment> = {};
+
+    for (const joint of ANATOMICAL_JOINTS) {
+      const seg = this.getBoneSegmentJoints(joint.id, this.restJoints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(joint.id);
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = bw;
+      offCanvas.height = bh;
+      const offCtx = offCanvas.getContext('2d');
+      if (!offCtx) continue;
+
+      offCtx.save();
+      offCtx.translate(bw / 2, bh);
+      pathCapsule(offCtx, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y, radius);
+      offCtx.clip();
+      offCtx.drawImage(img, -bw / 2, -bh, bw, bh);
+      offCtx.restore();
+
+      const dataUrl = offCanvas.toDataURL('image/png');
+      const partImg = new Image();
+      partImg.src = dataUrl;
+
+      results[joint.id] = {
+        boneId: joint.id,
+        image: partImg,
+        imageUrl: dataUrl,
+        fileName: `${joint.id}_extracted.png`,
+        fileSize: `${Math.round((dataUrl.length * 0.75) / 1024)} KB`,
+        scale: 1.0,
+        offsetX: 0,
+        offsetY: 0
+      };
+    }
+
+    return results;
+  }
+
+  public setView(
+    view: StudioView,
+    joints?: Record<AnatomicalJointId, { x: number; y: number }>,
+    envelopes?: Record<string, number>,
+    partsMap?: Record<string, BonePartAttachment>,
+    boneOrder?: AnatomicalJointId[],
+    facialRig?: FacialRigConfig
+  ): void {
+    this.currentView = view;
+    if (facialRig) {
+      this.facialRig = JSON.parse(JSON.stringify(facialRig));
+      this.viewFacialRigs[view] = this.facialRig;
+    } else if (this.viewFacialRigs[view]) {
+      this.facialRig = this.viewFacialRigs[view]!;
+    }
+    if (joints && Object.keys(joints).length > 0) {
+      this.restJoints = JSON.parse(JSON.stringify(joints));
+    } else {
+      this.restJoints = getDefaultJointPositions(view, this.imageBounds.width, this.imageBounds.height);
+    }
+    this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+    if (envelopes) {
+      this.envelopes = { ...DEFAULT_ENVELOPES, ...envelopes };
+    }
+    if (partsMap) {
+      this.parts = { ...partsMap };
+      for (const p of Object.values(this.parts)) {
+        if (p.image && (!p.image.complete || !p.image.naturalWidth)) {
+          p.image.addEventListener('load', () => this.render(), { once: true });
+        }
+      }
+    } else {
+      this.parts = {};
+    }
+    if (boneOrder && boneOrder.length > 0) {
+      this.setBoneDrawOrder(boneOrder);
+    } else if (!this.boneDrawOrder || this.boneDrawOrder.length === 0) {
+      this.boneDrawOrder = [...DEFAULT_BONE_DRAW_ORDER];
+    }
+    this.selectedJointId = null;
+    this.render();
+  }
+
+  public setActiveView(view: StudioView): void {
+    this.currentView = view;
+    if (this.viewFacialRigs[view]) {
+      this.facialRig = this.viewFacialRigs[view]!;
+    }
+    this.render();
+  }
+
+  public getFacialRig(): FacialRigConfig {
+    return this.facialRig;
+  }
+
+  public isFacialViewEnabled(): boolean {
+    const cfg = this.viewFacialRigs[this.currentView] || this.facialRig;
+    if (cfg?.enabledViews && Array.isArray(cfg.enabledViews)) {
+      return cfg.enabledViews.includes(this.currentView);
+    }
+    if (cfg?.enabled !== undefined) {
+      return cfg.enabled;
+    }
+    // Default fallback: all views except back views
+    return !(this.currentView === 'back' || this.currentView === 'back_left' || this.currentView === 'back_right');
+  }
+
+  public getFacialWorldCenter(): { x: number; y: number; rotAngle: number } | null {
+    if (!this.isFacialViewEnabled()) {
+      return null;
+    }
+    const pj = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    if (!pj.head || !pj.neck) return null;
+
+    const headPartInfo = this.getPartTransformInfo('head', pj);
+    const dx = pj.head.x - pj.neck.x;
+    const dy = pj.head.y - pj.neck.y;
+    const headDist = Math.hypot(dx, dy) || 50;
+    const headAngle = Math.atan2(dy, dx) + Math.PI / 2;
+
+    const rotAngle = headPartInfo ? headPartInfo.rotAngle : headAngle;
+    const pivotX = headPartInfo ? headPartInfo.pivotWorldX : pj.neck.x;
+    const pivotY = headPartInfo ? headPartInfo.pivotWorldY : pj.neck.y;
+
+    let faceCenterLocalX = 0;
+    let faceCenterLocalY = -(headDist * 0.55);
+
+    if (headPartInfo) {
+      faceCenterLocalX = headPartInfo.targetW * (0.5 - headPartInfo.anchorX);
+      faceCenterLocalY = -headPartInfo.targetH * (headPartInfo.anchorY - 0.40);
+    }
+
+    const cfg = this.facialRig || {};
+    const userOffX = cfg.offsetX ?? 0;
+    const userOffY = cfg.offsetY ?? 0;
+
+    let lx = faceCenterLocalX + userOffX;
+    let ly = faceCenterLocalY + userOffY;
+
+    if (headPartInfo && headPartInfo.flipX) lx = -lx;
+    if (headPartInfo && headPartInfo.flipY) ly = -ly;
+
+    const cos = Math.cos(rotAngle);
+    const sin = Math.sin(rotAngle);
+
+    return {
+      x: pivotX + (lx * cos - ly * sin),
+      y: pivotY + (lx * sin + ly * cos),
+      rotAngle
+    };
+  }
+
+  public setSourceImage(img: HTMLImageElement | null, name = '', resetJoints = false): void {
+    this.sourceImage = img;
+    this.imageName = name;
+    if (img && img.width && img.height) {
+      const aspect = img.width / img.height;
+      const targetHeight = 380;
+      this.imageBounds = {
+        width: Math.round(targetHeight * aspect),
+        height: targetHeight
+      };
+      if (resetJoints || !this.restJoints || Object.keys(this.restJoints).length === 0) {
+        this.restJoints = getDefaultJointPositions(this.currentView, this.imageBounds.width, this.imageBounds.height);
+        this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+      }
+    }
+    this.render();
+  }
+
+  public getJoints(): Record<AnatomicalJointId, { x: number; y: number }> {
+    return { ...this.restJoints };
+  }
+
+  public setJoints(joints: Record<AnatomicalJointId, { x: number; y: number }>): void {
+    this.restJoints = { ...joints };
+    this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+    this.render();
+  }
+
+  public selectJoint(id: AnatomicalJointId | null): void {
+    this.selectedJointId = id;
+    this.render();
+    if (this.events.onJointSelected) {
+      this.events.onJointSelected(id);
+    }
+  }
+
+  private panAnimFrame: number | null = null;
+
+  public cancelPanAnimation(): void {
+    if (this.panAnimFrame !== null) {
+      cancelAnimationFrame(this.panAnimFrame);
+      this.panAnimFrame = null;
+    }
+  }
+
+  /**
+   * Ensures the given joint or bone is comfortably visible within the canvas viewport,
+   * smoothly panning to center it if it is offscreen or clipped.
+   */
+  public ensureJointInView(id: AnatomicalJointId | null, smooth = true): void {
+    if (!id) return;
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    if (!joints) return;
+
+    let worldX: number | null = null;
+    let worldY: number | null = null;
+
+    // 1. Check if it's an anatomical bone
+    const bone = ANATOMICAL_BONES.find(b => b.id === id);
+    if (bone) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
+      if (seg) {
+        worldX = (seg.p1.x + seg.p2.x) / 2;
+        worldY = (seg.p1.y + seg.p2.y) / 2;
+      }
+    }
+
+    // 2. If not found as bone segment, check as direct joint
+    if (worldX === null || worldY === null) {
+      const pt = joints[id];
+      if (pt) {
+        worldX = pt.x;
+        worldY = pt.y;
+      }
+    }
+
+    // 3. Check attached part transform anchor
+    if (worldX === null || worldY === null) {
+      const part = this.parts[id];
+      if (part) {
+        const info = this.getPartTransformInfo(id);
+        if (info) {
+          worldX = info.anchorX;
+          worldY = info.anchorY;
+        }
+      }
+    }
+
+    if (worldX === null || worldY === null) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const viewW = rect.width;
+    const viewH = rect.height;
+    if (viewW <= 0 || viewH <= 0) return;
+
+    const screenX = this.panX + worldX * this.zoom;
+    const screenY = this.panY + worldY * this.zoom;
+
+    const margin = 60;
+    const isComfortablyInView =
+      screenX >= margin &&
+      screenX <= (viewW - margin) &&
+      screenY >= margin &&
+      screenY <= (viewH - margin);
+
+    if (isComfortablyInView) return;
+
+    const targetPanX = Math.round(viewW / 2 - worldX * this.zoom);
+    const targetPanY = Math.round(viewH / 2 - worldY * this.zoom);
+
+    if (!smooth) {
+      this.cancelPanAnimation();
+      this.panX = targetPanX;
+      this.panY = targetPanY;
+      this.render();
+      return;
+    }
+
+    this.animatePanTo(targetPanX, targetPanY);
+  }
+
+  private animatePanTo(targetX: number, targetY: number, durationMs = 220): void {
+    this.cancelPanAnimation();
+    const startX = this.panX;
+    const startY = this.panY;
+    const diffX = targetX - startX;
+    const diffY = targetY - startY;
+
+    if (Math.hypot(diffX, diffY) < 4) {
+      this.panX = targetX;
+      this.panY = targetY;
+      this.render();
+      return;
+    }
+
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - t, 3);
+      this.panX = Math.round(startX + diffX * ease);
+      this.panY = Math.round(startY + diffY * ease);
+      this.render();
+
+      if (t < 1) {
+        this.panAnimFrame = requestAnimationFrame(step);
+      } else {
+        this.panAnimFrame = null;
+      }
+    };
+    this.panAnimFrame = requestAnimationFrame(step);
+  }
+
+  public getSelectedJoint(): AnatomicalJointId | null {
+    return this.selectedJointId;
+  }
+
+  public resetPose(): void {
+    this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+    this.render();
+  }
+
+  public getPreviewJoints(): Record<AnatomicalJointId, { x: number; y: number }> {
+    return JSON.parse(JSON.stringify(this.previewJoints));
+  }
+
+  public setPreviewJoints(joints: Record<AnatomicalJointId, { x: number; y: number }>): void {
+    this.previewJoints = JSON.parse(JSON.stringify(joints));
+    this.render();
+  }
+
+  public resetView(): void {
+    const rect = this.container.getBoundingClientRect();
+    this.panX = Math.round(rect.width / 2);
+    this.panY = Math.round(rect.height * 0.82);
+    this.zoom = 1.35;
+    this.render();
+  }
+
+  public resizeCanvas(): void {
+    const rect = this.container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+    if (this.ctx) {
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(dpr, dpr);
+    }
+    this.render();
+  }
+
+  private screenToWorld(sx: number, sy: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (sx - rect.left - this.panX) / this.zoom;
+    const y = (sy - rect.top - this.panY) / this.zoom;
+    return { x, y };
+  }
+
+  private bindEvents(): void {
+    window.addEventListener('resize', () => this.resizeCanvas());
+
+    this.container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.cancelPanAnimation();
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+      const newZoom = Math.max(0.35, Math.min(5.0, this.zoom * zoomFactor));
+
+      this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
+      this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
+      this.zoom = newZoom;
+
+      this.render();
+    }, { passive: false });
+
+    // Drag and drop onto bones or workspace
+    this.container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      this.container.classList.add('drag-over');
+
+      const world = this.screenToWorld(e.clientX, e.clientY);
+      const hoveredBone = this.getBoneAtPoint(world.x, world.y);
+      if (this.dragHoverBoneId !== hoveredBone) {
+        this.dragHoverBoneId = hoveredBone;
+        this.render();
+      }
+    });
+
+    this.container.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      this.container.classList.remove('drag-over');
+      if (this.dragHoverBoneId || this.dragHoverPart) {
+        this.dragHoverBoneId = null;
+        this.dragHoverPart = null;
+        this.render();
+      }
+    });
+
+    this.container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.container.classList.remove('drag-over');
+      const targetBone = this.dragHoverBoneId;
+      this.dragHoverBoneId = null;
+      this.dragHoverPart = null;
+
+      // 1. Check if dragging an element/part from the Parts Library
+      const partJson = e.dataTransfer?.getData('application/rig-part');
+      if (partJson && targetBone) {
+        try {
+          const partData = JSON.parse(partJson);
+          this.events.onPartDroppedOnBone?.(targetBone, partData);
+          this.render();
+          return;
+        } catch {}
+      }
+
+      // 2. Check if dragging image files from desktop
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.type.startsWith('image/')) {
+          if (targetBone) {
+            this.events.onFileDroppedOnBone?.(targetBone, file);
+          } else if (this.events.onImageDropped) {
+            this.events.onImageDropped(file);
+          }
+        }
+      }
+      this.render();
+    });
+
+    this.container.addEventListener('mousedown', (e) => {
+      this.cancelPanAnimation();
+      if (e.button === 1 || this.isSpacePressed) {
+        this.isPanning = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        return;
+      }
+
+      if (e.button !== 0) return;
+
+      const world = this.screenToWorld(e.clientX, e.clientY);
+      const activeJoints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+
+      // 1. If currently selected bone has an attached part and not in preview mode, test gizmo handles
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const hitHandle = this.hitTestPartGizmo(this.selectedJointId, world.x, world.y);
+        if (hitHandle) {
+          this.events.onBeforeModification?.(`Transform ${hitHandle} Graphic`);
+          const part = this.parts[this.selectedJointId];
+          const info = this.getPartTransformInfo(this.selectedJointId);
+          this.isTransformingPart = true;
+          this.transformHandle = hitHandle;
+          this.transformStartWorld = { ...world };
+          this.transformStartAngle = info ? Math.atan2(world.y - info.pivotWorldY, world.x - info.pivotWorldX) : 0;
+          this.transformStartDist = info ? Math.hypot(world.x - info.pivotWorldX, world.y - info.pivotWorldY) : 1;
+          this.transformStartSnapshot = {
+            offsetX: part.offsetX ?? 0,
+            offsetY: part.offsetY ?? 0,
+            rotation: part.rotation ?? 0,
+            scale: part.scale ?? 1.0,
+            pivotX: part.pivotX ?? (info?.anchorX ?? 0.5),
+            pivotY: part.pivotY ?? (info?.anchorY ?? 0.5)
+          };
+
+          if (hitHandle === 'rotate') {
+            this.transformAction = 'rotate';
+          } else if (hitHandle === 'pivot') {
+            this.transformAction = 'pivot';
+          } else if (hitHandle === 'body') {
+            this.transformAction = 'translate';
+          } else {
+            this.transformAction = 'scale';
+          }
+          this.render();
+          return;
+        }
+      }
+
+      // 1.5 Hit test face center gizmo if face controls are configured/active
+      const faceCenter = this.getFacialWorldCenter();
+      if (faceCenter && Math.hypot(world.x - faceCenter.x, world.y - faceCenter.y) < 24 / this.zoom) {
+        this.events.onBeforeModification?.('Move Face Placement');
+        this.isDraggingFace = true;
+        this.dragFaceStartWorld = { ...world };
+        this.dragFaceInitialOffsetX = this.facialRig?.offsetX ?? 0;
+        this.dragFaceInitialOffsetY = this.facialRig?.offsetY ?? 0;
+        this.dragFaceRotAngle = faceCenter.rotAngle;
+        this.render();
+        return;
+      }
+
+      // 2. Hit test joints
+      let clickedJointId: AnatomicalJointId | null = null;
+      let closestDist = 18 / this.zoom;
+
+      for (const joint of ANATOMICAL_JOINTS) {
+        const pt = activeJoints[joint.id];
+        if (!pt) continue;
+        const d = Math.hypot(world.x - pt.x, world.y - pt.y);
+        if (d < closestDist) {
+          closestDist = d;
+          clickedJointId = joint.id;
+        }
+      }
+
+      if (clickedJointId) {
+        this.selectJoint(clickedJointId);
+        this.events.onBeforeModification?.('Move Joint Pin');
+        this.isDraggingJoint = true;
+        this.draggedJointId = clickedJointId;
+        return;
+      }
+
+      // 3. Add Joint Mode: clicking empty space places/moves selected joint or next joint
+      if (this.toolMode === 'add_joint' && this.sourceImage) {
+        const targetId = this.selectedJointId || 'head';
+        this.moveJointWithSymmetry(targetId, world.x, world.y);
+        this.selectJoint(targetId);
+        this.isDraggingJoint = true;
+        this.draggedJointId = targetId;
+        return;
+      }
+
+      // 4. Hit test attached parts on the canvas (click any part to select its bone and begin translating)
+      if (this.toolMode !== 'preview') {
+        const clickedPartBone = this.getPartAtPoint(world.x, world.y);
+        if (clickedPartBone) {
+          this.selectJoint(clickedPartBone);
+          this.events.onBeforeModification?.('Translate Graphic');
+          const part = this.parts[clickedPartBone];
+          const info = this.getPartTransformInfo(clickedPartBone);
+          this.isTransformingPart = true;
+          this.transformAction = 'translate';
+          this.transformHandle = 'body';
+          this.transformStartWorld = { ...world };
+          this.transformStartSnapshot = {
+            offsetX: part.offsetX ?? 0,
+            offsetY: part.offsetY ?? 0,
+            rotation: part.rotation ?? 0,
+            scale: part.scale ?? 1.0,
+            pivotX: part.pivotX ?? (info?.anchorX ?? 0.5),
+            pivotY: part.pivotY ?? (info?.anchorY ?? 0.5)
+          };
+          this.render();
+          return;
+        }
+      }
+
+      // 5. Hit test bone capsules
+      const clickedBone = this.getBoneAtPoint(world.x, world.y);
+      if (clickedBone) {
+        this.selectJoint(clickedBone);
+        return;
+      }
+
+      this.selectJoint(null);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (this.isPanning) {
+        this.panX += e.clientX - this.lastMouseX;
+        this.panY += e.clientY - this.lastMouseY;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.render();
+        return;
+      }
+
+      const world = this.screenToWorld(e.clientX, e.clientY);
+
+      // Dragging Face placement
+      if (this.isDraggingFace) {
+        const deltaWorldX = world.x - this.dragFaceStartWorld.x;
+        const deltaWorldY = world.y - this.dragFaceStartWorld.y;
+        const cos = Math.cos(-this.dragFaceRotAngle);
+        const sin = Math.sin(-this.dragFaceRotAngle);
+        const localDx = deltaWorldX * cos - deltaWorldY * sin;
+        const localDy = deltaWorldX * sin + deltaWorldY * cos;
+        if (!this.facialRig) this.facialRig = {};
+        this.facialRig.offsetX = Math.round(this.dragFaceInitialOffsetX + localDx);
+        this.facialRig.offsetY = Math.round(this.dragFaceInitialOffsetY + localDy);
+        this.events.onFacialRigChanged?.(this.facialRig);
+        this.render();
+        return;
+      }
+
+      // Transforming active graphic (Translate, Rotate, Scale, Pivot)
+      if (this.isTransformingPart && this.selectedJointId && this.parts[this.selectedJointId]) {
+        const part = this.parts[this.selectedJointId];
+        const info = this.getPartTransformInfo(this.selectedJointId);
+        if (info && this.transformStartSnapshot) {
+          const snap = this.transformStartSnapshot;
+
+          if (this.transformAction === 'translate') {
+            const dwX = world.x - this.transformStartWorld.x;
+            const dwY = world.y - this.transformStartWorld.y;
+            part.offsetX = Math.round(snap.offsetX + dwX);
+            part.offsetY = Math.round(snap.offsetY + dwY);
+          } else if (this.transformAction === 'rotate') {
+            const curAng = Math.atan2(world.y - info.pivotWorldY, world.x - info.pivotWorldX);
+            let deltaAng = curAng - this.transformStartAngle;
+            if (e.shiftKey) {
+              const step = Math.PI / 12; // 15 degrees snap
+              deltaAng = Math.round(deltaAng / step) * step;
+            }
+            let newRot = snap.rotation + deltaAng;
+            while (newRot > Math.PI) newRot -= 2 * Math.PI;
+            while (newRot < -Math.PI) newRot += 2 * Math.PI;
+            part.rotation = newRot;
+          } else if (this.transformAction === 'scale') {
+            const curDist = Math.hypot(world.x - info.pivotWorldX, world.y - info.pivotWorldY);
+            const ratio = curDist / (this.transformStartDist || 1);
+            let newScale = Math.max(0.1, Math.min(5.0, snap.scale * ratio));
+            if (e.shiftKey) {
+              newScale = Math.round(newScale * 20) / 20; // 5% snap
+            }
+            part.scale = Math.round(newScale * 100) / 100;
+          } else if (this.transformAction === 'pivot') {
+            const dx = world.x - info.pivotWorldX;
+            const dy = world.y - info.pivotWorldY;
+            const cos = Math.cos(-info.rotAngle);
+            const sin = Math.sin(-info.rotAngle);
+            let lx = dx * cos - dy * sin;
+            let ly = dx * sin + dy * cos;
+            if (info.flipX) lx = -lx;
+            if (info.flipY) ly = -ly;
+
+            let newAnchorX = (lx - info.imgLocalX) / info.targetW;
+            let newAnchorY = (ly - info.imgLocalY) / info.targetH;
+            if (Math.abs(newAnchorX - 0.5) < 0.04) newAnchorX = 0.5;
+            if (Math.abs(newAnchorY - 0.5) < 0.04) newAnchorY = 0.5;
+            newAnchorX = Math.max(0, Math.min(1, newAnchorX));
+            newAnchorY = Math.max(0, Math.min(1, newAnchorY));
+
+            const oldLocalX = -info.targetW * (part.pivotX ?? info.anchorX);
+            const oldLocalY = -info.targetH * (part.pivotY ?? info.anchorY);
+            const newLocalX = -info.targetW * newAnchorX;
+            const newLocalY = -info.targetH * newAnchorY;
+            const deltaX = (oldLocalX - newLocalX) * (info.flipX ? -1 : 1);
+            const deltaY = (oldLocalY - newLocalY) * (info.flipY ? -1 : 1);
+
+            part.offsetX = Math.round((part.offsetX || 0) - deltaX);
+            part.offsetY = Math.round((part.offsetY || 0) - deltaY);
+            part.pivotX = Math.round(newAnchorX * 100) / 100;
+            part.pivotY = Math.round(newAnchorY * 100) / 100;
+          }
+
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        }
+        return;
+      }
+
+      if (this.isDraggingJoint && this.draggedJointId) {
+        if (this.toolMode === 'preview') {
+          // Preview posing mode with bone length preservation for all nodes.
+          // Supports both IK and FK (No-IK) kinematics. Shift/Alt temporarily toggles between them.
+          const isAltOrShift = e.shiftKey || e.altKey;
+          const useFK = (this.kinematicsMode === 'fk') !== isAltOrShift;
+          this.poseJointInPreview(this.draggedJointId, world.x, world.y, useFK);
+          this.events.onPreviewPoseChanged?.(this.previewJoints);
+        } else {
+          // Standard setup mode (places / moves joint pins with symmetry and graphic lock)
+          this.moveJointWithSymmetry(this.draggedJointId, world.x, world.y, e.shiftKey || e.altKey);
+        }
+        this.render();
+        return;
+      }
+
+      // Cursor and gizmo handle hover detection
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const gizmoHit = this.hitTestPartGizmo(this.selectedJointId, world.x, world.y);
+        if (this.hoveredGizmoHandle !== gizmoHit) {
+          this.hoveredGizmoHandle = gizmoHit;
+          this.render();
+        }
+        if (gizmoHit === 'rotate') {
+          this.container.style.cursor = 'grab';
+        } else if (gizmoHit === 'pivot') {
+          this.container.style.cursor = 'crosshair';
+        } else if (gizmoHit === 'body') {
+          this.container.style.cursor = 'move';
+        } else {
+          this.container.style.cursor = '';
+        }
+      } else {
+        if (this.hoveredGizmoHandle !== null) {
+          this.hoveredGizmoHandle = null;
+          this.render();
+        }
+        this.container.style.cursor = '';
+      }
+
+      // Hover detection on joints
+      const activeJoints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+      let hovered: AnatomicalJointId | null = null;
+      const hoverThreshold = 14 / this.zoom;
+
+      for (const joint of ANATOMICAL_JOINTS) {
+        const pt = activeJoints[joint.id];
+        if (!pt) continue;
+        if (Math.hypot(world.x - pt.x, world.y - pt.y) < hoverThreshold) {
+          hovered = joint.id;
+          break;
+        }
+      }
+
+      if (this.hoveredJointId !== hovered) {
+        this.hoveredJointId = hovered;
+        this.render();
+      }
+
+      // Face gizmo hover detection
+      const faceCenter = this.getFacialWorldCenter();
+      const isNearFace = faceCenter && Math.hypot(world.x - faceCenter.x, world.y - faceCenter.y) < 24 / this.zoom;
+      if (isNearFace !== this.isHoveringFace) {
+        this.isHoveringFace = !!isNearFace;
+        this.render();
+      }
+      if (isNearFace && !this.isTransformingPart && !this.isDraggingJoint) {
+        this.container.style.cursor = 'move';
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      this.isPanning = false;
+
+      if (this.isDraggingFace) {
+        this.isDraggingFace = false;
+        this.events.onFacialRigChanged?.(this.facialRig);
+        this.render();
+      }
+
+      if (this.isTransformingPart) {
+        this.isTransformingPart = false;
+        this.transformAction = null;
+        this.transformHandle = null;
+        if (this.selectedJointId && this.parts[this.selectedJointId]) {
+          this.notifyPartModified(this.selectedJointId);
+        }
+      }
+
+      if (this.isDraggingJoint) {
+        this.isDraggingJoint = false;
+        this.draggedJointId = null;
+        if (this.toolMode === 'preview') {
+          this.events.onPreviewPoseChanged?.(this.previewJoints);
+        } else {
+          this.events.onJointsModified?.(this.restJoints);
+        }
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.code === 'Space' && !this.isSpacePressed) {
+        this.isSpacePressed = true;
+        this.container.style.cursor = 'grab';
+        return;
+      }
+
+      // Keyboard nudges when a bone with attached graphic is selected
+      if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+        const part = this.parts[this.selectedJointId];
+        const step = e.shiftKey ? 10 : 1;
+
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          part.offsetX = (part.offsetX || 0) - step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          part.offsetX = (part.offsetX || 0) + step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          part.offsetY = (part.offsetY || 0) - step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          part.offsetY = (part.offsetY || 0) + step;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '[') {
+          e.preventDefault();
+          const ang = e.shiftKey ? Math.PI / 12 : Math.PI / 180;
+          part.rotation = (part.rotation || 0) - ang;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === ']') {
+          e.preventDefault();
+          const ang = e.shiftKey ? Math.PI / 12 : Math.PI / 180;
+          part.rotation = (part.rotation || 0) + ang;
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          const sDelta = e.shiftKey ? 0.05 : 0.01;
+          part.scale = Math.max(0.1, Math.round(((part.scale || 1.0) - sDelta) * 100) / 100);
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          const sDelta = e.shiftKey ? 0.05 : 0.01;
+          part.scale = Math.min(5.0, Math.round(((part.scale || 1.0) + sDelta) * 100) / 100);
+          this.render();
+          this.notifyPartModified(this.selectedJointId);
+        } else if (e.key === 'h' || e.key === 'H') {
+          e.preventDefault();
+          this.flipPartHorizontal(this.selectedJointId);
+        } else if (e.key === 'v' || e.key === 'V') {
+          e.preventDefault();
+          this.flipPartVertical(this.selectedJointId);
+        } else if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          this.resetPartTransform(this.selectedJointId);
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        this.isSpacePressed = false;
+        this.container.style.cursor = '';
+      }
+    });
+  }
+
+  private moveJointWithSymmetry(jointId: AnatomicalJointId, wx: number, wy: number, forceAltOrShift = false): void {
+    const jointDef = ANATOMICAL_JOINTS.find(j => j.id === jointId);
+    if (!jointDef) return;
+
+    // Capture world-space transforms before moving joints if graphics are locked in world space
+    const prevWorldParts: Record<string, { pivotWorldX: number; pivotWorldY: number; worldAngle: number }> = {};
+    if (this.lockGraphicPosition && Object.keys(this.parts).length > 0) {
+      for (const bId of Object.keys(this.parts) as AnatomicalJointId[]) {
+        const info = this.getPartTransformInfo(bId, this.restJoints);
+        if (info) {
+          prevWorldParts[bId] = {
+            pivotWorldX: info.pivotWorldX,
+            pivotWorldY: info.pivotWorldY,
+            worldAngle: info.rotAngle
+          };
+        }
+      }
+    }
+
+    const oldPos = this.restJoints[jointId];
+    const dx = Math.round(wx) - (oldPos ? oldPos.x : Math.round(wx));
+    const dy = Math.round(wy) - (oldPos ? oldPos.y : Math.round(wy));
+
+    if (jointId === 'hand_l' || jointId === 'hand_r' || jointId === 'foot_l' || jointId === 'foot_r') {
+      const isFK = (this.kinematicsMode === 'fk') !== forceAltOrShift;
+      const poser = isFK ? poseJointFK : poseJointPreservingBones;
+      this.restJoints = poser(jointId, wx, wy, this.restJoints, this.restJoints);
+      if (this.symmetryEnabled && jointDef.symmetricWith) {
+        const symId = jointDef.symmetricWith;
+        this.restJoints = poser(symId, -wx, wy, this.restJoints, this.restJoints);
+      }
+    } else if (jointDef.isCenter) {
+      this.restJoints[jointId] = { x: 0, y: Math.round(wy) };
+      if (jointId === 'chest') {
+        if (this.restJoints.neck) this.restJoints.neck = { x: 0, y: this.restJoints.neck.y + dy };
+        if (this.restJoints.head) this.restJoints.head = { x: 0, y: this.restJoints.head.y + dy };
+      } else if (jointId === 'neck') {
+        if (this.restJoints.head) this.restJoints.head = { x: 0, y: this.restJoints.head.y + dy };
+      }
+    } else {
+      this.restJoints[jointId] = { x: Math.round(wx), y: Math.round(wy) };
+
+      // Carry child edge tips when dragging wrist or ankle
+      if (jointId === 'wrist_l' && this.restJoints.hand_l) {
+        this.restJoints.hand_l = { x: this.restJoints.hand_l.x + dx, y: this.restJoints.hand_l.y + dy };
+      } else if (jointId === 'wrist_r' && this.restJoints.hand_r) {
+        this.restJoints.hand_r = { x: this.restJoints.hand_r.x + dx, y: this.restJoints.hand_r.y + dy };
+      } else if (jointId === 'ankle_l' && this.restJoints.foot_l) {
+        this.restJoints.foot_l = { x: this.restJoints.foot_l.x + dx, y: this.restJoints.foot_l.y + dy };
+      } else if (jointId === 'ankle_r' && this.restJoints.foot_r) {
+        this.restJoints.foot_r = { x: this.restJoints.foot_r.x + dx, y: this.restJoints.foot_r.y + dy };
+      }
+
+      if (this.symmetryEnabled && jointDef.symmetricWith) {
+        const symId = jointDef.symmetricWith;
+        this.restJoints[symId] = { x: -Math.round(wx), y: Math.round(wy) };
+
+        if (jointId === 'wrist_l' && this.restJoints.hand_r && this.restJoints.hand_l) {
+          this.restJoints.hand_r = { x: -this.restJoints.hand_l.x, y: this.restJoints.hand_l.y };
+        } else if (jointId === 'wrist_r' && this.restJoints.hand_l && this.restJoints.hand_r) {
+          this.restJoints.hand_l = { x: -this.restJoints.hand_r.x, y: this.restJoints.hand_r.y };
+        } else if (jointId === 'ankle_l' && this.restJoints.foot_r && this.restJoints.foot_l) {
+          this.restJoints.foot_r = { x: -this.restJoints.foot_l.x, y: this.restJoints.foot_l.y };
+        } else if (jointId === 'ankle_r' && this.restJoints.foot_l && this.restJoints.foot_r) {
+          this.restJoints.foot_l = { x: -this.restJoints.foot_r.x, y: this.restJoints.foot_r.y };
+        }
+      }
+    }
+
+    // Maintain graphics in world space if locked
+    if (this.lockGraphicPosition && Object.keys(prevWorldParts).length > 0) {
+      for (const [bId, prev] of Object.entries(prevWorldParts)) {
+        const boneId = bId as AnatomicalJointId;
+        const part = this.parts[boneId];
+        if (!part) continue;
+        const seg = this.getBoneSegmentJoints(boneId, this.restJoints);
+        if (!seg) continue;
+        const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+        const isSpine = boneDef?.category === 'spine';
+        const newPosedAngle = Math.atan2(seg.p2.y - seg.p1.y, seg.p2.x - seg.p1.x);
+        const newBaseAngle = isSpine ? (newPosedAngle + Math.PI / 2) : (newPosedAngle - Math.PI / 2);
+
+        let newRot = prev.worldAngle - newBaseAngle;
+        while (newRot > Math.PI) newRot -= 2 * Math.PI;
+        while (newRot < -Math.PI) newRot += 2 * Math.PI;
+        part.rotation = newRot;
+
+        part.offsetX = Math.round(prev.pivotWorldX - seg.p1.x);
+        part.offsetY = Math.round(prev.pivotWorldY - seg.p1.y);
+        this.notifyPartModified(boneId);
+      }
+    }
+
+    this.previewJoints = JSON.parse(JSON.stringify(this.restJoints));
+  }
+
+  /**
+   * Poses a joint during Preview Mode while strictly preserving bone lengths across all nodes.
+   * Supports both IK (Inverse Kinematics) and FK (Forward Kinematics / No-IK).
+   */
+  private poseJointInPreview(jointId: AnatomicalJointId, wx: number, wy: number, forceFK?: boolean): void {
+    const isFK = forceFK !== undefined ? forceFK : (this.kinematicsMode === 'fk');
+    if (isFK) {
+      this.previewJoints = poseJointFK(jointId, wx, wy, this.restJoints, this.previewJoints);
+    } else {
+      this.previewJoints = poseJointPreservingBones(jointId, wx, wy, this.restJoints, this.previewJoints);
+    }
+  }
+
+  public render(): void {
+    if (!this.ctx) return;
+    const rect = this.container.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    this.ctx.clearRect(0, 0, w, h);
+
+    // 1. Draw Grid
+    this.drawGrid(w, h);
+
+    this.ctx.save();
+    this.ctx.translate(this.panX, this.panY);
+    this.ctx.scale(this.zoom, this.zoom);
+
+    // 2. Draw Empty State Mannequin or Character Artwork
+    if (!this.sourceImage && Object.keys(this.parts).length === 0) {
+      this.drawEmptyMannequin();
+    } else {
+      this.drawCharacterArtwork();
+    }
+
+    // 2.5 Draw Facial Features (Eyebrows, Eyes, Mouth)
+    this.drawFacialFeatures();
+
+
+    // 3. Draw Envelopes
+    if ((this.sourceImage || Object.keys(this.parts).length > 0) && this.showEnvelopesEnabled) {
+      this.drawEnvelopes();
+    }
+
+    // 4. Draw Bones
+    if ((this.sourceImage || Object.keys(this.parts).length > 0) && this.showBonesEnabled) {
+      this.drawBones();
+    }
+
+    // 5. Draw Joint Pins
+    if (this.sourceImage || Object.keys(this.parts).length > 0) {
+      if (this.showBonesEnabled || this.toolMode !== 'preview') {
+        this.drawJointPins();
+      }
+    }
+
+    // 6. Draw Part Transform Gizmo (WYSIWYG UX for aligning bone and graphic)
+    if (this.selectedJointId && this.parts[this.selectedJointId] && this.toolMode !== 'preview') {
+      this.drawPartTransformGizmo(this.selectedJointId);
+    }
+
+    this.ctx.restore();
+
+    // 7. Preview Kinematics HUD Badge
+    if (this.toolMode === 'preview') {
+      this.drawKinematicsHUD(w, h);
+    }
+  }
+
+  private drawKinematicsHUD(w: number, h: number): void {
+    this.ctx.save();
+    const isFK = this.kinematicsMode === 'fk';
+    const text = isFK ? '🦴 Posing: FK (No-IK)  [Shift: IK]' : '⚡ Posing: IK  [Shift: FK / No-IK]';
+    this.ctx.font = '600 11px Inter, sans-serif';
+    const textW = this.ctx.measureText(text).width;
+    const padX = 10;
+    const badgeW = textW + padX * 2;
+    const badgeH = 22;
+    const badgeX = 16;
+    const badgeY = h - 34;
+
+    this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    this.ctx.strokeStyle = isFK ? 'rgba(56, 189, 248, 0.4)' : 'rgba(234, 179, 8, 0.4)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = isFK ? '#38bdf8' : '#eab308';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(text, badgeX + padX, badgeY + badgeH / 2);
+    this.ctx.restore();
+  }
+
+  private drawGrid(w: number, h: number): void {
+    const gridSize = 24 * this.zoom;
+    const majorGridSize = gridSize * 5;
+
+    this.ctx.fillStyle = '#0f172a';
+    this.ctx.fillRect(0, 0, w, h);
+
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+    this.ctx.lineWidth = 1;
+
+    const startX = this.panX % gridSize;
+    const startY = this.panY % gridSize;
+
+    for (let x = startX; x < w; x += gridSize) {
+      this.ctx.moveTo(x, 0);
+      this.ctx.lineTo(x, h);
+    }
+    for (let y = startY; y < h; y += gridSize) {
+      this.ctx.moveTo(0, y);
+      this.ctx.lineTo(w, y);
+    }
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    this.ctx.lineWidth = 1;
+
+    const majorStartX = this.panX % majorGridSize;
+    const majorStartY = this.panY % majorGridSize;
+
+    for (let x = majorStartX; x < w; x += majorGridSize) {
+      this.ctx.moveTo(x, 0);
+      this.ctx.lineTo(x, h);
+    }
+    for (let y = majorStartY; y < h; y += majorGridSize) {
+      this.ctx.moveTo(0, y);
+      this.ctx.lineTo(w, y);
+    }
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.moveTo(0, this.panY);
+    this.ctx.lineTo(w, this.panY);
+    this.ctx.stroke();
+  }
+
+  private drawEmptyMannequin(): void {
+    this.ctx.save();
+    this.ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
+    this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+
+    // Head
+    this.ctx.beginPath();
+    this.ctx.arc(0, -290, 28, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Neck & Torso
+    this.ctx.beginPath();
+    this.ctx.roundRect(-34, -250, 68, 120, 14);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Arms
+    this.ctx.beginPath();
+    this.ctx.roundRect(-62, -240, 20, 140, 10);
+    this.ctx.roundRect(42, -240, 20, 140, 10);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Legs
+    this.ctx.beginPath();
+    this.ctx.roundRect(-30, -125, 24, 125, 10);
+    this.ctx.roundRect(6, -125, 24, 125, 10);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = '#64748b';
+    this.ctx.font = '600 13px Inter, sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Drop a character image', 0, 45);
+    this.ctx.fillText('to get started', 0, 65);
+
+    this.ctx.restore();
+  }
+
+  private drawCharacterArtwork(): void {
+    const bw = this.imageBounds.width;
+    const bh = this.imageBounds.height;
+    const imgX = -bw / 2;
+    const imgY = -bh;
+
+    const hasParts = Object.keys(this.parts).length > 0 || (this.dragHoverBoneId && this.dragHoverPart);
+
+    // Reference artwork ghost underlay (helps user align graphics and bones with original artwork)
+    if (this.showReferenceArtwork && this.sourceImage) {
+      this.ctx.save();
+      this.ctx.globalAlpha = this.referenceArtworkOpacity;
+      this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+      this.ctx.restore();
+    }
+
+    // In Preview Mode: Draw faint ghost of original rest pose if enabled
+    if (this.toolMode === 'preview') {
+      if (this.sourceImage && this.showGhostPose && !this.showReferenceArtwork) {
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.15;
+        this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+        this.ctx.restore();
+      }
+
+      // Draw posed character artwork with limb deformation and attached parts
+      this.drawCharacterModel(this.previewJoints, this.restJoints);
+    } else {
+      // Setup / Editing Mode
+      if (!hasParts && this.sourceImage) {
+        // No parts attached yet: render intact base character artwork
+        this.ctx.save();
+        this.ctx.drawImage(this.sourceImage, imgX, imgY, bw, bh);
+        this.ctx.restore();
+      } else {
+        // When parts are attached or preview-dragged, render character model where attached parts
+        // cleanly replace the base body segments without drawing both!
+        this.drawCharacterModel(this.restJoints, this.restJoints);
+      }
+    }
+  }
+
+  private getBoneSegmentJoints(
+    boneId: AnatomicalJointId,
+    joints: Record<AnatomicalJointId, { x: number; y: number }>
+  ): { p1: { x: number; y: number }; p2: { x: number; y: number } } | null {
+    const part = this.parts[boneId];
+    if (part && (part.originJointId || part.targetJointId)) {
+      const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+      const resolvePoint = (jId?: string): { x: number; y: number } | null => {
+        if (!jId) return null;
+        if (jId === 'hip_mid') {
+          if (joints.hip_l && joints.hip_r) {
+            return { x: (joints.hip_l.x + joints.hip_r.x) / 2, y: (joints.hip_l.y + joints.hip_r.y) / 2 };
+          }
+        }
+        return joints[jId as AnatomicalJointId] || null;
+      };
+
+      let origId = part.originJointId || (boneDef?.originJointId || boneId);
+      let tgtId = part.targetJointId || boneDef?.targetJointId;
+
+      // Auto-correct Torso bone ('chest') if erroneously set to chest -> chest or neck
+      if (boneId === 'chest' && (origId === 'chest' || origId === tgtId)) {
+        origId = 'hip_mid';
+        tgtId = 'chest';
+      }
+
+      const p1 = resolvePoint(origId);
+      let p2 = resolvePoint(tgtId);
+      if (!p2 && boneDef?.defaultLength && p1) {
+        p2 = { x: p1.x, y: p1.y + boneDef.defaultLength };
+      }
+      if (p1 && p2) {
+        return { p1, p2 };
+      }
+    }
+
+    switch (boneId) {
+      case 'head':
+        return { p1: joints.neck, p2: joints.head };
+      case 'neck': {
+        const p1 = joints.chest || { x: 0, y: joints.neck.y + 28 };
+        return { p1, p2: joints.neck };
+      }
+      case 'chest': {
+        const hipMid = { x: (joints.hip_l.x + joints.hip_r.x) / 2, y: (joints.hip_l.y + joints.hip_r.y) / 2 };
+        const p2 = joints.chest || { x: 0, y: joints.neck.y + 28 };
+        return { p1: hipMid, p2 };
+      }
+      case 'shoulder_l':
+        return { p1: joints.shoulder_l, p2: joints.elbow_l };
+      case 'elbow_l':
+        return { p1: joints.elbow_l, p2: joints.wrist_l };
+      case 'wrist_l': {
+        const dx = joints.wrist_l.x - joints.elbow_l.x;
+        const dy = joints.wrist_l.y - joints.elbow_l.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const p2 = joints.hand_l || { x: joints.wrist_l.x + (dx / len) * 28, y: joints.wrist_l.y + (dy / len) * 28 };
+        return { p1: joints.wrist_l, p2 };
+      }
+      case 'shoulder_r':
+        return { p1: joints.shoulder_r, p2: joints.elbow_r };
+      case 'elbow_r':
+        return { p1: joints.elbow_r, p2: joints.wrist_r };
+      case 'wrist_r': {
+        const dx = joints.wrist_r.x - joints.elbow_r.x;
+        const dy = joints.wrist_r.y - joints.elbow_r.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const p2 = joints.hand_r || { x: joints.wrist_r.x + (dx / len) * 28, y: joints.wrist_r.y + (dy / len) * 28 };
+        return { p1: joints.wrist_r, p2 };
+      }
+      case 'hip_l':
+        return { p1: joints.hip_l, p2: joints.knee_l };
+      case 'knee_l':
+        return { p1: joints.knee_l, p2: joints.ankle_l };
+      case 'ankle_l': {
+        const p2 = joints.foot_l || { x: joints.ankle_l.x + 4, y: joints.ankle_l.y + 36 };
+        return { p1: joints.ankle_l, p2 };
+      }
+      case 'hip_r':
+        return { p1: joints.hip_r, p2: joints.knee_r };
+      case 'knee_r':
+        return { p1: joints.knee_r, p2: joints.ankle_r };
+      case 'ankle_r': {
+        const p2 = joints.foot_r || { x: joints.ankle_r.x - 4, y: joints.ankle_r.y + 36 };
+        return { p1: joints.ankle_r, p2 };
+      }
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Renders the articulated character model.
+   * If a bone has an attached part (or is currently being hovered with a dragged part),
+   * the attached part is rendered in place of the base artwork.
+   * Otherwise, if base sourceImage exists, renders the clipped limb segment.
+   */
+  private drawCharacterModel(
+    pj: Record<AnatomicalJointId, { x: number; y: number }>,
+    rj: Record<AnatomicalJointId, { x: number; y: number }>
+  ): void {
+    const img = this.sourceImage;
+
+    const getPart = (boneId: AnatomicalJointId): BonePartAttachment | null => {
+      if (this.dragHoverBoneId === boneId && this.dragHoverPart) {
+        return {
+          boneId,
+          image: this.dragHoverPart.image,
+          imageUrl: this.dragHoverPart.imageUrl,
+          fileName: this.dragHoverPart.name,
+          scale: 1.0,
+          offsetX: 0,
+          offsetY: 0,
+          pivotX: this.dragHoverPart.pivotX,
+          pivotY: this.dragHoverPart.pivotY
+        };
+      }
+      return this.parts[boneId] || null;
+    };
+
+    this.ctx.save();
+    for (const boneId of this.boneDrawOrder) {
+      this.drawBoneSegment(boneId, pj, rj, img, getPart);
+    }
+    this.ctx.restore();
+  }
+
+  private drawBoneSegment(
+    boneId: AnatomicalJointId,
+    pj: Record<AnatomicalJointId, { x: number; y: number }>,
+    rj: Record<AnatomicalJointId, { x: number; y: number }>,
+    img: HTMLImageElement | null,
+    getPart: (bId: AnatomicalJointId) => BonePartAttachment | null
+  ): void {
+    const part = getPart(boneId);
+    if (part) {
+      const seg = this.getBoneSegmentJoints(boneId, pj);
+      const rSeg = this.getBoneSegmentJoints(boneId, rj);
+      if (seg && rSeg) {
+        this.drawAttachedPart(part, seg.p1, seg.p2, rSeg.p1);
+      }
+      return;
+    }
+
+    if (!img) return;
+
+    switch (boneId) {
+      case 'shoulder_r':
+        if (rj.shoulder_r && rj.elbow_r && pj.shoulder_r && pj.elbow_r) {
+          this.drawLimbSegment(img, rj.shoulder_r, rj.elbow_r, pj.shoulder_r, pj.elbow_r, this.getEnvelopeRadius('shoulder_r'));
+        }
+        break;
+      case 'elbow_r':
+        if (rj.elbow_r && rj.wrist_r && pj.elbow_r && pj.wrist_r) {
+          this.drawLimbSegment(img, rj.elbow_r, rj.wrist_r, pj.elbow_r, pj.wrist_r, this.getEnvelopeRadius('elbow_r'));
+        }
+        break;
+      case 'wrist_r': {
+        const rSeg = this.getBoneSegmentJoints('wrist_r', rj);
+        const pSeg = this.getBoneSegmentJoints('wrist_r', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_r'));
+        }
+        break;
+      }
+      case 'hip_r':
+        if (rj.hip_r && rj.knee_r && pj.hip_r && pj.knee_r) {
+          this.drawLimbSegment(img, rj.hip_r, rj.knee_r, pj.hip_r, pj.knee_r, this.getEnvelopeRadius('hip_r'));
+        }
+        break;
+      case 'knee_r':
+        if (rj.knee_r && rj.ankle_r && pj.knee_r && pj.ankle_r) {
+          this.drawLimbSegment(img, rj.knee_r, rj.ankle_r, pj.knee_r, pj.ankle_r, this.getEnvelopeRadius('knee_r'));
+        }
+        break;
+      case 'ankle_r': {
+        const rSeg = this.getBoneSegmentJoints('ankle_r', rj);
+        const pSeg = this.getBoneSegmentJoints('ankle_r', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_r'));
+        }
+        break;
+      }
+      case 'chest': {
+        if (rj.hip_l && rj.hip_r && pj.hip_l && pj.hip_r) {
+          const restHipMid = { x: (rj.hip_l.x + rj.hip_r.x) / 2, y: (rj.hip_l.y + rj.hip_r.y) / 2 };
+          const posedHipMid = { x: (pj.hip_l.x + pj.hip_r.x) / 2, y: (pj.hip_l.y + pj.hip_r.y) / 2 };
+          const chestPosed = pj.chest || pj.neck;
+          const chestRest = rj.chest || rj.neck;
+          if (chestRest && chestPosed) {
+            this.drawLimbSegment(img, restHipMid, chestRest, posedHipMid, chestPosed, this.getEnvelopeRadius('chest'));
+          }
+        }
+        break;
+      }
+      case 'neck': {
+        const seg = this.getBoneSegmentJoints('neck', pj);
+        const rSeg = this.getBoneSegmentJoints('neck', rj);
+        if (seg && rSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, seg.p1, seg.p2, this.getEnvelopeRadius('neck'));
+        }
+        break;
+      }
+      case 'hip_l':
+        if (rj.hip_l && rj.knee_l && pj.hip_l && pj.knee_l) {
+          this.drawLimbSegment(img, rj.hip_l, rj.knee_l, pj.hip_l, pj.knee_l, this.getEnvelopeRadius('hip_l'));
+        }
+        break;
+      case 'knee_l':
+        if (rj.knee_l && rj.ankle_l && pj.knee_l && pj.ankle_l) {
+          this.drawLimbSegment(img, rj.knee_l, rj.ankle_l, pj.knee_l, pj.ankle_l, this.getEnvelopeRadius('knee_l'));
+        }
+        break;
+      case 'ankle_l': {
+        const rSeg = this.getBoneSegmentJoints('ankle_l', rj);
+        const pSeg = this.getBoneSegmentJoints('ankle_l', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('ankle_l'));
+        }
+        break;
+      }
+      case 'head':
+        if (rj.neck && rj.head && pj.neck && pj.head) {
+          this.drawLimbSegment(img, rj.neck, rj.head, pj.neck, pj.head, this.getEnvelopeRadius('head'));
+        }
+        break;
+      case 'shoulder_l':
+        if (rj.shoulder_l && rj.elbow_l && pj.shoulder_l && pj.elbow_l) {
+          this.drawLimbSegment(img, rj.shoulder_l, rj.elbow_l, pj.shoulder_l, pj.elbow_l, this.getEnvelopeRadius('shoulder_l'));
+        }
+        break;
+      case 'elbow_l':
+        if (rj.elbow_l && rj.wrist_l && pj.elbow_l && pj.wrist_l) {
+          this.drawLimbSegment(img, rj.elbow_l, rj.wrist_l, pj.elbow_l, pj.wrist_l, this.getEnvelopeRadius('elbow_l'));
+        }
+        break;
+      case 'wrist_l': {
+        const rSeg = this.getBoneSegmentJoints('wrist_l', rj);
+        const pSeg = this.getBoneSegmentJoints('wrist_l', pj);
+        if (rSeg && pSeg) {
+          this.drawLimbSegment(img, rSeg.p1, rSeg.p2, pSeg.p1, pSeg.p2, this.getEnvelopeRadius('wrist_l'));
+        }
+        break;
+      }
+    }
+  }
+
+  public getPartTransformInfo(
+    boneId: AnatomicalJointId,
+    joints?: Record<AnatomicalJointId, { x: number; y: number }>
+  ) {
+    const part = this.parts[boneId];
+    if (!part || !part.image || !part.image.width || !part.image.height) return null;
+
+    const j = joints || (this.toolMode === 'preview' ? this.previewJoints : this.restJoints);
+    const seg = this.getBoneSegmentJoints(boneId, j);
+    if (!seg) return null;
+
+    const pointA = seg.p1;
+    const pointB = seg.p2;
+
+    const bh = this.imageBounds.height;
+    const srcNatH = this.sourceImage?.naturalHeight || 740;
+    const charScale = bh / srcNatH;
+
+    const scale = (part.scale ?? 1.0) * charScale;
+    const targetW = part.image.width * scale;
+    const targetH = part.image.height * scale;
+
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === boneId);
+    const isSpine = boneDef?.category === 'spine';
+
+    const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
+    const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (boneId === 'head' ? 0.78 : 0.5) : 0.15);
+
+    const posedAngle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
+    const baseAngle = isSpine ? (posedAngle + Math.PI / 2) : (posedAngle - Math.PI / 2);
+    const rotAngle = baseAngle + (part.rotation || 0);
+
+    const offX = part.offsetX ?? 0;
+    const offY = part.offsetY ?? 0;
+
+    const pivotWorldX = pointA.x + offX;
+    const pivotWorldY = pointA.y + offY;
+
+    const imgLocalX = -targetW * anchorX;
+    const imgLocalY = -targetH * anchorY;
+
+    return {
+      part,
+      boneId,
+      pointA,
+      pointB,
+      isSpine,
+      targetW,
+      targetH,
+      charScale,
+      anchorX,
+      anchorY,
+      baseAngle,
+      rotAngle,
+      offX,
+      offY,
+      pivotWorldX,
+      pivotWorldY,
+      imgLocalX,
+      imgLocalY,
+      flipX: !!part.flipX,
+      flipY: !!part.flipY
+    };
+  }
+
+  public hitTestPartGizmo(
+    boneId: AnatomicalJointId,
+    wx: number,
+    wy: number
+  ): 'rotate' | 'pivot' | 'body' | null {
+    const info = this.getPartTransformInfo(boneId);
+    if (!info) return null;
+
+    const dx = wx - info.pivotWorldX;
+    const dy = wy - info.pivotWorldY;
+    const cos = Math.cos(-info.rotAngle);
+    const sin = Math.sin(-info.rotAngle);
+    let lx = dx * cos - dy * sin;
+    let ly = dx * sin + dy * cos;
+
+    // 1. Pivot handle (at 0,0)
+    if (Math.hypot(lx, ly) <= 12 / this.zoom) {
+      return 'pivot';
+    }
+
+    // 2. Rotate handle knob at (0, -rotRadius) or along the rotation guide circle
+    const rotRadius = Math.max(48 / this.zoom, Math.hypot(info.targetW, info.targetH) * 0.45);
+    const distToKnob = Math.hypot(lx - 0, ly - (-rotRadius));
+    if (distToKnob <= 18 / this.zoom) {
+      return 'rotate';
+    }
+
+    const distFromPivot = Math.hypot(lx, ly);
+    if (Math.abs(distFromPivot - rotRadius) <= 7 / this.zoom) {
+      return 'rotate';
+    }
+
+    if (info.flipX) lx = -lx;
+    if (info.flipY) ly = -ly;
+
+    const imgX = info.imgLocalX;
+    const imgY = info.imgLocalY;
+    const targetW = info.targetW;
+    const targetH = info.targetH;
+
+    // 3. Inside graphic body (for moving/translating)
+    if (lx >= imgX && lx <= imgX + targetW && ly >= imgY && ly <= imgY + targetH) {
+      return 'body';
+    }
+
+    return null;
+  }
+
+  public getPartAtPoint(wx: number, wy: number): AnatomicalJointId | null {
+    // Check in reverse draw order so top-most rendered parts are clicked first
+    for (let i = this.boneDrawOrder.length - 1; i >= 0; i--) {
+      const bId = this.boneDrawOrder[i];
+      if (this.parts[bId]) {
+        const hit = this.hitTestPartGizmo(bId, wx, wy);
+        if (hit) return bId;
+      }
+    }
+    return null;
+  }
+
+  private drawAttachedPart(
+    part: BonePartAttachment,
+    pointA: { x: number; y: number },
+    pointB: { x: number; y: number },
+    _restJoint?: { x: number; y: number }
+  ): void {
+    const img = part.image;
+    if (!img.width || !img.height) return;
+
+    const bh = this.imageBounds.height;
+    const posedAngle = Math.atan2(pointB.y - pointA.y, pointB.x - pointA.x);
+
+    const boneDef = ANATOMICAL_BONES.find(b => b.id === part.boneId);
+    const isSpine = boneDef?.category === 'spine';
+
+    const srcNatH = this.sourceImage?.naturalHeight || 740;
+    const charScale = bh / srcNatH;
+
+    const scale = (part.scale ?? 1.0) * charScale;
+    const targetW = img.width * scale;
+    const targetH = img.height * scale;
+
+    const anchorX = part.pivotX !== undefined ? part.pivotX : 0.5;
+    const anchorY = part.pivotY !== undefined ? part.pivotY : (isSpine ? (part.boneId === 'head' ? 0.78 : 0.5) : 0.15);
+
+    const baseAngle = isSpine ? (posedAngle + Math.PI / 2) : (posedAngle - Math.PI / 2);
+    const rotAngle = baseAngle + (part.rotation || 0);
+
+    this.ctx.save();
+    this.ctx.translate(pointA.x + (part.offsetX ?? 0), pointA.y + (part.offsetY ?? 0));
+    this.ctx.rotate(rotAngle);
+
+    if (part.flipX || part.flipY) {
+      this.ctx.scale(part.flipX ? -1 : 1, part.flipY ? -1 : 1);
+    }
+
+    this.ctx.drawImage(img, -targetW * anchorX, -targetH * anchorY, targetW, targetH);
+    this.ctx.restore();
+  }
+
+  private drawPartTransformGizmo(boneId: AnatomicalJointId): void {
+    const info = this.getPartTransformInfo(boneId);
+    if (!info) return;
+
+    const { targetW, targetH, rotAngle, offX, offY, pointA } = info;
+
+    this.ctx.save();
+    this.ctx.translate(pointA.x + offX, pointA.y + offY);
+    this.ctx.rotate(rotAngle);
+
+    // Dynamic rotation handle distance based on graphic size
+    const rotRadius = Math.max(48 / this.zoom, Math.hypot(targetW, targetH) * 0.45);
+    const isRotHover = this.hoveredGizmoHandle === 'rotate' || (this.isTransformingPart && this.transformAction === 'rotate');
+
+    // 1. Sleek circular rotation guide ring around the pivot
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, rotRadius, 0, Math.PI * 2);
+    this.ctx.strokeStyle = isRotHover ? 'rgba(56, 189, 248, 0.75)' : 'rgba(56, 189, 248, 0.3)';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+
+    // 2. Stem connecting pivot to the rotation knob
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, 0);
+    this.ctx.lineTo(0, -rotRadius);
+    this.ctx.strokeStyle = '#38bdf8';
+    this.ctx.lineWidth = 2 / this.zoom;
+    this.ctx.stroke();
+
+    // 3. Prominent Rotation Handle Knob
+    const knobR = (isRotHover ? 11 : 9.5) / this.zoom;
+
+    // Glowing halo on hover/drag
+    if (isRotHover) {
+      this.ctx.beginPath();
+      this.ctx.arc(0, -rotRadius, knobR + 4 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+      this.ctx.fill();
+    }
+
+    // Handle knob circle
+    this.ctx.beginPath();
+    this.ctx.arc(0, -rotRadius, knobR, 0, Math.PI * 2);
+    this.ctx.fillStyle = isRotHover ? '#38bdf8' : '#0284c7';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 2 / this.zoom;
+    this.ctx.stroke();
+
+    // Curved rotate symbol (↻) inside the knob
+    this.ctx.beginPath();
+    const iconR = 4.5 / this.zoom;
+    this.ctx.arc(0, -rotRadius, iconR, -Math.PI * 0.8, Math.PI * 0.6);
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.stroke();
+
+    // Arrow head
+    const arrowX = Math.cos(Math.PI * 0.6) * iconR;
+    const arrowY = -rotRadius + Math.sin(Math.PI * 0.6) * iconR;
+    this.ctx.beginPath();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.arc(arrowX, arrowY, 1.8 / this.zoom, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // 4. Pivot Crosshair Anchor Marker (always at local 0,0)
+    const isPivotHover = this.hoveredGizmoHandle === 'pivot';
+    const pivotR = (isPivotHover ? 7.5 : 6) / this.zoom;
+
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, pivotR, 0, Math.PI * 2);
+    this.ctx.fillStyle = isPivotHover ? 'rgba(34, 197, 94, 0.45)' : 'rgba(34, 197, 94, 0.2)';
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#22c55e';
+    this.ctx.lineWidth = 1.5 / this.zoom;
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, 2 / this.zoom, 0, Math.PI * 2);
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fill();
+
+    const tickLen = 9 / this.zoom;
+    this.ctx.beginPath();
+    this.ctx.moveTo(-tickLen, 0);
+    this.ctx.lineTo(tickLen, 0);
+    this.ctx.moveTo(0, -tickLen);
+    this.ctx.lineTo(0, tickLen);
+    this.ctx.strokeStyle = '#22c55e';
+    this.ctx.lineWidth = 1.2 / this.zoom;
+    this.ctx.stroke();
+
+    this.ctx.restore();
+  }
+
+  private drawLimbSegment(
+    img: HTMLImageElement,
+    restA: { x: number; y: number },
+    restB: { x: number; y: number },
+    posedA: { x: number; y: number },
+    posedB: { x: number; y: number },
+    radius: number
+  ): void {
+    const bw = this.imageBounds.width;
+    const bh = this.imageBounds.height;
+
+    const restAngle = Math.atan2(restB.y - restA.y, restB.x - restA.x);
+    const posedAngle = Math.atan2(posedB.y - posedA.y, posedB.x - posedA.x);
+    const rotDelta = posedAngle - restAngle;
+
+    this.ctx.save();
+    this.ctx.translate(posedA.x, posedA.y);
+    this.ctx.rotate(rotDelta);
+    this.ctx.translate(-restA.x, -restA.y);
+
+    // Accurate generous capsule clipping enclosing the anatomical limb
+    const effectiveRadius = Math.max(radius, 25);
+    pathCapsule(this.ctx, restA.x, restA.y, restB.x, restB.y, effectiveRadius);
+    this.ctx.clip();
+
+    this.ctx.drawImage(img, -bw / 2, -bh, bw, bh);
+    this.ctx.restore();
+  }
+
+  public getBoneAtPoint(wx: number, wy: number): AnatomicalJointId | null {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    let closestBone: AnatomicalJointId | null = null;
+    let minDistance = Infinity;
+
+    for (const bone of ANATOMICAL_BONES) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(bone.id);
+      const dist = this.distToSegment(wx, wy, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+      if (dist <= radius * 1.5 && dist < minDistance) {
+        minDistance = dist;
+        closestBone = bone.id;
+      }
+    }
+
+    return closestBone;
+  }
+
+  private distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    return Math.hypot(px - projX, py - projY);
+  }
+
+  private drawEnvelopes(): void {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+
+    for (const bone of ANATOMICAL_BONES) {
+      const seg = this.getBoneSegmentJoints(bone.id, joints);
+      if (!seg) continue;
+
+      const radius = this.getEnvelopeRadius(bone.id);
+      const isSelected = this.selectedJointId === bone.id;
+      const isDragHover = this.dragHoverBoneId === bone.id;
+
+      this.ctx.save();
+      pathCapsule(this.ctx, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y, radius);
+
+      if (isDragHover) {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.38)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#38bdf8';
+        this.ctx.lineWidth = 2.5 / this.zoom;
+        this.ctx.setLineDash([]);
+        this.ctx.stroke();
+
+        // Draw drop target text badge with clear Bone name
+        const midX = (seg.p1.x + seg.p2.x) / 2;
+        const midY = (seg.p1.y + seg.p2.y) / 2;
+        this.ctx.save();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `600 ${Math.max(9, 11 / this.zoom)}px Inter, sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        this.ctx.shadowBlur = 4;
+        this.ctx.fillText(`Drop on ${bone.name}`, midX, midY);
+        this.ctx.restore();
+      } else if (isSelected) {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#38bdf8';
+        this.ctx.lineWidth = 1.5 / this.zoom;
+        this.ctx.stroke();
+
+        // Display bone name when selected
+        const midX = (seg.p1.x + seg.p2.x) / 2;
+        const midY = (seg.p1.y + seg.p2.y) / 2;
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.font = `600 ${Math.max(8, 10 / this.zoom)}px Inter, sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        this.ctx.shadowBlur = 3;
+        this.ctx.fillText(bone.name, midX, midY);
+        this.ctx.restore();
+      } else {
+        this.ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.setLineDash([4 / this.zoom, 3 / this.zoom]);
+        this.ctx.stroke();
+      }
+
+      this.ctx.restore();
+    }
+  }
+
+  private drawBones(): void {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    const hipMid = {
+      x: (joints.hip_l.x + joints.hip_r.x) / 2,
+      y: (joints.hip_l.y + joints.hip_r.y) / 2
+    };
+
+    // Clean anatomical skeleton connections: each bone starts from a joint, has length and envelope
+    const bonePairs: [{ x: number; y: number }, { x: number; y: number }][] = [
+      // Spine & Head
+      [hipMid, joints.neck],
+      [joints.neck, joints.head],
+
+      // Pelvis branches
+      [hipMid, joints.hip_l],
+      [hipMid, joints.hip_r],
+
+      // Shoulders & Forearms
+      [joints.neck, joints.shoulder_l],
+      [joints.shoulder_l, joints.elbow_l],
+      [joints.elbow_l, joints.wrist_l],
+
+      [joints.neck, joints.shoulder_r],
+      [joints.shoulder_r, joints.elbow_r],
+      [joints.elbow_r, joints.wrist_r],
+
+      // Legs
+      [joints.hip_l, joints.knee_l],
+      [joints.knee_l, joints.ankle_l],
+
+      [joints.hip_r, joints.knee_r],
+      [joints.knee_r, joints.ankle_r]
+    ];
+
+    // Include hand bones (starting at wrist joint, projecting outward)
+    const wristLSeg = this.getBoneSegmentJoints('wrist_l', joints);
+    const wristRSeg = this.getBoneSegmentJoints('wrist_r', joints);
+    if (wristLSeg) bonePairs.push([wristLSeg.p1, wristLSeg.p2]);
+    if (wristRSeg) bonePairs.push([wristRSeg.p1, wristRSeg.p2]);
+
+    // Include foot bones (starting at ankle joint, projecting downward)
+    const ankleLSeg = this.getBoneSegmentJoints('ankle_l', joints);
+    const ankleRSeg = this.getBoneSegmentJoints('ankle_r', joints);
+    if (ankleLSeg) bonePairs.push([ankleLSeg.p1, ankleLSeg.p2]);
+    if (ankleRSeg) bonePairs.push([ankleRSeg.p1, ankleRSeg.p2]);
+
+    for (const [p, c] of bonePairs) {
+      const dx = c.x - p.x;
+      const dy = c.y - p.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 2) continue;
+
+      const angle = Math.atan2(dy, dx);
+
+      this.ctx.save();
+      this.ctx.translate(p.x, p.y);
+      this.ctx.rotate(angle);
+
+      // Stylized tapered bone link
+      const baseW = 3.6 / this.zoom;
+      const tipW = 1.6 / this.zoom;
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(0, -baseW);
+      this.ctx.lineTo(len, -tipW);
+      this.ctx.lineTo(len, tipW);
+      this.ctx.lineTo(0, baseW);
+      this.ctx.closePath();
+
+      const grad = this.ctx.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+      grad.addColorStop(1, 'rgba(2, 132, 199, 0.3)');
+      this.ctx.fillStyle = grad;
+      this.ctx.fill();
+
+      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.lineWidth = 1.2 / this.zoom;
+      this.ctx.stroke();
+
+      // Rounded base joint ring
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, baseW * 0.9, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.6)';
+      this.ctx.fill();
+
+      this.ctx.restore();
+    }
+  }
+
+  private drawJointPins(): void {
+    const joints = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+
+    for (const joint of ANATOMICAL_JOINTS) {
+      const pt = joints[joint.id];
+      if (!pt) continue;
+
+      const isSelected = this.selectedJointId === joint.id;
+      const isHovered = this.hoveredJointId === joint.id;
+
+      const pinRadius = (isSelected ? 7.5 : isHovered ? 6.5 : 5.5) / this.zoom;
+
+      this.ctx.save();
+      this.ctx.translate(pt.x, pt.y);
+
+      // 1. Soft drop shadow underneath pin
+      this.ctx.beginPath();
+      this.ctx.arc(0, 1.2 / this.zoom, pinRadius + 1.5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      this.ctx.fill();
+
+      // 2. Outer Halo Selection / Hover Ring
+      if (isSelected || isHovered) {
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, pinRadius + 4 / this.zoom, 0, Math.PI * 2);
+        this.ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.7)';
+        this.ctx.lineWidth = 1.8 / this.zoom;
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, pinRadius + 2.5 / this.zoom, 0, Math.PI * 2);
+        this.ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.12)';
+        this.ctx.fill();
+      }
+
+      // 3. Dark Outer Rim
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pinRadius + 0.5 / this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#0f172a';
+      this.ctx.fill();
+
+      // 4. Glossy 3D Spherical Radial Gradient
+      const grad = this.ctx.createRadialGradient(
+        -pinRadius * 0.35, -pinRadius * 0.35, pinRadius * 0.1,
+        0, 0, pinRadius
+      );
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.35, joint.color);
+      grad.addColorStop(1, this.shadeColor(joint.color, -0.3));
+
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pinRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = grad;
+      this.ctx.fill();
+
+      // 5. Delicate Center Core Dot
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pinRadius * 0.35, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.shadowColor = joint.color;
+      this.ctx.shadowBlur = 4;
+      this.ctx.fill();
+
+      this.ctx.restore();
+    }
+  }
+
+  private shadeColor(color: string, percent: number): string {
+    let num = parseInt(color.replace('#', ''), 16);
+    if (isNaN(num)) return color;
+    let amt = Math.round(2.55 * percent * 100);
+    let R = (num >> 16) + amt;
+    let G = ((num >> 8) & 0x00FF) + amt;
+    let B = (num & 0x0000FF) + amt;
+    return '#' + (
+      0x1000000 +
+      (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
+      (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
+      (B < 255 ? (B < 1 ? 0 : B) : 255)
+    ).toString(16).slice(1);
+  }
+
+  private getPartImageById(partId?: string): HTMLImageElement | null {
+    if (!partId) return null;
+    const item = this.partsLibrary.find(p => p.id === partId);
+    if (item?.image && item.image.complete && item.image.naturalWidth > 0) {
+      return item.image;
+    }
+    return null;
+  }
+
+  private drawFacialFeatures(): void {
+    if (!this.isFacialViewEnabled()) {
+      return;
+    }
+
+    const pj = this.toolMode === 'preview' ? this.previewJoints : this.restJoints;
+    if (!pj.head || !pj.neck) return;
+
+    const dx = pj.head.x - pj.neck.x;
+    const dy = pj.head.y - pj.neck.y;
+    const headDist = Math.hypot(dx, dy) || 50;
+    const headAngle = Math.atan2(dy, dx) + Math.PI / 2;
+
+    const headPartInfo = this.getPartTransformInfo('head', pj);
+    const rotAngle = headPartInfo ? headPartInfo.rotAngle : headAngle;
+    const pivotX = headPartInfo ? headPartInfo.pivotWorldX : pj.neck.x;
+    const pivotY = headPartInfo ? headPartInfo.pivotWorldY : pj.neck.y;
+
+    const pose = this.currentFacialPose || {};
+    const cfg = this.facialRig || {};
+
+    const hasPoseData = Object.keys(pose).length > 0;
+    const hasConfig = !!(
+      cfg.eyebrows || cfg.eyes || cfg.mouth || cfg.offsetX || cfg.offsetY ||
+      (cfg.eyeInstances && cfg.eyeInstances.length > 0) ||
+      (cfg.eyebrowInstances && cfg.eyebrowInstances.length > 0) ||
+      (cfg.mouthInstances && cfg.mouthInstances.length > 0)
+    );
+    if (!hasPoseData && !hasConfig && this.toolMode !== 'preview') {
+      return;
+    }
+
+    let faceCenterLocalX = 0;
+    let faceCenterLocalY = -(headDist * 0.55);
+    let baseScale = 1.0;
+
+    if (headPartInfo) {
+      faceCenterLocalX = headPartInfo.targetW * (0.5 - headPartInfo.anchorX);
+      faceCenterLocalY = -headPartInfo.targetH * (headPartInfo.anchorY - 0.40);
+      baseScale = (headPartInfo.part.scale ?? 1.0) * headPartInfo.charScale;
+    }
+
+    const userOffX = cfg.offsetX ?? 0;
+    const userOffY = cfg.offsetY ?? 0;
+    const userScale = cfg.scale ?? 1.0;
+    const totalScale = baseScale * userScale;
+
+    this.ctx.save();
+    this.ctx.translate(pivotX, pivotY);
+    this.ctx.rotate(rotAngle);
+
+    if (headPartInfo && (headPartInfo.flipX || headPartInfo.flipY)) {
+      this.ctx.scale(headPartInfo.flipX ? -1 : 1, headPartInfo.flipY ? -1 : 1);
+    }
+
+    // Move directly to the center of the face:
+    this.ctx.translate(faceCenterLocalX + userOffX, faceCenterLocalY + userOffY);
+    this.ctx.scale(totalScale, totalScale);
+
+    // Profile & 3/4 perspective handling
+    const isProfile = this.currentView === 'left' || this.currentView === 'right' || this.currentView === 'side';
+    const isProfileLeft = this.currentView === 'left' || this.currentView === 'side';
+    const isProfileRight = this.currentView === 'right';
+
+    // 1. Eyebrows
+    this.drawEyebrows(pose, cfg, isProfile, isProfileLeft, isProfileRight);
+
+    // 2. Eyes
+    this.drawEyes(pose, cfg, isProfile, isProfileLeft, isProfileRight);
+
+    // 3. Mouth
+    this.drawMouth(pose, cfg, isProfile, isProfileLeft, isProfileRight);
+
+    // If hovering or dragging face placement gizmo, draw indicator
+    if (this.isHoveringFace || this.isDraggingFace) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, 24, 0, Math.PI * 2);
+      this.ctx.strokeStyle = this.isDraggingFace ? '#38bdf8' : 'rgba(56, 189, 248, 0.6)';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([4, 3]);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(-6, 0);
+      this.ctx.lineTo(6, 0);
+      this.ctx.moveTo(0, -6);
+      this.ctx.lineTo(0, 6);
+      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([]);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    this.ctx.restore();
+  }
+
+  private drawEyebrows(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
+    if (cfg.eyebrowInstances && cfg.eyebrowInstances.length > 0) {
+      for (const inst of cfg.eyebrowInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        this.drawEyebrowInstance(inst, pose);
+      }
+      return;
+    }
+
+    const browCfg = cfg.eyebrows;
+    const furrow = (pose.eyebrows_furrow ?? 0) * 0.4;
+    const strokeColor = browCfg?.color || '#2b1b17';
+
+    // Left Brow (draw if front/3-quarter or profile left)
+    if (!isProfile || isProfileLeft) {
+      const hL = -(pose.eyebrows_height_l ?? 0);
+      const angL = ((pose.eyebrows_angle_l ?? 0) * Math.PI) / 180;
+      const xL = (isProfile ? -4 : -13) + furrow;
+      const yL = -14 + hL;
+
+      this.ctx.save();
+      this.ctx.translate(xL, yL);
+      this.ctx.rotate(angL);
+
+      const leftImg = this.getPartImageById(browCfg?.leftBrowPartId);
+      if (leftImg) {
+        const bw = 18;
+        const bh = (leftImg.height / leftImg.width) * bw;
+        this.ctx.drawImage(leftImg, -bw / 2, -bh / 2, bw, bh);
+      } else {
+        this.ctx.beginPath();
+        this.ctx.lineWidth = 2.4;
+        this.ctx.lineCap = 'round';
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.moveTo(-8, 1);
+        this.ctx.quadraticCurveTo(0, -3, 8, 0);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    // Right Brow (draw if front/3-quarter or profile right)
+    if (!isProfile || isProfileRight) {
+      const hR = -(pose.eyebrows_height_r ?? 0);
+      const angR = ((pose.eyebrows_angle_r ?? 0) * Math.PI) / 180;
+      const xR = (isProfile ? 4 : 13) - furrow;
+      const yR = -14 + hR;
+
+      this.ctx.save();
+      this.ctx.translate(xR, yR);
+      this.ctx.rotate(angR);
+
+      const rightImg = this.getPartImageById(browCfg?.rightBrowPartId);
+      if (rightImg) {
+        const bw = 18;
+        const bh = (rightImg.height / rightImg.width) * bw;
+        this.ctx.drawImage(rightImg, -bw / 2, -bh / 2, bw, bh);
+      } else {
+        this.ctx.beginPath();
+        this.ctx.lineWidth = 2.4;
+        this.ctx.lineCap = 'round';
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.moveTo(-8, 0);
+        this.ctx.quadraticCurveTo(0, -3, 8, 1);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+  }
+
+  private drawEyebrowInstance(inst: EyebrowInstanceConfig, pose: FacialPoseData): void {
+    const heightChannel = inst.channel === 'eyebrows_height_r' ? pose.eyebrows_height_r : pose.eyebrows_height_l;
+    const h = -(heightChannel ?? 0);
+    const furrow = (pose.eyebrows_furrow ?? 0) * 0.4;
+    const angleDelta = inst.channel === 'eyebrows_height_r' ? (pose.eyebrows_angle_r ?? 0) : (pose.eyebrows_angle_l ?? 0);
+    const angleDeg = (inst.angle ?? 0) + angleDelta;
+    const rotRad = (angleDeg * Math.PI) / 180;
+    const strokeColor = inst.color || '#2b1b17';
+
+    this.ctx.save();
+    const furrowOffset = inst.offsetX < 0 ? furrow : (inst.offsetX > 0 ? -furrow : 0);
+    this.ctx.translate(inst.offsetX + furrowOffset, inst.offsetY + h);
+    if (rotRad !== 0) {
+      this.ctx.rotate(rotRad);
+    }
+    if (inst.scale !== undefined && inst.scale !== 1.0) {
+      this.ctx.scale(inst.scale, inst.scale);
+    }
+    if (inst.flipX) {
+      this.ctx.scale(-1, 1);
+    }
+
+    const browImg = this.getPartImageById(inst.partId);
+    if (browImg) {
+      const bw = 18;
+      const bh = (browImg.height / browImg.width) * bw;
+      this.ctx.drawImage(browImg, -bw / 2, -bh / 2, bw, bh);
+    } else {
+      this.ctx.beginPath();
+      this.ctx.lineWidth = inst.thickness || 2.4;
+      this.ctx.lineCap = 'round';
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.moveTo(-8, 1);
+      this.ctx.quadraticCurveTo(0, -3, 8, 0);
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
+  }
+
+  private drawEyes(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
+    if (cfg.eyeInstances && cfg.eyeInstances.length > 0) {
+      const squint = pose.eyelids_squint ?? 0;
+      for (const inst of cfg.eyeInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        let blink = 0;
+        if (inst.blinkChannel === 'blinkR') {
+          blink = pose.eyelids_blink_r ?? 0;
+        } else if (inst.blinkChannel === 'blinkL') {
+          blink = pose.eyelids_blink_l ?? 0;
+        } else if (inst.blinkChannel === 'squint') {
+          blink = squint;
+        } else {
+          blink = ((pose.eyelids_blink_l ?? 0) + (pose.eyelids_blink_r ?? 0)) / 2;
+        }
+        blink = Math.max(0, Math.min(1, blink + squint * 0.35));
+
+        this.ctx.save();
+        this.ctx.translate(inst.offsetX, inst.offsetY);
+        if (inst.scale !== undefined && inst.scale !== 1.0) {
+          this.ctx.scale(inst.scale, inst.scale);
+        }
+        if (inst.flipX) {
+          this.ctx.scale(-1, 1);
+        }
+        if (inst.rotation) {
+          this.ctx.rotate((inst.rotation * Math.PI) / 180);
+        }
+        this.drawEyeInstanceSingle(inst, blink);
+        this.ctx.restore();
+      }
+      return;
+    }
+
+    const eyeCfg = cfg.eyes || { mode: 'procedural' };
+    const squint = pose.eyelids_squint ?? 0;
+    const blinkL = Math.max(0, Math.min(1, (pose.eyelids_blink_l ?? 0) + squint * 0.35));
+    const blinkR = Math.max(0, Math.min(1, (pose.eyelids_blink_r ?? 0) + squint * 0.35));
+
+    // Left Eye at x = -13, y = -3 (or x = -4 on profile)
+    if (!isProfile || isProfileLeft) {
+      this.ctx.save();
+      this.ctx.translate(isProfile ? -4 : -13, -3);
+      this.drawEyeSingle(true, blinkL, eyeCfg);
+      this.ctx.restore();
+    }
+
+    // Right Eye at x = 13, y = -3 (or x = 4 on profile)
+    if (!isProfile || isProfileRight) {
+      this.ctx.save();
+      this.ctx.translate(isProfile ? 4 : 13, -3);
+      this.drawEyeSingle(false, blinkR, eyeCfg);
+      this.ctx.restore();
+    }
+  }
+
+  private drawEyeInstanceSingle(inst: EyeInstanceConfig, blink: number): void {
+    const mode = inst.mode || 'procedural';
+
+    if (mode === 'sprite_swap') {
+      let state = 'open';
+      if (blink >= 0.75) state = 'closed';
+      else if (blink >= 0.35) state = 'half';
+
+      const spritePartId =
+        (state === 'open' ? inst.eyeOpenSlot : state === 'half' ? inst.eyeHalfSlot : inst.eyeClosedSlot) ||
+        inst.sprites?.[state] ||
+        inst.partId;
+      const img = this.getPartImageById(spritePartId);
+      if (img) {
+        const ew = 18;
+        const eh = (img.height / img.width) * ew;
+        this.ctx.drawImage(img, -ew / 2, -eh / 2, ew, eh);
+        return;
+      }
+    } else if (mode === 'sclera_window') {
+      const scleraImg = this.getPartImageById(inst.scleraPartId);
+      const pupilImg = this.getPartImageById(inst.pupilPartId);
+      const eyelidImg = this.getPartImageById(inst.eyelidUpperPartId);
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (scleraImg) {
+        this.ctx.drawImage(scleraImg, -8, -6, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#f8f8f8';
+        this.ctx.fill();
+      }
+
+      // Pupil
+      if (pupilImg) {
+        this.ctx.drawImage(pupilImg, -4, -4, 8, 8);
+      } else {
+        this.ctx.fillStyle = '#1c2833';
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // Eyelid overlay curtain sliding down
+      const curtainH = 12 * blink;
+      if (eyelidImg) {
+        this.ctx.drawImage(eyelidImg, -8, -6 + curtainH - 12, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#e5bba7';
+        this.ctx.fillRect(-8, -6, 16, curtainH);
+      }
+
+      this.ctx.restore();
+
+      // Contour lash line
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.6;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      if (blink >= 0.8) {
+        this.ctx.moveTo(-7, 1);
+        this.ctx.quadraticCurveTo(0, 3, 7, 1);
+      } else {
+        this.ctx.moveTo(-7, 0);
+        this.ctx.quadraticCurveTo(0, -4, 7, 0);
+      }
+      this.ctx.stroke();
+      return;
+    }
+
+    // Default / Procedural Fallback
+    if (blink >= 0.85) {
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.8;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      this.ctx.moveTo(-6, 0);
+      this.ctx.quadraticCurveTo(0, 3, 6, 0);
+      this.ctx.stroke();
+    } else {
+      const openH = Math.max(0.8, 5 * (1 - blink * 0.9));
+      // Sclera
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 6.5, openH, 0, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#f8f8f8';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#3d2b27';
+      this.ctx.lineWidth = 1.2;
+      this.ctx.stroke();
+
+      // Pupil & Iris
+      const pupilR = Math.min(openH * 0.9, 3);
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pupilR, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#223843';
+      this.ctx.fill();
+
+      // Catchlight
+      if (openH > 2.5) {
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+      }
+    }
+  }
+
+  private drawEyeSingle(isLeft: boolean, blink: number, eyeCfg: NonNullable<FacialRigConfig['eyes']>): void {
+    const mode = eyeCfg.mode || 'procedural';
+
+    if (mode === 'sprite_swap') {
+      let state = 'open';
+      if (blink >= 0.75) state = 'closed';
+      else if (blink >= 0.35) state = 'half';
+
+      const spritePartId = eyeCfg.sprites?.[state] || (isLeft ? eyeCfg.leftEyePartId : eyeCfg.rightEyePartId);
+      const img = this.getPartImageById(spritePartId);
+      if (img) {
+        const ew = 18;
+        const eh = (img.height / img.width) * ew;
+        this.ctx.drawImage(img, -ew / 2, -eh / 2, ew, eh);
+        return;
+      }
+    } else if (mode === 'sclera_window') {
+      const scleraImg = this.getPartImageById(eyeCfg.scleraPartId);
+      const pupilImg = this.getPartImageById(eyeCfg.pupilPartId);
+      const eyelidImg = this.getPartImageById(eyeCfg.eyelidUpperPartId);
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (scleraImg) {
+        this.ctx.drawImage(scleraImg, -8, -6, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#f8f8f8';
+        this.ctx.fill();
+      }
+
+      // Pupil
+      if (pupilImg) {
+        this.ctx.drawImage(pupilImg, -4, -4, 8, 8);
+      } else {
+        this.ctx.fillStyle = '#1c2833';
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // Eyelid overlay curtain sliding down
+      const curtainH = 12 * blink;
+      if (eyelidImg) {
+        this.ctx.drawImage(eyelidImg, -8, -6 + curtainH - 12, 16, 12);
+      } else {
+        this.ctx.fillStyle = '#e5bba7';
+        this.ctx.fillRect(-8, -6, 16, curtainH);
+      }
+
+      this.ctx.restore();
+
+      // Contour lash line
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.6;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      if (blink >= 0.8) {
+        this.ctx.moveTo(-7, 1);
+        this.ctx.quadraticCurveTo(0, 3, 7, 1);
+      } else {
+        this.ctx.moveTo(-7, 0);
+        this.ctx.quadraticCurveTo(0, -4, 7, 0);
+      }
+      this.ctx.stroke();
+      return;
+    }
+
+    // Default / Procedural Fallback
+    if (blink >= 0.85) {
+      this.ctx.beginPath();
+      this.ctx.lineWidth = 1.8;
+      this.ctx.strokeStyle = '#2b1b17';
+      this.ctx.lineCap = 'round';
+      this.ctx.moveTo(-6, 0);
+      this.ctx.quadraticCurveTo(0, 3, 6, 0);
+      this.ctx.stroke();
+    } else {
+      const openH = Math.max(0.8, 5 * (1 - blink * 0.9));
+      // Sclera
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 6.5, openH, 0, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#f8f8f8';
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#3d2b27';
+      this.ctx.lineWidth = 1.2;
+      this.ctx.stroke();
+
+      // Pupil & Iris
+      const pupilR = Math.min(openH * 0.9, 3);
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, pupilR, 0, Math.PI * 2);
+      this.ctx.fillStyle = '#223843';
+      this.ctx.fill();
+
+      // Catchlight
+      if (openH > 2.5) {
+        this.ctx.beginPath();
+        this.ctx.arc(-1, -1, 1, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+      }
+    }
+  }
+
+  private drawMouth(
+    pose: FacialPoseData,
+    cfg: FacialRigConfig,
+    isProfile = false,
+    isProfileLeft = false,
+    isProfileRight = false
+  ): void {
+    const jawDrop = (pose.lips_jaw_drop ?? 0) * 0.25;
+    const viseme = pose.viseme || 'rest';
+
+    if (cfg.mouthInstances && cfg.mouthInstances.length > 0) {
+      for (const inst of cfg.mouthInstances) {
+        if (inst.enabledViews && inst.enabledViews.length > 0 && !inst.enabledViews.includes(this.currentView)) {
+          continue;
+        }
+        this.ctx.save();
+        this.ctx.translate(inst.offsetX, inst.offsetY + jawDrop);
+        if (inst.scale !== undefined && inst.scale !== 1.0) {
+          this.ctx.scale(inst.scale, inst.scale);
+        }
+        if (inst.flipX) {
+          this.ctx.scale(-1, 1);
+        }
+        if (inst.rotation) {
+          this.ctx.rotate((inst.rotation * Math.PI) / 180);
+        }
+        this.drawMouthInstanceSingle(inst, pose, viseme);
+        this.ctx.restore();
+      }
+      return;
+    }
+
+    const mouthCfg = cfg.mouth || { mode: 'procedural' };
+
+    this.ctx.save();
+    const mouthX = isProfile ? (isProfileLeft ? -4 : 4) : 0;
+    this.ctx.translate(mouthX, 15 + jawDrop);
+    if (isProfile) {
+      this.ctx.scale(0.75, 1.0);
+    }
+
+    const mode = mouthCfg.mode || 'procedural';
+
+    if (mode === 'viseme_library') {
+      const vPartId = mouthCfg.visemePartIds?.[viseme];
+      const img = this.getPartImageById(vPartId);
+      if (img) {
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        this.ctx.restore();
+        return;
+      }
+    } else if (mode === 'mesh_warp') {
+      const img = this.getPartImageById(mouthCfg.baseMouthPartId);
+      if (img) {
+        const open = pose.lips_open ?? 0;
+        const wide = pose.lips_wide ?? 0;
+        const pucker = pose.lips_pucker ?? 0;
+        const smile = pose.lips_smile ?? 0;
+
+        const sx = 1 + wide * 0.3 - pucker * 0.35;
+        const sy = 1 + open * 0.5;
+        this.ctx.scale(sx, sy);
+        this.ctx.translate(0, -smile * 2.5);
+
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        this.ctx.restore();
+        return;
+      }
+    } else if (mode === 'cavity_sandwich') {
+      const cavityImg = this.getPartImageById(mouthCfg.cavityPartId);
+      const teethUpImg = this.getPartImageById(mouthCfg.teethUpperPartId);
+      const tongueImg = this.getPartImageById(mouthCfg.tonguePartId);
+      const upperLipImg = this.getPartImageById(mouthCfg.lipUpperPartId);
+      const lowerLipImg = this.getPartImageById(mouthCfg.lipLowerPartId);
+
+      const open = Math.max(0.1, pose.lips_open ?? 0);
+      const h = 10 * open;
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (cavityImg) {
+        this.ctx.drawImage(cavityImg, -12, -h, 24, h * 2);
+      } else {
+        this.ctx.fillStyle = '#2b090b';
+        this.ctx.fill();
+      }
+
+      if (teethUpImg) {
+        this.ctx.drawImage(teethUpImg, -8, -h, 16, h * 0.6);
+      } else {
+        this.ctx.fillStyle = '#faf8f5';
+        this.ctx.fillRect(-6, -h, 12, h * 0.4);
+      }
+
+      if (tongueImg) {
+        this.ctx.drawImage(tongueImg, -6, 0, 12, h);
+      } else if (h > 4) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, h * 0.6, 6, 4, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#d95368';
+        this.ctx.fill();
+      }
+
+      this.ctx.restore();
+
+      // Outer Lip Sprites or contours
+      if (upperLipImg) {
+        this.ctx.drawImage(upperLipImg, -12, -h - 2, 24, 6);
+      }
+      if (lowerLipImg) {
+        this.ctx.drawImage(lowerLipImg, -12, h - 2, 24, 6);
+      }
+      if (!upperLipImg && !lowerLipImg) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+        this.ctx.strokeStyle = '#4a1518';
+        this.ctx.lineWidth = 1.4;
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+      return;
+    }
+
+    // Default / Procedural Bezier Lips (handles viseme synthesis or manual sliders)
+    this.drawProceduralLips(pose, viseme);
+    this.ctx.restore();
+  }
+
+  private drawMouthInstanceSingle(inst: MouthInstanceConfig, pose: FacialPoseData, viseme: VisemePreset): void {
+    const mode = inst.mode || 'procedural';
+
+    if (mode === 'viseme_library') {
+      const vPartId = inst.visemePartIds?.[viseme] || inst.visemeSlots?.[viseme];
+      const img = this.getPartImageById(vPartId);
+      if (img) {
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        return;
+      }
+    } else if (mode === 'mesh_warp') {
+      const img = this.getPartImageById(inst.baseMouthPartId || inst.mouthPartId);
+      if (img) {
+        const open = pose.lips_open ?? 0;
+        const wide = pose.lips_wide ?? 0;
+        const pucker = pose.lips_pucker ?? 0;
+        const smile = pose.lips_smile ?? 0;
+
+        const sx = 1 + wide * 0.3 - pucker * 0.35;
+        const sy = 1 + open * 0.5;
+        this.ctx.scale(sx, sy);
+        this.ctx.translate(0, -smile * 2.5);
+
+        const mw = 22;
+        const mh = (img.height / img.width) * mw;
+        this.ctx.drawImage(img, -mw / 2, -mh / 2, mw, mh);
+        return;
+      }
+    } else if (mode === 'cavity_sandwich') {
+      const cavityImg = this.getPartImageById(inst.cavityPartId);
+      const teethUpImg = this.getPartImageById(inst.teethUpperPartId);
+      const tongueImg = this.getPartImageById(inst.tonguePartId);
+      const upperLipImg = this.getPartImageById(inst.lipUpperPartId);
+      const lowerLipImg = this.getPartImageById(inst.lipLowerPartId);
+
+      const open = Math.max(0.1, pose.lips_open ?? 0);
+      const h = 10 * open;
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+      this.ctx.clip();
+
+      if (cavityImg) {
+        this.ctx.drawImage(cavityImg, -12, -h, 24, h * 2);
+      } else {
+        this.ctx.fillStyle = inst.cavityColor || '#2b090b';
+        this.ctx.fill();
+      }
+
+      if (teethUpImg) {
+        this.ctx.drawImage(teethUpImg, -8, -h, 16, h * 0.6);
+      } else {
+        this.ctx.fillStyle = inst.teethColor || '#faf8f5';
+        this.ctx.fillRect(-6, -h, 12, h * 0.4);
+      }
+
+      if (tongueImg) {
+        this.ctx.drawImage(tongueImg, -6, 0, 12, h);
+      } else if (h > 4) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, h * 0.6, 6, 4, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#d95368';
+        this.ctx.fill();
+      }
+
+      this.ctx.restore();
+
+      // Outer Lip Sprites or contours
+      if (upperLipImg) {
+        this.ctx.drawImage(upperLipImg, -12, -h - 2, 24, 6);
+      }
+      if (lowerLipImg) {
+        this.ctx.drawImage(lowerLipImg, -12, h - 2, 24, 6);
+      }
+      if (!upperLipImg && !lowerLipImg) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, 0, 11, h, 0, 0, Math.PI * 2);
+        this.ctx.strokeStyle = inst.lipColor || '#4a1518';
+        this.ctx.lineWidth = 1.4;
+        this.ctx.stroke();
+      }
+      return;
+    }
+
+    // Default / Procedural Bezier Lips
+    this.drawProceduralLips(pose, viseme);
+  }
+
+  private drawProceduralLips(pose: FacialPoseData, viseme: VisemePreset): void {
+    let open = pose.lips_open ?? 0;
+    let wide = pose.lips_wide ?? 0;
+    let smile = pose.lips_smile ?? 0;
+    let pucker = pose.lips_pucker ?? 0;
+
+    // Synthesize shape from Viseme preset if sliders are not manually driven
+    if (viseme === 'smile') {
+      smile = Math.max(smile, 0.7);
+      wide = Math.max(wide, 0.4);
+    } else if (viseme === 'ah') {
+      open = Math.max(open, 0.8);
+      wide = Math.max(wide, 0.2);
+    } else if (viseme === 'oh') {
+      open = Math.max(open, 0.75);
+      pucker = Math.max(pucker, 0.85);
+      wide = Math.min(wide, -0.3);
+    } else if (viseme === 'ee') {
+      open = Math.max(open, 0.25);
+      wide = Math.max(wide, 0.75);
+      smile = Math.max(smile, 0.4);
+    } else if (viseme === 'fv') {
+      open = Math.max(open, 0.15);
+      wide = Math.max(wide, 0.2);
+    } else if (viseme === 'mbp') {
+      open = 0;
+      wide = Math.min(wide, 0);
+    } else if (viseme === 'wq') {
+      open = Math.max(open, 0.35);
+      pucker = Math.max(pucker, 0.9);
+      wide = Math.min(wide, -0.4);
+    } else if (viseme === 'l') {
+      open = Math.max(open, 0.45);
+      wide = Math.max(wide, 0.3);
+    }
+
+    const halfW = Math.max(4, 11 * (1 + wide * 0.3 - pucker * 0.4));
+    const openH = Math.max(0, 9 * open);
+    const smileY = -smile * 4; // negative moves mouth corners up
+
+    this.ctx.lineWidth = 1.6;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+
+    if (openH > 1.2) {
+      // Mouth interior cavity
+      this.ctx.beginPath();
+      this.ctx.moveTo(-halfW, smileY);
+      this.ctx.quadraticCurveTo(0, smileY - 2, halfW, smileY);
+      this.ctx.quadraticCurveTo(0, smileY + openH, -halfW, smileY);
+      this.ctx.closePath();
+      this.ctx.fillStyle = '#2b090b';
+      this.ctx.fill();
+
+      // Teeth upper bar
+      this.ctx.beginPath();
+      this.ctx.rect(-halfW * 0.55, smileY - 1, halfW * 1.1, Math.min(openH * 0.4, 3));
+      this.ctx.fillStyle = '#faf8f5';
+      this.ctx.fill();
+
+      // Tongue hint if wide open
+      if (openH > 4) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, smileY + openH * 0.7, halfW * 0.4, openH * 0.3, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#d95368';
+        this.ctx.fill();
+      }
+
+      // Upper Lip outline
+      this.ctx.beginPath();
+      this.ctx.moveTo(-halfW, smileY);
+      this.ctx.quadraticCurveTo(0, smileY - 2, halfW, smileY);
+      this.ctx.strokeStyle = '#4a1518';
+      this.ctx.stroke();
+
+      // Lower Lip outline
+      this.ctx.beginPath();
+      this.ctx.moveTo(-halfW, smileY);
+      this.ctx.quadraticCurveTo(0, smileY + openH, halfW, smileY);
+      this.ctx.strokeStyle = '#4a1518';
+      this.ctx.stroke();
+    } else {
+      // Closed mouth line
+      this.ctx.beginPath();
+      this.ctx.moveTo(-halfW, smileY);
+      this.ctx.quadraticCurveTo(0, smileY + 2 * (1 - Math.abs(smile)), halfW, smileY);
+      this.ctx.strokeStyle = '#3d1b1d';
+      this.ctx.stroke();
+    }
+  }
+}
+
+
