@@ -417,6 +417,120 @@ describe('Facial Controls & Setup Wizards', () => {
       eyeCards = rightSidebar.querySelectorAll('.eye-instance-card');
       expect(eyeCards.length).toBe(3);
     });
+
+    it('ensures each side has its own independent face features, offsets, and visibility while synchronizing common animation mode', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      const app = new RigStudioApp(container);
+      const rightSidebar = container.querySelector('#right-sidebar') as HTMLElement;
+      (rightSidebar.querySelector('[data-tab="face"]') as HTMLButtonElement).click();
+
+      // 1. Verify Front view face defaults
+      expect((app as any).activeView).toBe('front');
+      const frontRig = (app as any).facialRig;
+      expect(frontRig.offsetX).toBe(0);
+      expect(frontRig.eyeInstances.length).toBe(2);
+      expect(frontRig.eyeInstances[0].id).toBe('eye_left');
+      expect(frontRig.eyeInstances[1].id).toBe('eye_right');
+
+      // Adjust Front face offset X to 25px
+      const inpOffX = rightSidebar.querySelector('#inp-face-offset-x') as HTMLInputElement;
+      inpOffX.value = '25';
+      inpOffX.dispatchEvent(new Event('input'));
+      expect((app as any).facialRig.offsetX).toBe(25);
+      expect((app as any).views.front.facialRig.offsetX).toBe(25);
+
+      // 2. Switch to Left side view
+      app.switchView('left');
+      expect((app as any).activeView).toBe('left');
+      const leftRig = (app as any).facialRig;
+
+      // Left view has its own independent offset and single profile eye instance
+      expect(leftRig.offsetX).toBe(-6);
+      expect(leftRig.eyeInstances.length).toBe(1);
+      expect(leftRig.eyeInstances[0].name).toContain('Profile');
+
+      // Front view offset was preserved and NOT affected by Left view
+      expect((app as any).views.front.facialRig.offsetX).toBe(25);
+      expect((app as any).views.front.facialRig.eyeInstances.length).toBe(2);
+
+      // 3. Switch to Back view
+      app.switchView('back');
+      expect((app as any).activeView).toBe('back');
+      const backRig = (app as any).facialRig;
+
+      // Back view face is disabled by default, not hardcoded
+      expect(backRig.enabled).toBe(false);
+      expect((app as any).canvas.isFacialViewEnabled()).toBe(false);
+
+      // User enables face on Back view via side toggle button
+      (rightSidebar.querySelector('[data-tab="face"]') as HTMLButtonElement).click();
+      const toggleSideBtn = rightSidebar.querySelector('#btn-toggle-side-face') as HTMLButtonElement;
+      expect(toggleSideBtn).not.toBeNull();
+      toggleSideBtn.click();
+
+      // Now Back view face is enabled and can have its own customized features
+      expect((app as any).facialRig.enabled).toBe(true);
+      expect((app as any).views.back.facialRig.enabled).toBe(true);
+      expect((app as any).canvas.isFacialViewEnabled()).toBe(true);
+
+      // 4. Test common animation mode synchronization
+      // When animation mode is set (e.g. to sclera_window), all sides must sync their animation mode
+      app.setCommonEyeMode('sclera_window');
+      expect((app as any).commonEyeMode).toBe('sclera_window');
+      expect((app as any).views.front.facialRig.eyes.mode).toBe('sclera_window');
+      expect((app as any).views.left.facialRig.eyes.mode).toBe('sclera_window');
+      expect((app as any).views.right.facialRig.eyes.mode).toBe('sclera_window');
+      expect((app as any).views.back.facialRig.eyes.mode).toBe('sclera_window');
+
+      // But their geometric placement and instances remain independent!
+      expect((app as any).views.front.facialRig.offsetX).toBe(25);
+      expect((app as any).views.front.facialRig.eyeInstances.length).toBe(2);
+      expect((app as any).views.left.facialRig.offsetX).toBe(-6);
+      expect((app as any).views.left.facialRig.eyeInstances.length).toBe(1);
+
+      // Same for mouth common animation mode
+      app.setCommonMouthMode('viseme_library');
+      expect((app as any).commonMouthMode).toBe('viseme_library');
+      expect((app as any).views.front.facialRig.mouth.mode).toBe('viseme_library');
+      expect((app as any).views.left.facialRig.mouth.mode).toBe('viseme_library');
+      expect((app as any).views.right.facialRig.mouth.mode).toBe('viseme_library');
+      expect((app as any).views.back.facialRig.mouth.mode).toBe('viseme_library');
+    });
+
+    it('persists and restores per-side facial rigs and common animation mode via buildRigProjectData and loadRigProjectData', () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      const app = new RigStudioApp(container);
+      app.switchView('left');
+      (app as any).facialRig.offsetX = -18;
+      app.syncFacialRigToActiveView();
+      app.setCommonEyeMode('sprite_swap');
+      app.setCommonMouthMode('cavity_sandwich');
+
+      // Export project data
+      const project = app.buildRigProjectData();
+      expect(project.views.left.facialRig).toBeDefined();
+      expect(project.views.left.facialRig?.offsetX).toBe(-18);
+      expect(project.commonEyeMode).toBe('sprite_swap');
+      expect(project.commonMouthMode).toBe('cavity_sandwich');
+
+      // Create new instance and load project
+      document.body.innerHTML = '';
+      const container2 = document.createElement('div');
+      document.body.appendChild(container2);
+      const app2 = new RigStudioApp(container2);
+      app2.loadRigProjectData(project);
+
+      expect((app2 as any).commonEyeMode).toBe('sprite_swap');
+      expect((app2 as any).commonMouthMode).toBe('cavity_sandwich');
+      expect((app2 as any).views.left.facialRig.offsetX).toBe(-18);
+      expect((app2 as any).views.left.facialRig.eyes.mode).toBe('sprite_swap');
+      expect((app2 as any).views.front.facialRig.eyes.mode).toBe('sprite_swap');
+      expect((app2 as any).views.left.facialRig.mouth.mode).toBe('cavity_sandwich');
+    });
   });
 });
 

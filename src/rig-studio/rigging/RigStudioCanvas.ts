@@ -65,6 +65,7 @@ export class RigStudioCanvas {
 
   // Facial Rig, pose, and sliced parts library
   private facialRig: FacialRigConfig = {};
+  private viewFacialRigs: Partial<Record<StudioView, FacialRigConfig>> = {};
   private currentFacialPose: FacialPoseData = {};
   private partsLibrary: RigPartItem[] = [];
 
@@ -250,8 +251,13 @@ export class RigStudioCanvas {
     this.render();
   }
 
-  public setFacialRig(config: FacialRigConfig): void {
-    this.facialRig = { ...config };
+  public setFacialRig(config: FacialRigConfig, view?: StudioView): void {
+    const targetView = view || this.currentView;
+    const cloned = JSON.parse(JSON.stringify(config || {}));
+    this.viewFacialRigs[targetView] = cloned;
+    if (targetView === this.currentView) {
+      this.facialRig = cloned;
+    }
     this.render();
   }
 
@@ -542,9 +548,16 @@ export class RigStudioCanvas {
     joints?: Record<AnatomicalJointId, { x: number; y: number }>,
     envelopes?: Record<string, number>,
     partsMap?: Record<string, BonePartAttachment>,
-    boneOrder?: AnatomicalJointId[]
+    boneOrder?: AnatomicalJointId[],
+    facialRig?: FacialRigConfig
   ): void {
     this.currentView = view;
+    if (facialRig) {
+      this.facialRig = JSON.parse(JSON.stringify(facialRig));
+      this.viewFacialRigs[view] = this.facialRig;
+    } else if (this.viewFacialRigs[view]) {
+      this.facialRig = this.viewFacialRigs[view]!;
+    }
     if (joints && Object.keys(joints).length > 0) {
       this.restJoints = JSON.parse(JSON.stringify(joints));
     } else {
@@ -575,13 +588,23 @@ export class RigStudioCanvas {
 
   public setActiveView(view: StudioView): void {
     this.currentView = view;
+    if (this.viewFacialRigs[view]) {
+      this.facialRig = this.viewFacialRigs[view]!;
+    }
     this.render();
   }
 
+  public getFacialRig(): FacialRigConfig {
+    return this.facialRig;
+  }
+
   public isFacialViewEnabled(): boolean {
-    const cfg = this.facialRig;
+    const cfg = this.viewFacialRigs[this.currentView] || this.facialRig;
     if (cfg?.enabledViews && Array.isArray(cfg.enabledViews)) {
       return cfg.enabledViews.includes(this.currentView);
+    }
+    if (cfg?.enabled !== undefined) {
+      return cfg.enabled;
     }
     // Default fallback: all views except back views
     return !(this.currentView === 'back' || this.currentView === 'back_left' || this.currentView === 'back_right');

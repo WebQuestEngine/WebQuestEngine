@@ -21,7 +21,9 @@ import {
   VisemePreset,
   EyeInstanceConfig,
   EyebrowInstanceConfig,
-  MouthInstanceConfig
+  MouthInstanceConfig,
+  EyeRigMode,
+  MouthRigMode
 } from './types';
 import { RigStudioBridge } from './RigStudioBridge';
 import {
@@ -70,6 +72,8 @@ export class RigStudioApp {
   private activeRightTab: 'bones' | 'face' | 'parts' | 'layers' | 'animations' = 'bones';
   private partsLibrary: RigPartItem[] = [];
   private facialRig: FacialRigConfig = {};
+  private commonEyeMode: EyeRigMode = 'procedural';
+  private commonMouthMode: MouthRigMode = 'procedural';
 
   // Animations State
   private animations: Record<string, StudioAnimationDefinition> = {};
@@ -188,6 +192,7 @@ export class RigStudioApp {
       if (!isNaN(val) && val >= 90 && val <= 600) this.timelineHeight = val;
     }
 
+    this.initDefaultViewsFacialRigs();
     this.initAnimations();
     this.renderLayout();
     this.initBridge();
@@ -433,6 +438,7 @@ export class RigStudioApp {
       },
       onFacialRigChanged: (cfg) => {
         this.facialRig = { ...this.facialRig, ...cfg };
+        this.syncFacialRigToActiveView();
         this.renderRightSidebar();
       }
     });
@@ -697,6 +703,7 @@ export class RigStudioApp {
       this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
       this.views[this.activeView].parts = { ...this.canvas.getParts() };
       this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
+      this.views[this.activeView].facialRig = JSON.parse(JSON.stringify(this.canvas.getFacialRig()));
     }
 
     this.activeView = viewId;
@@ -711,15 +718,37 @@ export class RigStudioApp {
 
     const viewData = this.views[viewId];
 
+    // Ensure destination side has its own independent facial rig
+    if (!viewData.facialRig) {
+      viewData.facialRig = this.createDefaultFacialRigForView(viewId);
+    }
+    this.facialRig = JSON.parse(JSON.stringify(viewData.facialRig));
+
+    // Ensure common animation mode is synchronized
+    if (this.facialRig.eyes) this.facialRig.eyes.mode = this.commonEyeMode;
+    if (this.facialRig.mouth) this.facialRig.mouth.mode = this.commonMouthMode;
+    if (this.facialRig.eyeInstances) {
+      for (const inst of this.facialRig.eyeInstances) {
+        inst.mode = this.commonEyeMode;
+      }
+    }
+    if (this.facialRig.mouthInstances) {
+      for (const inst of this.facialRig.mouthInstances) {
+        inst.mode = this.commonMouthMode;
+      }
+    }
+    viewData.facialRig = JSON.parse(JSON.stringify(this.facialRig));
+
     // If back view artwork is not loaded yet, check if demo back artwork is available
     if (viewId === 'back' && !viewData.image && this.views.front.image) {
       const demoBackUrl = '/demo/assets/characters/sir_ronald_back.png';
       this.loadImageFromUrl(demoBackUrl, 'character_back.png', 'back', false);
     }
 
-    // Update Canvas with view's joints, envelopes, attached parts, and layer order
+    // Update Canvas with view's joints, envelopes, attached parts, layer order, and view facial rig
     if (this.canvas) {
-      this.canvas.setView(viewId, viewData.joints, viewData.envelopes, viewData.parts, viewData.boneOrder);
+      this.canvas.setView(viewId, viewData.joints, viewData.envelopes, viewData.parts, viewData.boneOrder, this.facialRig);
+      this.canvas.setFacialRig(this.facialRig);
       this.canvas.setSourceImage(viewData.image, viewData.fileName, false);
     }
 
@@ -900,6 +929,27 @@ export class RigStudioApp {
     const finalParts = mirror && Object.keys(baseParts).length > 0 ? mirrorAttachedParts(baseParts) : baseParts;
     const finalEnvelopes = mirror && Object.keys(baseEnvelopes).length > 0 ? (mirrorEnvelopes(baseEnvelopes) as Record<string, number>) : baseEnvelopes;
     const finalBoneOrder = mirror && baseBoneOrder ? mirrorBoneLayerOrder(baseBoneOrder) : baseBoneOrder;
+    const baseFacialRig = template.facialRig
+      ? JSON.parse(JSON.stringify(template.facialRig))
+      : this.createDefaultFacialRigForView(poseId);
+    if (mirror && baseFacialRig) {
+      if (baseFacialRig.offsetX !== undefined) baseFacialRig.offsetX = -baseFacialRig.offsetX;
+      if (baseFacialRig.eyeInstances) {
+        for (const inst of baseFacialRig.eyeInstances) {
+          inst.offsetX = -inst.offsetX;
+        }
+      }
+      if (baseFacialRig.mouthInstances) {
+        for (const inst of baseFacialRig.mouthInstances) {
+          inst.offsetX = -inst.offsetX;
+        }
+      }
+      if (baseFacialRig.eyebrowInstances) {
+        for (const inst of baseFacialRig.eyebrowInstances) {
+          inst.offsetX = -inst.offsetX;
+        }
+      }
+    }
 
     this.views[poseId] = {
       viewId: poseId,
@@ -912,6 +962,7 @@ export class RigStudioApp {
       envelopes: finalEnvelopes,
       parts: finalParts,
       boneOrder: finalBoneOrder,
+      facialRig: baseFacialRig,
       visible: true
     };
 
@@ -4453,6 +4504,7 @@ export class RigStudioApp {
       this.views[this.activeView].envelopes = { ...this.canvas.getEnvelopes() };
       this.views[this.activeView].parts = { ...this.canvas.getParts() };
       this.views[this.activeView].boneOrder = [...this.canvas.getBoneDrawOrder()];
+      this.views[this.activeView].facialRig = JSON.parse(JSON.stringify(this.canvas.getFacialRig()));
     }
 
     const viewsExport: Record<string, any> = {};
@@ -4487,7 +4539,8 @@ export class RigStudioApp {
         joints: vData.joints,
         envelopes: vData.envelopes,
         boneOrder: vData.boneOrder ? [...vData.boneOrder] : (this.canvas && this.activeView === vKey ? [...this.canvas.getBoneDrawOrder()] : [...DEFAULT_BONE_DRAW_ORDER]),
-        parts: partsExport
+        parts: partsExport,
+        facialRig: vData.facialRig ? JSON.parse(JSON.stringify(vData.facialRig)) : undefined
       };
     }
 
@@ -4535,6 +4588,8 @@ export class RigStudioApp {
       partsLibrary: partsLibExport,
       slicer: slicerExport,
       facialRig: JSON.parse(JSON.stringify(this.facialRig)),
+      commonEyeMode: this.commonEyeMode,
+      commonMouthMode: this.commonMouthMode,
       animations: JSON.parse(JSON.stringify(this.animations)),
       activeAnimation: this.activeAnimationName
     };
@@ -4616,6 +4671,17 @@ export class RigStudioApp {
         this.lastLoadedRigFileName = `${(this.characterName || 'character').toLowerCase().replace(/\s+/g, '_')}_rigged.json`;
       }
 
+      if (data.commonEyeMode) {
+        this.commonEyeMode = data.commonEyeMode;
+      } else if (data.facialRig?.eyes?.mode) {
+        this.commonEyeMode = data.facialRig.eyes.mode;
+      }
+      if (data.commonMouthMode) {
+        this.commonMouthMode = data.commonMouthMode;
+      } else if (data.facialRig?.mouth?.mode) {
+        this.commonMouthMode = data.facialRig.mouth.mode;
+      }
+
       // 1. Restore Views
       if (data.views) {
         for (const [vKey, vData] of Object.entries(data.views) as [string, any][]) {
@@ -4641,6 +4707,28 @@ export class RigStudioApp {
           targetView.fileName = vData.fileName || targetView.fileName;
           targetView.fileSize = vData.fileSize || targetView.fileSize;
           targetView.imageUrl = vData.imageUrl || targetView.imageUrl;
+          if (vData.facialRig) {
+            targetView.facialRig = JSON.parse(JSON.stringify(vData.facialRig));
+          } else if (data.facialRig && vKey === 'front') {
+            targetView.facialRig = JSON.parse(JSON.stringify(data.facialRig));
+          } else {
+            targetView.facialRig = this.createDefaultFacialRigForView(vKey);
+          }
+          const viewRig = targetView.facialRig;
+          if (viewRig) {
+            if (viewRig.eyes) viewRig.eyes.mode = this.commonEyeMode;
+            if (viewRig.mouth) viewRig.mouth.mode = this.commonMouthMode;
+            if (viewRig.eyeInstances) {
+              for (const inst of viewRig.eyeInstances) {
+                inst.mode = this.commonEyeMode;
+              }
+            }
+            if (viewRig.mouthInstances) {
+              for (const inst of viewRig.mouthInstances) {
+                inst.mode = this.commonMouthMode;
+              }
+            }
+          }
 
           if (vData.imageUrl) {
             const img = new Image();
@@ -4781,11 +4869,29 @@ export class RigStudioApp {
       }
 
       // Restore facial rig and update canvas
-      if (data.facialRig) {
+      if (this.views[this.activeView]?.facialRig) {
+        this.facialRig = JSON.parse(JSON.stringify(this.views[this.activeView].facialRig));
+      } else if (data.facialRig) {
         this.facialRig = JSON.parse(JSON.stringify(data.facialRig));
       } else {
-        this.facialRig = {};
+        this.facialRig = this.createDefaultFacialRigForView(this.activeView);
       }
+      if (this.facialRig.eyes) this.facialRig.eyes.mode = this.commonEyeMode;
+      if (this.facialRig.mouth) this.facialRig.mouth.mode = this.commonMouthMode;
+      if (this.facialRig.eyeInstances) {
+        for (const inst of this.facialRig.eyeInstances) {
+          inst.mode = this.commonEyeMode;
+        }
+      }
+      if (this.facialRig.mouthInstances) {
+        for (const inst of this.facialRig.mouthInstances) {
+          inst.mode = this.commonMouthMode;
+        }
+      }
+      if (this.views[this.activeView]) {
+        this.views[this.activeView].facialRig = JSON.parse(JSON.stringify(this.facialRig));
+      }
+      this.canvas?.setView(this.activeView, activeArt.joints, activeArt.envelopes, activeArt.parts, activeArt.boneOrder, this.facialRig);
       this.canvas?.setFacialRig(this.facialRig);
       this.canvas?.setPartsLibrary(this.partsLibrary);
 
@@ -5805,6 +5911,174 @@ export class RigStudioApp {
     }
   }
 
+  private initDefaultViewsFacialRigs(): void {
+    for (const [viewId, vData] of Object.entries(this.views)) {
+      if (!vData.facialRig) {
+        vData.facialRig = this.createDefaultFacialRigForView(viewId as StudioView);
+      }
+    }
+    this.facialRig = this.views[this.activeView]?.facialRig || this.createDefaultFacialRigForView(this.activeView);
+  }
+
+  public createDefaultFacialRigForView(viewId: string): FacialRigConfig {
+    const eyeMode = this.commonEyeMode || 'procedural';
+    const mouthMode = this.commonMouthMode || 'procedural';
+
+    if (viewId === 'left') {
+      return {
+        enabled: true,
+        offsetX: -6,
+        offsetY: 0,
+        scale: 1.0,
+        eyes: {
+          mode: eyeMode
+        },
+        mouth: {
+          mode: mouthMode
+        },
+        eyebrows: {
+          thickness: 2
+        },
+        eyeInstances: [
+          { id: 'eye_left_profile', name: 'Profile Eye', mode: eyeMode, offsetX: -8, offsetY: -3, blinkChannel: 'blinkL' }
+        ],
+        mouthInstances: [
+          { id: 'mouth_left_profile', name: 'Profile Mouth', mode: mouthMode, offsetX: -8, offsetY: 14 }
+        ],
+        eyebrowInstances: [
+          { id: 'brow_left_profile', name: 'Profile Brow', offsetX: -8, offsetY: -12, thickness: 2, channel: 'eyebrows_height_l' }
+        ]
+      };
+    }
+
+    if (viewId === 'right') {
+      return {
+        enabled: true,
+        offsetX: 6,
+        offsetY: 0,
+        scale: 1.0,
+        eyes: {
+          mode: eyeMode
+        },
+        mouth: {
+          mode: mouthMode
+        },
+        eyebrows: {
+          thickness: 2
+        },
+        eyeInstances: [
+          { id: 'eye_right_profile', name: 'Profile Eye', mode: eyeMode, offsetX: 8, offsetY: -3, blinkChannel: 'blinkR' }
+        ],
+        mouthInstances: [
+          { id: 'mouth_right_profile', name: 'Profile Mouth', mode: mouthMode, offsetX: 8, offsetY: 14 }
+        ],
+        eyebrowInstances: [
+          { id: 'brow_right_profile', name: 'Profile Brow', offsetX: 8, offsetY: -12, thickness: 2, channel: 'eyebrows_height_r' }
+        ]
+      };
+    }
+
+    if (viewId === 'back' || viewId === 'back_left' || viewId === 'back_right') {
+      return {
+        enabled: false,
+        offsetX: 0,
+        offsetY: 0,
+        scale: 1.0,
+        eyes: {
+          mode: eyeMode
+        },
+        mouth: {
+          mode: mouthMode
+        },
+        eyebrows: {
+          thickness: 2
+        },
+        eyeInstances: [],
+        mouthInstances: [],
+        eyebrowInstances: []
+      };
+    }
+
+    // Default / front
+    return {
+      enabled: true,
+      offsetX: 0,
+      offsetY: 0,
+      scale: 1.0,
+      eyes: {
+        mode: eyeMode
+      },
+      mouth: {
+        mode: mouthMode
+      },
+      eyebrows: {
+        thickness: 2
+      },
+      eyeInstances: [
+        { id: 'eye_left', name: 'Left Eye', mode: eyeMode, offsetX: -13, offsetY: -3, blinkChannel: 'blinkL' },
+        { id: 'eye_right', name: 'Right Eye', mode: eyeMode, offsetX: 13, offsetY: -3, blinkChannel: 'blinkR' }
+      ],
+      mouthInstances: [
+        { id: 'mouth_main', name: 'Main Mouth', mode: mouthMode, offsetX: 0, offsetY: 14 }
+      ],
+      eyebrowInstances: [
+        { id: 'brow_left', name: 'Left Brow', offsetX: -13, offsetY: -12, thickness: 2, channel: 'eyebrows_height_l' },
+        { id: 'brow_right', name: 'Right Brow', offsetX: 13, offsetY: -12, thickness: 2, channel: 'eyebrows_height_r' }
+      ]
+    };
+  }
+
+  public setCommonEyeMode(mode: EyeRigMode): void {
+    this.commonEyeMode = mode;
+    for (const vData of Object.values(this.views)) {
+      if (vData.facialRig) {
+        if (!vData.facialRig.eyes) vData.facialRig.eyes = { mode };
+        else vData.facialRig.eyes.mode = mode;
+        if (vData.facialRig.eyeInstances) {
+          for (const inst of vData.facialRig.eyeInstances) {
+            inst.mode = mode;
+          }
+        }
+      }
+    }
+    if (this.facialRig.eyes) this.facialRig.eyes.mode = mode;
+    if (this.facialRig.eyeInstances) {
+      for (const inst of this.facialRig.eyeInstances) {
+        inst.mode = mode;
+      }
+    }
+    this.syncFacialRigToActiveView();
+  }
+
+  public setCommonMouthMode(mode: MouthRigMode): void {
+    this.commonMouthMode = mode;
+    for (const vData of Object.values(this.views)) {
+      if (vData.facialRig) {
+        if (!vData.facialRig.mouth) vData.facialRig.mouth = { mode };
+        else vData.facialRig.mouth.mode = mode;
+        if (vData.facialRig.mouthInstances) {
+          for (const inst of vData.facialRig.mouthInstances) {
+            inst.mode = mode;
+          }
+        }
+      }
+    }
+    if (this.facialRig.mouth) this.facialRig.mouth.mode = mode;
+    if (this.facialRig.mouthInstances) {
+      for (const inst of this.facialRig.mouthInstances) {
+        inst.mode = mode;
+      }
+    }
+    this.syncFacialRigToActiveView();
+  }
+
+  public syncFacialRigToActiveView(): void {
+    if (this.views[this.activeView]) {
+      this.views[this.activeView].facialRig = JSON.parse(JSON.stringify(this.facialRig));
+    }
+    this.canvas?.setFacialRig(this.facialRig);
+  }
+
   public openEyeSetupWizardDialog(): void {
     const slicedParts = this.partsLibrary.map(p => ({ id: p.id, name: p.name, dataUrl: p.imageUrl }));
     openEyeSetupWizard({
@@ -5812,7 +6086,8 @@ export class RigStudioApp {
       slicedParts,
       onSave: (config) => {
         this.facialRig.eyes = config;
-        this.canvas?.setFacialRig(this.facialRig);
+        this.setCommonEyeMode(config.mode);
+        this.syncFacialRigToActiveView();
         this.renderRightSidebar();
         this.timeline?.renderTimeline();
         this.showToast(`Eye Rig mode set to ${EYE_MODE_DESCRIPTIONS[config.mode]?.title || config.mode}`, 'success');
@@ -5827,7 +6102,8 @@ export class RigStudioApp {
       slicedParts,
       onSave: (config) => {
         this.facialRig.mouth = config;
-        this.canvas?.setFacialRig(this.facialRig);
+        this.setCommonMouthMode(config.mode);
+        this.syncFacialRigToActiveView();
         this.renderRightSidebar();
         this.timeline?.renderTimeline();
         this.showToast(`Mouth Rig mode set to ${MOUTH_MODE_DESCRIPTIONS[config.mode]?.title || config.mode}`, 'success');
@@ -6102,9 +6378,20 @@ export class RigStudioApp {
     const parts = this.partsLibrary;
     const currentPose = this.timeline ? this.timeline.getCurrentFacialPose() : {};
 
+    const currentViewLabel = this.views[this.activeView]?.label || this.activeView;
+    const isCurrentViewFaceEnabled = this.facialRig.enabled !== undefined
+      ? this.facialRig.enabled
+      : (this.facialRig.enabledViews && Array.isArray(this.facialRig.enabledViews)
+          ? this.facialRig.enabledViews.includes(this.activeView)
+          : !(this.activeView === 'back' || this.activeView === 'back_left' || this.activeView === 'back_right'));
+
     const isViewActive = (vId: string) => {
+      const vRig = this.views[vId as StudioView]?.facialRig;
+      if (vRig && vRig.enabled !== undefined) {
+        return vRig.enabled;
+      }
       if (this.facialRig.enabledViews && Array.isArray(this.facialRig.enabledViews)) {
-        return this.facialRig.enabledViews.includes(vId);
+        return this.facialRig.enabledViews.includes(vId as StudioView);
       }
       return !(vId === 'back' || vId === 'back_left' || vId === 'back_right');
     };
@@ -6118,9 +6405,23 @@ export class RigStudioApp {
           <div style="font-size:0.85rem; font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
             <span>🎭</span>
             <span>Facial Rigging & Controls</span>
+            <span style="font-size:0.7rem; color:#38bdf8; background:rgba(56,189,248,0.12); padding:1px 6px; border-radius:4px; font-weight:600;">Side: ${currentViewLabel}</span>
           </div>
           <div style="font-size:0.68rem; color:#94a3b8; line-height:1.35;">
-            Configure facial view visibility, multi-instance eyes/mouths/brows, and calibrate expressions.
+            Each side has its own face features, positions, and offsets. The animation mode (<strong style="color:#38bdf8;">${eyeDesc.title}</strong> & <strong style="color:#38bdf8;">${mouthDesc.title}</strong>) is shared across all sides.
+          </div>
+        </div>
+
+        <!-- 0. Side Face Status & Toggle -->
+        <div style="background:${isCurrentViewFaceEnabled ? '#0f172a' : '#1e1b2e'}; border:1px solid ${isCurrentViewFaceEnabled ? 'rgba(56,189,248,0.3)' : 'rgba(239,68,68,0.3)'}; border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+              <span>${isCurrentViewFaceEnabled ? '✨' : '🚫'}</span>
+              <span>Face on <strong style="color:#38bdf8;">${currentViewLabel}</strong>: ${isCurrentViewFaceEnabled ? '<span style="color:#4ade80;">Active</span>' : '<span style="color:#f87171;">Disabled</span>'}</span>
+            </div>
+            <button id="btn-toggle-side-face" class="btn-studio ${isCurrentViewFaceEnabled ? 'btn-studio-primary' : ''}" style="font-size:0.65rem; padding:3px 8px;" title="Toggle face enabled/disabled on current side">
+              ${isCurrentViewFaceEnabled ? '✓ Face Enabled' : 'Enable Face'}
+            </button>
           </div>
         </div>
 
@@ -6129,14 +6430,14 @@ export class RigStudioApp {
           <div style="display:flex; align-items:center; justify-content:space-between;">
             <div style="font-size:0.75rem; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;">
               <span>📍</span>
-              <span>Face Placement on Head</span>
+              <span>Placement on Head (${currentViewLabel})</span>
             </div>
             <button id="btn-face-reset-pos" class="btn-studio" style="font-size:0.62rem; padding:2px 6px;" title="Reset face position to head center">
               ↺ Center
             </button>
           </div>
           <div style="font-size:0.65rem; color:#94a3b8; line-height:1.3;">
-            Adjust face placement & scale on head, or click & drag directly on the canvas.
+            Adjust face placement & scale for <strong>${currentViewLabel}</strong>, or drag directly on canvas.
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
             <div>
@@ -6615,7 +6916,7 @@ export class RigStudioApp {
       this.facialRig.offsetX = val;
       const lbl = sidebar.querySelector('#val-face-offset-x');
       if (lbl) lbl.textContent = `${val}px`;
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
     });
 
     inpOffY?.addEventListener('input', () => {
@@ -6623,7 +6924,7 @@ export class RigStudioApp {
       this.facialRig.offsetY = val;
       const lbl = sidebar.querySelector('#val-face-offset-y');
       if (lbl) lbl.textContent = `${val}px`;
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
     });
 
     inpScale?.addEventListener('input', () => {
@@ -6631,34 +6932,61 @@ export class RigStudioApp {
       this.facialRig.scale = val;
       const lbl = sidebar.querySelector('#val-face-scale');
       if (lbl) lbl.textContent = `${Math.round(val * 100)}%`;
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
     });
 
     sidebar.querySelector('#btn-face-reset-pos')?.addEventListener('click', () => {
       this.facialRig.offsetX = 0;
       this.facialRig.offsetY = 0;
       this.facialRig.scale = 1.0;
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.renderRightSidebar();
       this.showToast('Face placement centered on head', 'info');
+    });
+
+    // Side Face Toggle (current view)
+    sidebar.querySelector('#btn-toggle-side-face')?.addEventListener('click', () => {
+      const currentVal = this.facialRig.enabled !== undefined
+        ? this.facialRig.enabled
+        : !(this.activeView === 'back' || this.activeView === 'back_left' || this.activeView === 'back_right');
+      this.facialRig.enabled = !currentVal;
+      this.syncFacialRigToActiveView();
+      this.renderRightSidebar();
+      this.showToast(`Facial features ${this.facialRig.enabled ? 'enabled' : 'disabled'} on "${this.views[this.activeView]?.label || this.activeView}"`, 'info');
     });
 
     // Facial View Visibility toggles
     sidebar.querySelectorAll('.btn-face-view-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
-        const vId = btn.getAttribute('data-view');
+        const vId = btn.getAttribute('data-view') as StudioView;
         if (!vId) return;
+        const targetView = this.views[vId];
+        if (!targetView) return;
+        if (!targetView.facialRig) {
+          targetView.facialRig = this.createDefaultFacialRigForView(vId);
+        }
+        const currentVal = targetView.facialRig.enabled !== undefined
+          ? targetView.facialRig.enabled
+          : !(vId === 'back' || vId === 'back_left' || vId === 'back_right');
+        targetView.facialRig.enabled = !currentVal;
+
         if (!this.facialRig.enabledViews || !Array.isArray(this.facialRig.enabledViews)) {
           this.facialRig.enabledViews = Object.keys(this.views).filter(v => !(v === 'back' || v === 'back_left' || v === 'back_right'));
         }
-        if (this.facialRig.enabledViews.includes(vId)) {
-          this.facialRig.enabledViews = this.facialRig.enabledViews.filter(v => v !== vId);
+        if (targetView.facialRig.enabled) {
+          if (!this.facialRig.enabledViews.includes(vId)) this.facialRig.enabledViews.push(vId);
         } else {
-          this.facialRig.enabledViews.push(vId);
+          this.facialRig.enabledViews = this.facialRig.enabledViews.filter(v => v !== vId);
         }
-        this.canvas?.setFacialRig(this.facialRig);
+        this.canvas?.setFacialRig(targetView.facialRig, vId);
+        if (this.activeView === vId) {
+          this.facialRig.enabled = targetView.facialRig.enabled;
+          this.syncFacialRigToActiveView();
+        } else {
+          this.canvas?.setFacialRig(this.facialRig, this.activeView);
+        }
         this.renderRightSidebar();
-        this.showToast(`Facial features ${this.facialRig.enabledViews.includes(vId) ? 'enabled' : 'hidden'} on "${vId}"`, 'info');
+        this.showToast(`Facial features ${targetView.facialRig.enabled ? 'enabled' : 'hidden'} on "${targetView.label || vId}"`, 'info');
       });
     });
 
@@ -6666,22 +6994,22 @@ export class RigStudioApp {
     const addEyeInst = () => {
       if (!this.facialRig.eyeInstances || this.facialRig.eyeInstances.length === 0) {
         this.facialRig.eyeInstances = [
-          { id: 'eye_left', name: 'Left Eye', mode: this.facialRig.eyes?.mode || 'procedural', offsetX: -13, offsetY: -3, blinkChannel: 'blinkL' },
-          { id: 'eye_right', name: 'Right Eye', mode: this.facialRig.eyes?.mode || 'procedural', offsetX: 13, offsetY: -3, blinkChannel: 'blinkR' },
-          { id: `eye_${Date.now()}`, name: 'New Eye', mode: 'procedural', offsetX: 0, offsetY: -18, blinkChannel: 'blinkL' }
+          { id: 'eye_left', name: 'Left Eye', mode: this.commonEyeMode, offsetX: -13, offsetY: -3, blinkChannel: 'blinkL' },
+          { id: 'eye_right', name: 'Right Eye', mode: this.commonEyeMode, offsetX: 13, offsetY: -3, blinkChannel: 'blinkR' },
+          { id: `eye_${Date.now()}`, name: 'New Eye', mode: this.commonEyeMode, offsetX: 0, offsetY: -18, blinkChannel: 'blinkL' }
         ];
       } else {
         const count = this.facialRig.eyeInstances.length + 1;
         this.facialRig.eyeInstances.push({
           id: `eye_${Date.now()}`,
           name: `Eye ${count}`,
-          mode: 'procedural',
+          mode: this.commonEyeMode,
           offsetX: 0,
           offsetY: -10,
           blinkChannel: 'blinkL'
         });
       }
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.renderRightSidebar();
       this.showToast('Eye instance added', 'info');
     };
@@ -6706,7 +7034,7 @@ export class RigStudioApp {
           const card = el.closest('.eye-instance-card');
           const lbl = card?.querySelector('.lbl-eye-x');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6720,7 +7048,7 @@ export class RigStudioApp {
           const card = el.closest('.eye-instance-card');
           const lbl = card?.querySelector('.lbl-eye-y');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6731,7 +7059,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value as any;
         if (this.facialRig.eyeInstances?.[idx]) {
           this.facialRig.eyeInstances[idx].blinkChannel = val || undefined;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6742,7 +7070,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value;
         if (this.facialRig.eyeInstances?.[idx]) {
           this.facialRig.eyeInstances[idx].enabledViews = val ? [val] : undefined;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6752,7 +7080,7 @@ export class RigStudioApp {
         const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
         if (this.facialRig.eyeInstances) {
           this.facialRig.eyeInstances.splice(idx, 1);
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
           this.renderRightSidebar();
           this.showToast('Eye instance removed', 'info');
         }
@@ -6763,20 +7091,20 @@ export class RigStudioApp {
     const addMouthInst = () => {
       if (!this.facialRig.mouthInstances || this.facialRig.mouthInstances.length === 0) {
         this.facialRig.mouthInstances = [
-          { id: 'mouth_primary', name: 'Main Mouth', mode: this.facialRig.mouth?.mode || 'procedural', offsetX: 0, offsetY: 0 },
-          { id: `mouth_${Date.now()}`, name: 'Second Mouth', mode: 'procedural', offsetX: 0, offsetY: 18 }
+          { id: 'mouth_primary', name: 'Main Mouth', mode: this.commonMouthMode, offsetX: 0, offsetY: 0 },
+          { id: `mouth_${Date.now()}`, name: 'Second Mouth', mode: this.commonMouthMode, offsetX: 0, offsetY: 18 }
         ];
       } else {
         const count = this.facialRig.mouthInstances.length + 1;
         this.facialRig.mouthInstances.push({
           id: `mouth_${Date.now()}`,
           name: `Mouth ${count}`,
-          mode: 'procedural',
+          mode: this.commonMouthMode,
           offsetX: 0,
           offsetY: 15
         });
       }
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.renderRightSidebar();
       this.showToast('Mouth instance added', 'info');
     };
@@ -6801,7 +7129,7 @@ export class RigStudioApp {
           const card = el.closest('.mouth-instance-card');
           const lbl = card?.querySelector('.lbl-mouth-x');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6815,7 +7143,7 @@ export class RigStudioApp {
           const card = el.closest('.mouth-instance-card');
           const lbl = card?.querySelector('.lbl-mouth-y');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6826,7 +7154,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value;
         if (this.facialRig.mouthInstances?.[idx]) {
           this.facialRig.mouthInstances[idx].enabledViews = val ? [val] : undefined;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6836,7 +7164,7 @@ export class RigStudioApp {
         const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
         if (this.facialRig.mouthInstances) {
           this.facialRig.mouthInstances.splice(idx, 1);
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
           this.renderRightSidebar();
           this.showToast('Mouth instance removed', 'info');
         }
@@ -6861,7 +7189,7 @@ export class RigStudioApp {
           channel: 'eyebrows_height_l'
         });
       }
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.renderRightSidebar();
       this.showToast('Eyebrow instance added', 'info');
     };
@@ -6886,7 +7214,7 @@ export class RigStudioApp {
           const card = el.closest('.brow-instance-card');
           const lbl = card?.querySelector('.lbl-brow-x');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6900,7 +7228,7 @@ export class RigStudioApp {
           const card = el.closest('.brow-instance-card');
           const lbl = card?.querySelector('.lbl-brow-y');
           if (lbl) lbl.textContent = `${val}px`;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6911,7 +7239,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value as any;
         if (this.facialRig.eyebrowInstances?.[idx]) {
           this.facialRig.eyebrowInstances[idx].channel = val;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6922,7 +7250,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value;
         if (this.facialRig.eyebrowInstances?.[idx]) {
           this.facialRig.eyebrowInstances[idx].partId = val || undefined;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6933,7 +7261,7 @@ export class RigStudioApp {
         const val = (e.target as HTMLSelectElement).value;
         if (this.facialRig.eyebrowInstances?.[idx]) {
           this.facialRig.eyebrowInstances[idx].enabledViews = val ? [val] : undefined;
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
         }
       });
     });
@@ -6943,7 +7271,7 @@ export class RigStudioApp {
         const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
         if (this.facialRig.eyebrowInstances) {
           this.facialRig.eyebrowInstances.splice(idx, 1);
-          this.canvas?.setFacialRig(this.facialRig);
+          this.syncFacialRigToActiveView();
           this.renderRightSidebar();
           this.showToast('Eyebrow instance removed', 'info');
         }
@@ -6954,21 +7282,21 @@ export class RigStudioApp {
     sidebar.querySelector('#sel-face-brow-left')?.addEventListener('change', (e) => {
       const val = (e.target as HTMLSelectElement).value;
       this.facialRig.eyebrows = { ...this.facialRig.eyebrows, leftBrowPartId: val || undefined };
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.showToast(val ? 'Left eyebrow graphic assigned' : 'Left eyebrow set to procedural', 'info');
     });
 
     sidebar.querySelector('#sel-face-brow-right')?.addEventListener('change', (e) => {
       const val = (e.target as HTMLSelectElement).value;
       this.facialRig.eyebrows = { ...this.facialRig.eyebrows, rightBrowPartId: val || undefined };
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
       this.showToast(val ? 'Right eyebrow graphic assigned' : 'Right eyebrow set to procedural', 'info');
     });
 
     sidebar.querySelector('#inp-face-brow-color')?.addEventListener('input', (e) => {
       const col = (e.target as HTMLInputElement).value;
       this.facialRig.eyebrows = { ...this.facialRig.eyebrows, color: col };
-      this.canvas?.setFacialRig(this.facialRig);
+      this.syncFacialRigToActiveView();
     });
 
     // Live Viseme chip clicks

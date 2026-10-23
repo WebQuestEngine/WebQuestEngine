@@ -271,6 +271,7 @@ export interface ViewArtworkData {
   parts: Record<string, BonePartAttachment>;
   boneOrder?: AnatomicalJointId[];
   visible: boolean;
+  facialRig?: FacialRigConfig;
 }
 
 export interface RigProjectData {
@@ -304,6 +305,7 @@ export interface RigProjectData {
       flipX?: boolean;
       flipY?: boolean;
     }>;
+    facialRig?: FacialRigConfig;
   }>;
   partsLibrary?: {
     id: string;
@@ -333,6 +335,8 @@ export interface RigProjectData {
   animations?: Record<string, StudioAnimationDefinition>;
   activeAnimation?: string;
   facialRig?: FacialRigConfig;
+  commonEyeMode?: EyeRigMode;
+  commonMouthMode?: MouthRigMode;
 }
 
 export type BonePropertyKey = 'x' | 'y' | 'rotation' | 'scale';
@@ -527,7 +531,10 @@ export interface MouthInstanceConfig {
 }
 
 export interface FacialRigConfig {
-  // Configurable views where facial features appear (user selectable, e.g. includes 'back' if desired)
+  // Whether facial features are enabled on this side/view
+  enabled?: boolean;
+
+  // Configurable views where facial features appear (legacy compatibility)
   enabledViews?: StudioView[];
 
   // Placement & scale
